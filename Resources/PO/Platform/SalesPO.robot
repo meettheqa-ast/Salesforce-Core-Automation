@@ -22,8 +22,13 @@ Create A New Lead
     Select Dropdown Option    Lead Source    ${leadSourceOption}
     Select Dialog Button    Save
 
+Verify Lead Created Successfully
+    [Documentation]    Confirms Lead save via record-details success toast, then validates key Lead fields on the page.
+    Get Success Toast Message Related Record Creation ID
+    Verify First Name, Company And Title On Lead Page
+
 Verify First Name, Company And Title On Lead Page
-    Verify Record Creation With Data    Lead    Name    ${salutationOption} ${leadfirstname} ${leadLastName}
+    Verify Record Creation With Data    Lead    Name    ${salutationOption} ${leadFirstName} ${leadLastName}
     Verify Record Creation With Data    Lead    Company    ${leadCompany}
     Verify Record Creation With Data    Lead    Title    ${leadTitle}
 

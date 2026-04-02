@@ -1,0 +1,5 @@
+*** Variables ***
+# Copy to EnvData.robot (gitignored) or let run_test.py / the Streamlit app create it.
+${globalSandboxTestUrl}=    https://yourorg--sandbox.sandbox.my.salesforce.com/
+${sandboxUserNameInput}=    user@example.com
+${sandboxPasswordInput}=    your-password

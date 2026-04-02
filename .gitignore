@@ -1,3 +1,18 @@
+# Local secrets (API keys for ai_bridge.py)
+.env
+.streamlit/secrets.toml
+
+# Runtime Salesforce credentials (written by run_test.py / app)
+Resources/TestData/EnvData.robot
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# LLM-generated tests (optional local only)
+Tests/Generated/
+
 # Ignore the entire venv folder
 venv/
 

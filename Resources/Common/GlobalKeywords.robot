@@ -4,15 +4,24 @@ Library     String
 Resource    GlobalVariables.robot
 Resource    GlobalLocators.robot
 Resource    ../../Resources/TestData/Platform/PlatformData.robot
+Resource    ../../Resources/TestData/EnvData.robot
 # libdoc Resources/Common/GlobalKeywords.robot SF-Core-Keywords-Library.html
 
 
 *** Keywords ***
 Begin Web Test
-    [Documentation]    The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions.
+    [Documentation]    The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs.
     [Tags]    setup
-    Open Browser    about:blank    chrome
-    Maximize Browser Window
+    ${headless_raw}=    Get Variable Value    ${headless}    false
+    ${headless_lc}=    Convert To Lower Case    ${headless_raw}
+    ${headless_lc}=    Strip String    ${headless_lc}
+    IF    '${headless_lc}' == 'true'
+        Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080")
+        Set Window Size    1920    1080
+    ELSE
+        Open Browser    about:blank    chrome
+        Maximize Browser Window
+    END
 #    set window position    x=0    y=0
 #    set window size    width=1265    height=675
     Set Selenium Timeout    10s

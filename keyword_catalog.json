@@ -1,0 +1,1487 @@
+{
+  "generated_at": "2026-04-02T17:48:01.116373+00:00",
+  "project_root_hint": "Salesforce Automation",
+  "scanned_paths": [
+    "Resources/PO",
+    "Resources/Common"
+  ],
+  "keyword_count": 126,
+  "keywords": [
+    {
+      "keyword_name": "Purchase Parts Within Stock",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Purchase Parts Within Stock. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Purchase Parts Within Stock. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Purchase Parts Out Of Stock",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Purchase Parts Out Of Stock. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Purchase Parts Out Of Stock. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Part Name Message",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Part Name Message.",
+      "inferred_description": "Verifies that Part Name Message.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Enter Parts Quantity",
+      "arguments": [
+        "${qty}"
+      ],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Enters data into Parts Quantity.",
+      "inferred_description": "Enters data into Parts Quantity.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Complete Purchase Message",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Complete Purchase Message.",
+      "inferred_description": "Verifies that Complete Purchase Message.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Out Of Stock Message",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Out Of Stock Message.",
+      "inferred_description": "Verifies that Out Of Stock Message.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/PartsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Account",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Account.",
+      "inferred_description": "Selects First Account.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Service Appointment",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Service Appointment.",
+      "inferred_description": "Selects First Service Appointment.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Select Service Appointment Option",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Service Appointment Option.",
+      "inferred_description": "Selects Service Appointment Option.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Service Appointments Details Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Service Appointments Details Submenu.",
+      "inferred_description": "Verifies that Service Appointments Details Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Find Service Appointment Information Details Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Find Service Appointment Information Details Submenu.",
+      "inferred_description": "Verifies that Find Service Appointment Information Details Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Update/Cancel Service Appointment Details Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Update/Cancel Service Appointment Details Submenu.",
+      "inferred_description": "Verifies that Update/Cancel Service Appointment Details Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Retrieval Of Service Appointment Details By Appointment Number",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Retrieval Of Service Appointment Details By Appointment Number.",
+      "inferred_description": "Verifies that Retrieval Of Service Appointment Details By Appointment Number.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Check Service Appointment Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Service Appointment Details. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Service Appointment Details. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceAppointmentsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Service Contract",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Service Contract.",
+      "inferred_description": "Selects First Service Contract.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Product",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Product.",
+      "inferred_description": "Selects First Product.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Select Product Name Option",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Product Name Option.",
+      "inferred_description": "Selects Product Name Option.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Entitlement",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Entitlement.",
+      "inferred_description": "Selects First Entitlement.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Process Entitlement Name",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Process Entitlement Name. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Process Entitlement Name. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Service Contracts Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Service Contracts Submenu.",
+      "inferred_description": "Verifies that Service Contracts Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Get My Service Contracts Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Get My Service Contracts Submenu.",
+      "inferred_description": "Verifies that Get My Service Contracts Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Service Contract Details Without Contract Number",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Service Contract Details Without Contract Number.",
+      "inferred_description": "Verifies that Service Contract Details Without Contract Number.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Service Contract Details With Contract Number",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Service Contract Details With Contract Number.",
+      "inferred_description": "Verifies that Service Contract Details With Contract Number.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Expiration Date For Service Contract",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Expiration Date For Service Contract.",
+      "inferred_description": "Verifies that Expiration Date For Service Contract.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Product Details Covered Under Warranty",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Product Details Covered Under Warranty.",
+      "inferred_description": "Verifies that Product Details Covered Under Warranty.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Product Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Product Details.",
+      "inferred_description": "Verifies that Product Details.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Entitlement Details Associated With Service Contract",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Entitlement Details Associated With Service Contract.",
+      "inferred_description": "Verifies that Entitlement Details Associated With Service Contract.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Entitlement Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Entitlement Details.",
+      "inferred_description": "Verifies that Entitlement Details.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Validate Entitlement Message",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Validate Entitlement Message. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Validate Entitlement Message. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Verify Return To Main Menu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Return To Main Menu.",
+      "inferred_description": "Verifies that Return To Main Menu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/ServiceContractsPO.robot"
+    },
+    {
+      "keyword_name": "Select First Asset",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Asset.",
+      "inferred_description": "Selects First Asset.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Select First Warranty",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Warranty.",
+      "inferred_description": "Selects First Warranty.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Select First Warranty Option",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects First Warranty Option.",
+      "inferred_description": "Selects First Warranty Option.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Warranty Details Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Warranty Details Submenu.",
+      "inferred_description": "Verifies that Warranty Details Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify My Asset Warranty Details Submenu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that My Asset Warranty Details Submenu.",
+      "inferred_description": "Verifies that My Asset Warranty Details Submenu.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Whether My Asset Is Covered Under Warranty",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Whether My Asset Is Covered Under Warranty.",
+      "inferred_description": "Verifies that Whether My Asset Is Covered Under Warranty.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Asset Warranty Coverage Status",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Asset Warranty Coverage Status. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Asset Warranty Coverage Status. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Asset Warranty Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Asset Warranty Details.",
+      "inferred_description": "Verifies that Asset Warranty Details.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Asset Warranty Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Asset Warranty Details. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Asset Warranty Details. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Warranty Expiration Date",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Warranty Expiration Date.",
+      "inferred_description": "Verifies that Warranty Expiration Date.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Warranty Expiration Date",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Warranty Expiration Date. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Warranty Expiration Date. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Parts Warranty Coverage",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Parts Warranty Coverage.",
+      "inferred_description": "Verifies that Parts Warranty Coverage.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Parts Warranty Coverage",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Parts Warranty Coverage. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Parts Warranty Coverage. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Warranty Labor Coverage",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Warranty Labor Coverage.",
+      "inferred_description": "Verifies that Warranty Labor Coverage.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Warranty Labor Coverage",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Warranty Labor Coverage. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Warranty Labor Coverage. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Warranty Transfer",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Warranty Transfer.",
+      "inferred_description": "Verifies that Warranty Transfer.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Check Warranty Transfer",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Robot Framework keyword that automates the workflow: Check Warranty Transfer. Inspect the source file for step-level behavior.",
+      "inferred_description": "Robot Framework keyword that automates the workflow: Check Warranty Transfer. Inspect the source file for step-level behavior.",
+      "tags": [],
+      "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
+    },
+    {
+      "keyword_name": "Create A New Lead",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates a new Lead using the current modal or form and saves when complete.",
+      "inferred_description": "Creates a new Lead using the current modal or form and saves when complete.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Lead Created Successfully",
+      "arguments": [],
+      "documentation": "Confirms Lead save via record-details success toast, then validates key Lead fields on the page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Confirms Lead save via record-details success toast, then validates key Lead fields on the page.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Verify First Name, Company And Title On Lead Page",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that First Name, Company And Title On Lead Page.",
+      "inferred_description": "Verifies that First Name, Company And Title On Lead Page.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Create A New Opportunity",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates a new Opportunity using the current modal or form and saves when complete.",
+      "inferred_description": "Creates a new Opportunity using the current modal or form and saves when complete.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Opportunity",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Opportunity.",
+      "inferred_description": "Verifies that Opportunity.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Convert Lead To Opportunity",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Converts or transforms Lead To Opportunity.",
+      "inferred_description": "Converts or transforms Lead To Opportunity.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Delete Lead",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Lead in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Lead in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Delete Opportunity",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Opportunity in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Opportunity in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Delete Converted Lead",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Converted Lead in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Converted Lead in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Create A New Account",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates a new Account using the current modal or form and saves when complete.",
+      "inferred_description": "Creates a new Account using the current modal or form and saves when complete.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Account Creation",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Account Creation.",
+      "inferred_description": "Verifies that Account Creation.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Delete Account",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Account in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Account in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Create a New Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates a new Work Order using the current modal or form and saves when complete.",
+      "inferred_description": "Creates a new Work Order using the current modal or form and saves when complete.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Work Order Redirection To Record Details Page",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Work Order Redirection To Record Details Page.",
+      "inferred_description": "Verifies that Work Order Redirection To Record Details Page.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Work Order Record Creation with Data",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Work Order Record Creation with Data.",
+      "inferred_description": "Verifies that Work Order Record Creation with Data.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Delete Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Work Order in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Work Order in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Product Required In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Product Required In Work Order.",
+      "inferred_description": "Creates New Product Required In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Product Required Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Product Required Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Product Required Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Work Order Line Item In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Work Order Line Item In Work Order.",
+      "inferred_description": "Creates New Work Order Line Item In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Work Order Line Item Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Work Order Line Item Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Work Order Line Item Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Service Appointment In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Service Appointment In Work Order.",
+      "inferred_description": "Creates New Service Appointment In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Service Appointment Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Service Appointment Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Service Appointment Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Product Requests In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Product Requests In Work Order.",
+      "inferred_description": "Creates New Product Requests In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Product Request Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Product Request Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Product Request Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Products Consumed In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Products Consumed In Work Order.",
+      "inferred_description": "Creates New Products Consumed In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Products Consumed Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Products Consumed Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Products Consumed Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Create New Expenses In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Creates New Expenses In Work Order.",
+      "inferred_description": "Creates New Expenses In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Verify Related Expenses Record Creation In Work Order",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Related Expenses Record Creation In Work Order.",
+      "inferred_description": "Verifies that Related Expenses Record Creation In Work Order.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
+    },
+    {
+      "keyword_name": "Begin Web Test",
+      "arguments": [],
+      "documentation": "The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs.",
+      "documentation_source": "author",
+      "natural_language_summary": "The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs.",
+      "inferred_description": null,
+      "tags": [
+        "setup"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "End Web Test",
+      "arguments": [],
+      "documentation": "The End Web Test step concludes the testing session by closing all browser instances, ensuring proper cleanup of the testing environment.",
+      "documentation_source": "author",
+      "natural_language_summary": "The End Web Test step concludes the testing session by closing all browser instances, ensuring proper cleanup of the testing environment.",
+      "inferred_description": null,
+      "tags": [
+        "teardown"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Login To Sandbox",
+      "arguments": [
+        "${instanceURL}",
+        "${instanceUsername}",
+        "${instancePassword}"
+      ],
+      "documentation": "The Login To Sandbox test case automates the process of logging into the Sandbox environment by navigating to the specified test URL, entering the username and password into their respective input fields, clicking the login button, and waiting for the Sandbox 360 logo to appear, indicating a successful login.",
+      "documentation_source": "author",
+      "natural_language_summary": "The Login To Sandbox test case automates the process of logging into the Sandbox environment by navigating to the specified test URL, entering the username and password into their respective input fields, clicking the login button, and waiting for the Sandbox 360 logo to appear, indicating a successful login.",
+      "inferred_description": null,
+      "tags": [
+        "login"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Launch App",
+      "arguments": [
+        "${appName}"
+      ],
+      "documentation": "Launches an app using Salesforce app menu / app launcher. It navigates to the app launcher, searches for the specified app by name, and waits for the app to appear. It then clicks on the app to open it and waits for the launch 360 logo to become visible. After confirming the app is active, it verifies the app's presence on the page to ensure successful launch. Finally, a short pause is added to confirm the app is fully loaded.",
+      "documentation_source": "author",
+      "natural_language_summary": "Launches an app using Salesforce app menu / app launcher. It navigates to the app launcher, searches for the specified app by name, and waits for the app to appear. It then clicks on the app to open it and waits for the launch 360 logo to become visible. After confirming the app is active, it verifies the app's presence on the page to ensure successful launch. Finally, a short pause is added to confirm the app is fully loaded.",
+      "inferred_description": null,
+      "tags": [
+        "navigation"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select App Tab",
+      "arguments": [
+        "${tabName}"
+      ],
+      "documentation": "Selects a specific tab within an app that includes dropdown options. It dynamically locates the desired tab by its name, waits for it to become visible, and then clicks on it. After selecting the tab, it verifies that the tab is active by checking for the presence of the corresponding element on the page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Selects a specific tab within an app that includes dropdown options. It dynamically locates the desired tab by its name, waits for it to become visible, and then clicks on it. After selecting the tab, it verifies that the tab is active by checking for the presence of the corresponding element on the page.",
+      "inferred_description": null,
+      "tags": [
+        "navigation"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open New Dialog",
+      "arguments": [
+        "${dialogName}"
+      ],
+      "documentation": "Opens a new dialog within an application. It begins by clicking the element to create a new record, dynamically identifies the dialog by its name, waits for the dialog title to become visible, and then clicks on it to ensure proper interaction with the modal.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens a new dialog within an application. It begins by clicking the element to create a new record, dynamically identifies the dialog by its name, waits for the dialog title to become visible, and then clicks on it to ensure proper interaction with the modal.",
+      "inferred_description": null,
+      "tags": [
+        "modal",
+        "navigation"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Item",
+      "arguments": [
+        "${itemName}"
+      ],
+      "documentation": "Opens a specific item within the app by searching for it in the app launcher. It then clicks the app launcher, enters the item name into the search field, and waits for the item to appear. It then clicks on the item to open it and waits for the item's logo to become visible, indicating the item has been successfully launched. A short pause is added at the end to ensure the item has fully loaded.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens a specific item within the app by searching for it in the app launcher. It then clicks the app launcher, enters the item name into the search field, and waits for the item to appear. It then clicks on the item to open it and waits for the item's logo to become visible, indicating the item has been successfully launched. A short pause is added at the end to ensure the item has fully loaded.",
+      "inferred_description": null,
+      "tags": [
+        "navigation"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Enter Into Search Field",
+      "arguments": [
+        "${fieldName}=${EMPTY}",
+        "${searchTerm}=${EMPTY}",
+        "${searchPos}=1"
+      ],
+      "documentation": "Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.",
+      "documentation_source": "author",
+      "natural_language_summary": "Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "search",
+        "input",
+        "field"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select Dialog Button",
+      "arguments": [
+        "${buttonActionArg}"
+      ],
+      "documentation": "Selects a button within a Dialog. Eg. Save, Cancel, Save & New",
+      "documentation_source": "author",
+      "natural_language_summary": "Selects a button within a Dialog. Eg. Save, Cancel, Save & New",
+      "inferred_description": null,
+      "tags": [
+        "modal",
+        "interaction"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Dropdown",
+      "arguments": [
+        "${dropdownFieldArg}"
+      ],
+      "documentation": "Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select Dropdown Option",
+      "arguments": [
+        "${dropdownNameArg}",
+        "${dropdownOptionArg}"
+      ],
+      "documentation": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
+      "documentation_source": "author",
+      "natural_language_summary": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Enter Text",
+      "arguments": [
+        "${labelName}",
+        "${textValue}"
+      ],
+      "documentation": "Use this keyword to enter a value into the Input Field. It first identifies the input field using the provided label name, waits for the field to become visible, and scrolls it into view. It then clicks on the input field using JavaScript to ensure it is focused, and finally enters the specified text value into the field.",
+      "documentation_source": "author",
+      "natural_language_summary": "Use this keyword to enter a value into the Input Field. It first identifies the input field using the provided label name, waits for the field to become visible, and scrolls it into view. It then clicks on the input field using JavaScript to ensure it is focused, and finally enters the specified text value into the field.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "input",
+        "field"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Enter Date",
+      "arguments": [
+        "${dateNameArg}",
+        "${dateValue}"
+      ],
+      "documentation": "Enters a date value into a date input field. It first identifies the date field using the provided field name, waits for the field to become visible, and scrolls it into view. It then enters the specified date value into the field.",
+      "documentation_source": "author",
+      "natural_language_summary": "Enters a date value into a date input field. It first identifies the date field using the provided field name, waits for the field to become visible, and scrolls it into view. It then enters the specified date value into the field.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "date"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Enter Time",
+      "arguments": [
+        "${timeNameArg}",
+        "${timeValue}"
+      ],
+      "documentation": "Enters a time value into a time input field. It first identifies the time field using the provided field name, waits for the field to become visible, and scrolls it into view. The keyword clears any existing value by selecting the text and using the BACKSPACE key before entering the specified time value into the field.",
+      "documentation_source": "author",
+      "natural_language_summary": "Enters a time value into a time input field. It first identifies the time field using the provided field name, waits for the field to become visible, and scrolls it into view. The keyword clears any existing value by selecting the text and using the BACKSPACE key before entering the specified time value into the field.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "time"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Click Checkbox",
+      "arguments": [
+        "${checkboxNameArg}"
+      ],
+      "documentation": "Check or uncheck a Salesforce checkbox. It identifies the checkbox element using the provided checkbox name, waits for the checkbox to become visible, scrolls it into view, and then clicks the checkbox to select or deselect it.",
+      "documentation_source": "author",
+      "natural_language_summary": "Check or uncheck a Salesforce checkbox. It identifies the checkbox element using the provided checkbox name, waits for the checkbox to become visible, scrolls it into view, and then clicks the checkbox to select or deselect it.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "checkbox"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Redirection to Record Details Page",
+      "arguments": [
+        "${entityNameArg}"
+      ],
+      "documentation": "Verifies the redirection to a record details page after a specific action, generally used after new record creation. It first identifies the record details element using the provided entity name, waits for it to become visible, and confirms its presence on the page. The test then waits for the success toast message to appear, ensuring the action was successful, and verifies that the toast message is no longer visible.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verifies the redirection to a record details page after a specific action, generally used after new record creation. It first identifies the record details element using the provided entity name, waits for it to become visible, and confirms its presence on the page. The test then waits for the success toast message to appear, ensuring the action was successful, and verifies that the toast message is no longer visible.",
+      "inferred_description": null,
+      "tags": [
+        "verification",
+        "records"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Delete Current Record",
+      "arguments": [
+        "${recordTypeArg}",
+        "${recordActionArg}=Delete"
+      ],
+      "documentation": "Deletes the current record by performing an action on the record details page header. It invokes the \"Delete\" action on the record details page header and selects the \"Delete\" button in the dialog. After the deletion, it waits for the appropriate redirection tab to become visible, ensuring the user is redirected correctly. Finally, the test verifies the appearance and disappearance of the success toast message, confirming that the deletion action was completed successfully.",
+      "documentation_source": "author",
+      "natural_language_summary": "Deletes the current record by performing an action on the record details page header. It invokes the \"Delete\" action on the record details page header and selects the \"Delete\" button in the dialog. After the deletion, it waits for the appropriate redirection tab to become visible, ensuring the user is redirected correctly. Finally, the test verifies the appearance and disappearance of the success toast message, confirming that the deletion action was completed successfully.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "delete",
+        "records"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Get Plural Form",
+      "arguments": [
+        "${recordTypeArg}"
+      ],
+      "documentation": "This keyword returns the plural form of a given record type string. It first checks if the word ends with \"y\" and the preceding character is a consonant. If this condition is true, it replaces the \"y\" with \"ies\" to form the plural. Otherwise, it appends an \"s\" to the word to form the plural. This approach is designed to handle typical English pluralization rules.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword returns the plural form of a given record type string. It first checks if the word ends with \"y\" and the preceding character is a consonant. If this condition is true, it replaces the \"y\" with \"ies\" to form the plural. Otherwise, it appends an \"s\" to the word to form the plural. This approach is designed to handle typical English pluralization rules.",
+      "inferred_description": null,
+      "tags": [
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Record Creation With Data",
+      "arguments": [
+        "${recordDataTypeArg}",
+        "${recordDataFieldArg}",
+        "${recordDataArg}"
+      ],
+      "documentation": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. It first replaces spaces in the provided record type and field names with empty strings. Then it constructs the locator for the record field, incorporating the field name and the expected data. After waiting for the field to be visible on the page, it scrolls to the field and checks that the data matches the expected value. Use 'Checkbox-Check' and 'Checkbox-Uncheck' for verifying checkboxes.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. It first replaces spaces in the provided record type and field names with empty strings. Then it constructs the locator for the record field, incorporating the field name and the expected data. After waiting for the field to be visible on the page, it scrolls to the field and checks that the data matches the expected value. Use 'Checkbox-Check' and 'Checkbox-Uncheck' for verifying checkboxes.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "verification"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Related Record Dropdown",
+      "arguments": [
+        "${relatedRecordDropdownArg}",
+        "${relatedRecordDropdownOptionArg}"
+      ],
+      "documentation": "This keyword is used to open a related record dialog by interacting with a dropdown on the record details page. It first identifies the dropdown element using the provided related record type, waits for it to become visible, and scrolls it into view. After clicking on the dropdown, the keyword locates the specified dropdown option, waits for it to be visible, and clicks on it to open the related record dialog. Finally, it ensures that the dialog is visible.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword is used to open a related record dialog by interacting with a dropdown on the record details page. It first identifies the dropdown element using the provided related record type, waits for it to become visible, and scrolls it into view. After clicking on the dropdown, the keyword locates the specified dropdown option, waits for it to be visible, and clicks on it to open the related record dialog. Finally, it ensures that the dialog is visible.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "records",
+        "related",
+        "record"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Get Success Toast Message Related Record Creation ID",
+      "arguments": [],
+      "documentation": "This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "related",
+        "record",
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Related Records Creation",
+      "arguments": [
+        "${relatedRecordNameArg}"
+      ],
+      "documentation": "Verifies the creation of related records by opening the Related Records List View from the Record Details Page. It clicks on the \"View All\" button in the related records section, waits for the list view to become visible, and then verifies the presence of the newly created related record. Specifically, it verifies the presence of the record ID in the related records list view, using the Verify Table Cell Record keyword.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verifies the creation of related records by opening the Related Records List View from the Record Details Page. It clicks on the \"View All\" button in the related records section, waits for the list view to become visible, and then verifies the presence of the newly created related record. Specifically, it verifies the presence of the record ID in the related records list view, using the Verify Table Cell Record keyword.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "verification",
+        "related",
+        "record"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Table Cell Record",
+      "arguments": [
+        "${recordIdArg}",
+        "${recordIdPos}=1"
+      ],
+      "documentation": "Verify the presence of a record ID in a table cell on a page. It checks if the specified record ID appears within a table. This keyword is useful when verifying the presence of newly created records or ensuring that a record exists in a table based on its ID.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verify the presence of a record ID in a table cell on a page. It checks if the specified record ID appears within a table. This keyword is useful when verifying the presence of newly created records or ensuring that a record exists in a table based on its ID.",
+      "inferred_description": null,
+      "tags": [
+        "verification",
+        "records",
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Return Back To Parent",
+      "arguments": [],
+      "documentation": "Navigates back to the parent record from a related record view. It reloads the page, waits for the breadcrumb (indicating the parent record) to become visible, and clicks on it to return to the parent record's details page. After navigating back, it ensures the parent record is visible and confirms successful navigation.",
+      "documentation_source": "author",
+      "natural_language_summary": "Navigates back to the parent record from a related record view. It reloads the page, waits for the breadcrumb (indicating the parent record) to become visible, and clicks on it to return to the parent record's details page. After navigating back, it ensures the parent record is visible and confirms successful navigation.",
+      "inferred_description": null,
+      "tags": [
+        "navigation",
+        "back"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Return To Previous Page",
+      "arguments": [],
+      "documentation": "Navigates back to the previous page in the browser history. It simulates the \"Back\" action, typically used to return to the previous screen or page from the current one.",
+      "documentation_source": "author",
+      "natural_language_summary": "Navigates back to the previous page in the browser history. It simulates the \"Back\" action, typically used to return to the previous screen or page from the current one.",
+      "inferred_description": null,
+      "tags": [
+        "navigation",
+        "back"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Convert View From Intelligent To List",
+      "arguments": [],
+      "documentation": "Converts the current view from an \"Intelligent View\" to a \"List View.\" It first checks if the \"Intelligent View\" button is present and visible on the page. If the button is not found, it clicks the \"List View\" button to switch the view to a list format.",
+      "documentation_source": "author",
+      "natural_language_summary": "Converts the current view from an \"Intelligent View\" to a \"List View.\" It first checks if the \"Intelligent View\" button is present and visible on the page. If the button is not found, it clicks the \"List View\" button to switch the view to a list format.",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "view"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Prepare Quick Action Header Locator",
+      "arguments": [
+        "${recordTypeArg}",
+        "${recordActionArg}=${EMPTY}"
+      ],
+      "documentation": "This keyword is used to prepare the locator for the quick action header based on the provided record type and optional record action. If a record action is provided, it constructs the locator for the quick action header related to that action. If no action is specified, it generates the locator for the quick action dropdown.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword is used to prepare the locator for the quick action header based on the provided record type and optional record action. If a record action is provided, it constructs the locator for the quick action header related to that action. If no action is specified, it generates the locator for the quick action dropdown.",
+      "inferred_description": null,
+      "tags": [
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Perform Action On Record Details Page Header",
+      "arguments": [
+        "${recordTypeArg}",
+        "${recordActionArg}=${EMPTY}"
+      ],
+      "documentation": "This keyword performs an action (such as clicking) on the record details page header. It first checks if the action button is visible, and if it exists, clicks it. If the button doesn't exist, the keyword will first click on the dropdown to make the action button visible and then perform the action.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword performs an action (such as clicking) on the record details page header. It first checks if the action button is visible, and if it exists, clicks it. If the button doesn't exist, the keyword will first click on the dropdown to make the action button visible and then perform the action.",
+      "inferred_description": null,
+      "tags": [
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select Account Record Type",
+      "arguments": [
+        "${accountRecordTypeArg}"
+      ],
+      "documentation": "This keyword is used to select a specific account record type on the Account Record Type Dialog selection page. It waits for the account record type to become visible, scrolls the element into view, and clicks on it. After selecting the record type, it navigates to the next step by clicking the \"Next\" button in the dialog and verifies that the dialog title for the new account record type creation page is visible.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword is used to select a specific account record type on the Account Record Type Dialog selection page. It waits for the account record type to become visible, scrolls the element into view, and clicks on it. After selecting the record type, it navigates to the next step by clicking the \"Next\" button in the dialog and verifies that the dialog title for the new account record type creation page is visible.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "radio",
+        "button"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Visit Dynamic Form Section",
+      "arguments": [
+        "${dynamicFormInformationSectionArg}"
+      ],
+      "documentation": "This keyword is used to navigate to a specific section within a dynamic form by locating the section title based on the provided argument. It waits for the section to become visible on the page and scrolls the section into view for user interaction.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword is used to navigate to a specific section within a dynamic form by locating the section title based on the provided argument. It waits for the section to become visible on the page and scrolls the section into view for user interaction.",
+      "inferred_description": null,
+      "tags": [
+        "navigation",
+        "records"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Change List View",
+      "arguments": [
+        "${listViewRecordTypeArg}",
+        "${listViewDropdownOptionArg}"
+      ],
+      "documentation": "Changes the view type in the list view.",
+      "documentation_source": "author",
+      "natural_language_summary": "Changes the view type in the list view.",
+      "inferred_description": null,
+      "tags": [
+        "pick",
+        "list",
+        "interaction"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Search In List View",
+      "arguments": [
+        "${recordIdArg}"
+      ],
+      "documentation": "Searches for a specific record in the list view. Inputs the record ID into the search box, performs the search, and verifies the presence of the record in the resulting list.",
+      "documentation_source": "author",
+      "natural_language_summary": "Searches for a specific record in the list view. Inputs the record ID into the search box, performs the search, and verifies the presence of the record in the resulting list.",
+      "inferred_description": null,
+      "tags": [
+        "search",
+        "in",
+        "list",
+        "view",
+        "interaction"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Get Lead Convert Dialog New Fields",
+      "arguments": [
+        "${fieldNameArg}"
+      ],
+      "documentation": "This keyword retrieves the prefilled value for a \"Create New Field\" within the Lead Conversion dialog. It constructs the appropriate locator by replacing a placeholder with the provided field name argument, waits until the element is present on the page, extracts the value from the element’s title attribute, and returns that value.",
+      "documentation_source": "author",
+      "natural_language_summary": "This keyword retrieves the prefilled value for a \"Create New Field\" within the Lead Conversion dialog. It constructs the appropriate locator by replacing a placeholder with the provided field name argument, waits until the element is present on the page, extracts the value from the element’s title attribute, and returns that value.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "utilities",
+        "modal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Record From Table View",
+      "arguments": [
+        "${fullRecordId}",
+        "${cleanRecordId}=None",
+        "${searchPosition}=1"
+      ],
+      "documentation": "Opens a record from a table view by clicking on the record ID within a table cell on the page. This keyword dynamically constructs the locator for the table cell using the provided record identifier and optional search position, then clicks the element to open the record. It waits for the record’s detail page to load and verifies that the record is displayed by checking for the corresponding element on the page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens a record from a table view by clicking on the record ID within a table cell on the page. This keyword dynamically constructs the locator for the table cell using the provided record identifier and optional search position, then clicks the element to open the record. It waits for the record’s detail page to load and verifies that the record is displayed by checking for the corresponding element on the page.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "records",
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Change Opportunity Record Status",
+      "arguments": [
+        "${statusOptionArg}",
+        "${statusStage}=None"
+      ],
+      "documentation": "Updates the status of an Opportunity record in Salesforce. It locates the relevant status option, interacts with it, and submits the change. If necessary, it handles additional stage selections for closed statuses. The process includes validation steps to ensure the update is successful and visible on the interface.",
+      "documentation_source": "author",
+      "natural_language_summary": "Updates the status of an Opportunity record in Salesforce. It locates the relevant status option, interacts with it, and submits the change. If necessary, it handles additional stage selections for closed statuses. The process includes validation steps to ensure the update is successful and visible on the interface.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "records",
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Error Message For Field",
+      "arguments": [
+        "${pageType}",
+        "${reqFieldName}",
+        "${expectedErrorMessage}"
+      ],
+      "documentation": "Verifies the error message for a specific field, accepting three arguments: page type (Dialog/Page), field name, and expected error message.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verifies the error message for a specific field, accepting three arguments: page type (Dialog/Page), field name, and expected error message.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "verification",
+        "modal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Verify Field Present In Error Snag",
+      "arguments": [
+        "${reqSnagFieldName}"
+      ],
+      "documentation": "Verifies that the mandatory field is present in the Error Snag Popup.",
+      "documentation_source": "author",
+      "natural_language_summary": "Verifies that the mandatory field is present in the Error Snag Popup.",
+      "inferred_description": null,
+      "tags": [
+        "records",
+        "verification",
+        "modal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Lucy ChatBot",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Opens Lucy ChatBot.",
+      "inferred_description": "Opens Lucy ChatBot.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Close ChatBot",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Closes ChatBot.",
+      "inferred_description": "Closes ChatBot.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Click Open Messaging Menu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Clicks Open Messaging Menu.",
+      "inferred_description": "Clicks Open Messaging Menu.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Click ChatBot Close Button",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Clicks ChatBot Close Button.",
+      "inferred_description": "Clicks ChatBot Close Button.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Enter Login Details",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Enters data into Login Details.",
+      "inferred_description": "Enters data into Login Details.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Open Home Page",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Opens Home Page.",
+      "inferred_description": "Opens Home Page.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Verify User is Logged In Successfully",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that User is Logged In Successfully.",
+      "inferred_description": "Verifies that User is Logged In Successfully.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Login to Lucy Chatbot",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Performs login: Login to Lucy Chatbot.",
+      "inferred_description": "Performs login: Login to Lucy Chatbot.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Enter Email OTP",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Enters data into Email OTP.",
+      "inferred_description": "Enters data into Email OTP.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Verify Main Menu Is Available To The User",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Verifies that Main Menu Is Available To The User.",
+      "inferred_description": "Verifies that Main Menu Is Available To The User.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Select Main Menu Option",
+      "arguments": [
+        "${menuOption}"
+      ],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Main Menu Option.",
+      "inferred_description": "Selects Main Menu Option.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Select Sub Menu Option",
+      "arguments": [
+        "${subMenuOption}"
+      ],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Sub Menu Option.",
+      "inferred_description": "Selects Sub Menu Option.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Select Choice",
+      "arguments": [
+        "${chooseYesOrNo}"
+      ],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Choice.",
+      "inferred_description": "Selects Choice.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Select Back To Main Menu",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Selects Back To Main Menu.",
+      "inferred_description": "Selects Back To Main Menu.",
+      "tags": [],
+      "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    }
+  ]
+}
