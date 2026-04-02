@@ -1,0 +1,63 @@
+name: "Bug Report"
+description: "Report an issue in the L360 Automation Project"
+labels: ["bug", "keyword", "locator"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **⚠️ Support Requests**  
+        If you need help using the L360 Automation Project, please do not open an issue.  
+        Instead, reach out in Slack for assistance.  
+
+  - type: textarea
+    id: bug_description
+    attributes:
+      label: "Describe the Bug"
+      description: "Provide a clear and concise description of the issue."
+      placeholder: "What did you expect to happen, and what happened instead?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Steps to Reproduce"
+      description: "List the steps to reproduce the issue."
+      placeholder: |
+        1. Step one...
+        2. Step two...
+        3. Step three...
+        4. ...
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: "## Context\nPlease provide the following details to help diagnose the issue."
+
+  - type: textarea
+    id: robotframework
+    attributes:
+      label: "Robot Framework & Python Versions"
+      description: "Paste the output of `robot --version` here."
+      placeholder: "Example: Robot Framework 6.0, Python 3.10"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: project_environment
+    attributes:
+      label: "Project Environment"
+      description: "How are you running the L360 Automation Project?"
+      multiple: true
+      options:
+        - "Using venv"
+        - "Without venv"
+
+  - type: textarea
+    id: additional_information
+    attributes:
+      label: "Additional Information"
+      description: "Add any extra details or context about the issue."
+      placeholder: "Logs, error messages, screenshots, etc."

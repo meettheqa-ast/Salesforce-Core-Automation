@@ -1,0 +1,9 @@
+# Ignore the entire venv folder
+venv/
+
+# Ignore all files inside each folder within Results, but keep the folders
+Results/
+
+# Ignore all allure files present within output folder.
+output/
+allure-report/

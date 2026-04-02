@@ -1,0 +1,6 @@
+robotframework-seleniumlibrary
+robotframework-tidy
+robotframework-faker
+robotframework-requests
+setuptools
+allure-robotframework

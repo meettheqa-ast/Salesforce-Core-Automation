@@ -1,0 +1,52 @@
+name: "Feature Request"
+description: "Suggest a new feature or improvement for L360 Automation Project"
+labels: ["enhancement", "keyword", "locator"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **⚠️ Support Requests**  
+        If you need help using the L360 Automation Project, please do not open an issue.  
+        Instead, reach out in Slack for assistance.  
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: "Feature Type"
+      description: "Please describe the nature of your feature request."
+      options:
+        - "Functionality to solve a current problem or limitation in L360 Automation Project."
+        - "Extension to existing L360 Automation Project functionality (e.g., broader applicability of an existing Keyword)."
+        - "A new Keyword for L360 Automation Project."
+        - "Enhancement related to L360 Automation Project’s architecture or overall capabilities."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Does your feature request solve a current problem?"
+      description: "Provide a clear and concise description of the problem."
+      placeholder: |
+        Please describe how the problem occurs, including which keyword is run and in what context.
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Describe the solution you'd like"
+      description: "Provide a clear and concise description of what you want to happen."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Describe alternatives you've considered"
+      description: "Provide a brief description of any alternative solutions or workarounds you've tried."
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Additional Context"
+      description: "Add any other relevant details, screenshots, or examples to support your feature request."
