@@ -1,12 +1,18 @@
 *** Settings ***
 Library     SeleniumLibrary
 Library     String
+Library     Dialogs
+# EnvData must load before GlobalVariables / PlatformData so runtime URL & login
+# (written by run_test.py / Streamlit) win over repo defaults. Robot keeps first scalar definition.
+Resource    ../../Resources/TestData/EnvData.robot
 Resource    GlobalVariables.robot
 Resource    GlobalLocators.robot
 Resource    ../../Resources/TestData/Platform/PlatformData.robot
-Resource    ../../Resources/TestData/EnvData.robot
 # libdoc Resources/Common/GlobalKeywords.robot SF-Core-Keywords-Library.html
 
+*** Variables ***
+# When true, login waits for you to finish MFA/OTP in the browser (Watch mode). Overridden by robot -v.
+${MFA_PAUSE_FOR_MANUAL_COMPLETION}=    ${FALSE}
 
 *** Keywords ***
 Begin Web Test
@@ -33,17 +39,23 @@ End Web Test
     Close All Browsers
 
 Login To Sandbox
-    [Documentation]    The Login To Sandbox test case automates the process of logging into the Sandbox environment by navigating to the specified test URL, entering the username and password into their respective input fields, clicking the login button, and waiting for the Sandbox 360 logo to appear, indicating a successful login.
+    [Documentation]    Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.
     [Tags]    login
-    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}
+    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
     Go To    ${instanceURL}
     Input Text    ${sandboxUserName}    ${instanceUsername}
     Input Text    ${sandboxPassword}    ${instancePassword}
     Click Element    ${sandboxLoginButton}
-    Wait Until Element Is Visible    ${sandboxLaunch360Logo}
+    ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    30s
+    IF    not ${ok} and ${allow_mfa_manual_pause}
+        Pause Execution    Complete MFA / OTP in the browser window, then click OK here to continue the test.
+        Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
+    ELSE IF    not ${ok}
+        Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Run in Watch mode so the app can pause for manual OTP. (2) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (3) Use a sandbox integration user exempt from MFA if policy allows. (4) For TOTP secrets, extend automation to submit the verification code—see your security team.
+    END
 
 Launch App
-    [Documentation]    Launches an app using Salesforce app menu / app launcher. It navigates to the app launcher, searches for the specified app by name, and waits for the app to appear. It then clicks on the app to open it and waits for the launch 360 logo to become visible. After confirming the app is active, it verifies the app's presence on the page to ensure successful launch. Finally, a short pause is added to confirm the app is fully loaded.
+    [Documentation]    Opens an app from the App Launcher. Uses exact title match when possible. If the menu item text does not exactly match (typos, "Mark Anthony" vs "Mark Anthony Group"), still types the given name into search and clicks the **first** visible result—Salesforce search is usually fuzzy, so this tolerates approximate names from prompts.
     [Tags]    navigation
     [Arguments]    ${appName}
     ${activeApp}=    Replace String    ${activeAppLocator}    <app-name>    ${appName}
@@ -51,12 +63,23 @@ Launch App
     IF  not ${booleanStatus}
         Click Element    ${appLauncher}
         Wait Until Element Is Visible    ${searchAppLauncher}
+        Clear Element Text    ${searchAppLauncher}
         Input Text    ${searchAppLauncher}    ${appName}
+        Sleep    0.5s
         ${appInLauncher}=    Replace String    ${appInLauncherLocator}    <app-name>    ${appName}
-        Wait Until Element Is Visible    ${appInLauncher}
-        Click Element    ${appInLauncher}
+        ${exactHit}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${appInLauncher}    5s
+        IF    ${exactHit}
+            Click Element    ${appInLauncher}
+        ELSE
+            ${firstHit}=    Set Variable    xpath:(//one-app-launcher-menu-item)[1]
+            Wait Until Element Is Visible    ${firstHit}    15s
+            Click Element    ${firstHit}
+        END
         Wait Until Element Is Visible    ${sandboxlaunch360logo}
-        Page Should Contain Element    ${activeApp}
+        ${verified}=    Run Keyword And Return Status    Page Should Contain Element    ${activeApp}
+        IF    not ${verified}
+            Log    Opened first App Launcher search result for "${appName}"; active header may not match the string exactly (typos / alternate app title).    WARN
+        END
     END
     Sleep    3s
 
@@ -72,13 +95,34 @@ Select App Tab
     Page Should Contain Element    ${activeTab}
 
 Open New Dialog
-    [Documentation]    Opens a new dialog within an application. It begins by clicking the element to create a new record, dynamically identifies the dialog by its name, waits for the dialog title to become visible, and then clicks on it to ensure proper interaction with the modal.
+    [Documentation]    Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).
     [Tags]    modal    navigation
     [Arguments]    ${dialogName}
-    Click Element    ${newRecord}
+    Wait Until Element Is Visible    ${newRecord}    timeout=20s
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=15s
+    Run Keyword And Ignore Error    Press Keys    xpath://body    ESCAPE
+    Sleep    0.3s
+    ${overlay}=    Run Keyword And Return Status    Element Should Be Visible    ${sfRecordTypeOverlay}    2s
+    IF    ${overlay}
+        Run Keyword And Ignore Error    Press Keys    xpath://body    ESCAPE
+        Sleep    0.5s
+        Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${sfRecordTypeOverlay}    timeout=10s
+    END
+    Scroll Element Into View With Fallback    ${newRecord}
+    Sleep    0.5s
+    ${clicked}=    Run Keyword And Return Status    Click Element    ${newRecord}
+    IF    not ${clicked}
+        ${nr}=    Get Webelement    ${newRecord}
+        Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${nr}
+    END
     ${newRecordDialogTitle}=    Replace String    ${newRecordDialogTitleLocator}    <record-name>    ${dialogName}
-    Wait Until Element Is Visible    ${newRecordDialogTitle}
-    Click Element    ${newRecordDialogTitle}
+    Wait Until Element Is Visible    ${newRecordDialogTitle}    timeout=20s
+    Scroll Element Into View With Fallback    ${newRecordDialogTitle}
+    ${titleClick}=    Run Keyword And Return Status    Click Element    ${newRecordDialogTitle}
+    IF    not ${titleClick}
+        ${h2}=    Get Webelement    ${newRecordDialogTitle}
+        Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${h2}
+    END
 
 Open Item
     [Documentation]    Opens a specific item within the app by searching for it in the app launcher. It then clicks the app launcher, enters the item name into the search field, and waits for the item to appear. It then clicks on the item to open it and waits for the item's logo to become visible, indicating the item has been successfully launched. A short pause is added at the end to ensure the item has fully loaded.
@@ -127,13 +171,23 @@ Select Dialog Button
     Wait Until Element Is Visible    ${buttonAction}
     Click Button    ${buttonAction}
 
+Scroll Element Into View With Fallback
+    [Documentation]    Uses Selenium scroll; if it fails (common for zero-size SLDS labels/spans), scrolls via JavaScript scrollIntoView.
+    [Tags]    utilities
+    [Arguments]    ${locator}
+    ${ok}=    Run Keyword And Return Status    Scroll Element Into View    ${locator}
+    IF    not ${ok}
+        ${el}=    Get Webelement    ${locator}
+        Execute Javascript    arguments[0].scrollIntoView({block: 'center'});    ARGUMENTS    ${el}
+    END
+
 Open Dropdown
     [Documentation]    Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.
     [Tags]    interaction    pick list
     [Arguments]    ${dropdownFieldArg}
     ${dropdownField}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
     Wait Until Element Is Visible    ${dropdownField}
-    Scroll Element Into View    ${dropdownField}
+    Scroll Element Into View With Fallback    ${dropdownField}
     Sleep    1s
     ${dropdownFieldJS}=    Get Webelement    ${dropdownField}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${dropdownFieldJS}
@@ -148,8 +202,17 @@ Select Dropdown Option
     ...    ${dropdownNameArg}
     ${dropdownOption}=    Replace String    ${dropdownOptionsDialogLocator}    <dropdown-value>    ${dropdownOptionArg}
     Wait Until Element Is Visible    ${dropdownOption}
-    Scroll Element Into View    ${dropdownOption}
+    Scroll Element Into View With Fallback    ${dropdownOption}
     Click Element    ${dropdownOption}
+
+Select First Lightning Dropdown Option In Modal
+    [Documentation]    After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.
+    [Tags]    interaction    pick list
+    ${firstOpt}=    Set Variable
+    ...    xpath:(//*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option' and string-length(@data-value) > 0])[1]
+    Wait Until Element Is Visible    ${firstOpt}    15s
+    ${el}=    Get Webelement    ${firstOpt}
+    Execute Javascript    arguments[0].scrollIntoView({block: 'center'}); arguments[0].click();    ARGUMENTS    ${el}
 
 Enter Text
     [Documentation]    Use this keyword to enter a value into the Input Field. It first identifies the input field using the provided label name, waits for the field to become visible, and scrolls it into view. It then clicks on the input field using JavaScript to ensure it is focused, and finally enters the specified text value into the field.
@@ -157,7 +220,7 @@ Enter Text
     [Arguments]    ${labelName}    ${textValue}
     ${inputField}=    Replace String    ${inputFieldDialogLocator}    <field-name>    ${labelName}
     Wait Until Element Is Visible    ${inputField}
-    Scroll Element Into View    ${inputField}
+    Scroll Element Into View With Fallback    ${inputField}
     ${inputTextFieldJS}=    Get Webelement    ${inputField}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${inputTextFieldJS}
     Input Text    ${inputField}    ${textValue}
@@ -332,14 +395,36 @@ Return To Previous Page
     Go Back
 
 Convert View From Intelligent To List
-    [Documentation]    Converts the current view from an "Intelligent View" to a "List View." It first checks if the "Intelligent View" button is present and visible on the page. If the button is not found, it clicks the "List View" button to switch the view to a list format.
+    [Documentation]    Switches to List view when Salesforce shows Intelligence/List toggles. If **no** toggle appears (already in List view, split view, or org-specific layout), exits without failing—this is the usual fix for "List View button not found". Otherwise clicks List View using exact then flexible locators.
     [Tags]    utilities    view
-    ${isIntelligentListButtonPresent}=    Run Keyword And Return Status
-    ...    Element Should Be Visible
-    ...    ${intelligentListButton}
-    IF    not ${isIntelligentListButtonPresent}
-        Click Button    ${listViewButton}
+    Sleep    1s
+    ${hasIntel}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${intelligentListButton}    timeout=4s
+    ${listExact}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${listViewButton}    timeout=5s
+    ${listFlex}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${listViewButtonFlexible}    timeout=3s
+    IF    not ${hasIntel} and not ${listExact} and not ${listFlex}
+        Log    No List/Intelligence view toggle found—likely already in List view; continuing.    INFO
+        RETURN
     END
+    IF    ${listExact}
+        Scroll Element Into View With Fallback    ${listViewButton}
+        ${ok}=    Run Keyword And Return Status    Click Element    ${listViewButton}
+        IF    ${ok}
+            Sleep    1s
+            RETURN
+        END
+    END
+    IF    ${listFlex}
+        Scroll Element Into View With Fallback    ${listViewButtonFlexible}
+        ${ok2}=    Run Keyword And Return Status    Click Element    ${listViewButtonFlexible}
+        IF    ${ok2}
+            Sleep    1s
+            RETURN
+        END
+    END
+    Log    Could not click a List View control; page may still work for New / list actions.    WARN
 
 Prepare Quick Action Header Locator
     [Documentation]    This keyword is used to prepare the locator for the quick action header based on the provided record type and optional record action. If a record action is provided, it constructs the locator for the quick action header related to that action. If no action is specified, it generates the locator for the quick action dropdown.
@@ -392,14 +477,14 @@ Select Account Record Type
     ...    <account-record-type>
     ...    ${accountRecordTypeArg}
     Wait Until Element Is Visible    ${accountRecordType}
-    Scroll Element Into View    ${accountRecordType}
+    Scroll Element Into View With Fallback    ${accountRecordType}
     Click Element    ${accountRecordType}
     Select Dialog Button    Next
     ${newRecordDialogTitle}=    Replace String    ${newRecordDialogTitleLocator}    <record-name>    Account
     Wait Until Element Is Visible    ${newRecordDialogTitle}
 
 Visit Dynamic Form Section
-    [Documentation]    This keyword is used to navigate to a specific section within a dynamic form by locating the section title based on the provided argument. It waits for the section to become visible on the page and scrolls the section into view for user interaction.
+    [Documentation]    Scrolls to a dynamic form section by section title. Targets the section ``h3`` (not the inner span) and uses a JS scroll fallback so SLDS does not throw "element has no size and location".
     [Tags]    navigation    records
     [Arguments]    ${dynamicFormInformationSectionArg}
     ${dynamicFormInformationSection}=    Replace String
@@ -407,7 +492,7 @@ Visit Dynamic Form Section
     ...    <title-name>
     ...    ${dynamicFormInformationSectionArg}
     Wait Until Page Contains Element    ${dynamicFormInformationSection}
-    Scroll Element Into View    ${dynamicFormInformationSection}
+    Scroll Element Into View With Fallback    ${dynamicFormInformationSection}
 
 Change List View
     [Documentation]    Changes the view type in the list view.

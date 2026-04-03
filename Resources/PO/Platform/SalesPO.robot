@@ -6,6 +6,52 @@ Resource    ../../Common/GlobalKeywords.robot
 
 
 *** Keywords ***
+Go To Accounts Tab For App
+    [Documentation]    Launches the given app (as shown in App Launcher), opens Accounts, switches to List view.
+    [Arguments]    ${app_display_name}=${salesAutomationAppName}
+    Launch App    ${app_display_name}
+    Select App Tab    Accounts
+    Convert View From Intelligent To List
+
+Fill New Account Dialog After Record Type Selected
+    [Documentation]    After ``Open New Dialog    Account`` and ``Select Account Record Type`` (including Next): sets Account Name (random if blank), Customer Type, Email, random Phone, then for each extra label tries to open that picklist and take the first real Lightning option.
+    [Arguments]    ${customer_type}    ${email}    ${account_name}=${EMPTY}    @{picklists_use_first_option}
+    IF    '${account_name}' == '${EMPTY}'
+        ${suffix}=    Evaluate    random.randint(10000, 99999)    modules=random
+        ${account_name}=    Set Variable    Auto Acct ${suffix}
+    END
+    ${a}=    Evaluate    random.randint(100, 999)    modules=random
+    ${b}=    Evaluate    random.randint(100, 999)    modules=random
+    ${c}=    Evaluate    random.randint(1000, 9999)    modules=random
+    ${phone}=    Set Variable    ${a}-${b}-${c}
+    Enter Text    Account Name    ${account_name}
+    Open Dropdown    Customer Type
+    Select Dropdown Option    Customer Type    ${customer_type}
+    Enter Text    Email    ${email}
+    Enter Text    Phone    ${phone}
+    FOR    ${label}    IN    @{picklists_use_first_option}
+        ${exists}=    Run Keyword And Return Status    Page Should Contain Element
+        ...    xpath://*[contains(@class,'modal-container')]//button[contains(@aria-label,'${label}')]
+        IF    ${exists}
+            Open Dropdown    ${label}
+            Select First Lightning Dropdown Option In Modal
+        END
+    END
+
+Create BC Commercial Account In App
+    [Documentation]    End-to-end: Accounts tab → New Account → record type BC Commercial → fill LIC / email / random phone and optional first-option picklists (e.g. Industry). Pass app name for orgs that use a custom app (e.g. Mark Anthony Group).
+    [Arguments]
+    ...    ${app_display_name}=${salesAutomationAppName}
+    ...    ${customer_type}=LIC
+    ...    ${email}=m.sheth@astounddigital.com
+    ...    ${record_type_label}=BC Commercial
+    ...    @{picklists_use_first_option}
+    Go To Accounts Tab For App    ${app_display_name}
+    Open New Dialog    Account
+    Select Account Record Type    ${record_type_label}
+    Fill New Account Dialog After Record Type Selected    ${customer_type}    ${email}    ${EMPTY}    @{picklists_use_first_option}
+    Select Dialog Button    Save
+
 Create A New Lead
     Open Dropdown    Lead Status
     Select Dropdown Option    Lead Status    ${leadStatusOption}

@@ -97,6 +97,9 @@ def build_robot_run(
     ]
     if headless:
         cmd.extend(["-v", "headless:true"])
+    else:
+        # Visible browser: allow Login To Sandbox to pause for manual MFA/OTP after password step.
+        cmd.extend(["-v", "MFA_PAUSE_FOR_MANUAL_COMPLETION:true"])
     cmd.append(str(test_target))
     cmd.extend(extra)
     return cmd, out_dir

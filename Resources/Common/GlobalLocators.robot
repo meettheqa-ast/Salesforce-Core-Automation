@@ -20,6 +20,8 @@ ${activeTabLocator}=                                    xpath://lst-breadcrumbs/
 
 # New Record Dialog
 ${newRecord}=                                           xpath://a[@role='button']//div[@title='New']
+# Record-type / picker layer that can sit above the list header and intercept New (Aura forceChangeRecordType)
+${sfRecordTypeOverlay}=                                 xpath://div[contains(@class,'forceChangeRecordType')]
 # ${newRecordDialogTitleLocator}=    xpath://h2[normalize-space()='New <record-name>']
 ${newRecordDialogTitleLocator}=                         xpath://h2[starts-with(normalize-space(), 'New ') and contains(normalize-space(), '<record-name>')]
 
@@ -90,15 +92,16 @@ ${relatedRecordParentBreadcrumbLocator}=                xpath://nav[@role='navig
 
 ${spinnerLoadingWOLocator}=                             xpath://lightning-spinner
 
-# List view button locator used for converting intelligent view to list view
+# List view toggle (exact + flexible—LWC / labels vary by org)
 ${listViewButton}=                                      xpath://button[normalize-space()='List View']
+${listViewButtonFlexible}=                              xpath:(//*[self::button or self::a][contains(normalize-space(.), 'List View')])[1]
 ${intelligentListButton}=                               xpath://div[@title='Intelligence View']
 
 # Select Record Type In Account Dialog
 ${accountRecordTypeLocator}=                            xpath://*[contains(@class,'modal-container')]//div[@class='changeRecordTypeOptionLeftColumn']/following-sibling::div//*[normalize-space(text())='<account-record-type>']
 
-# Dynamic Form Section Title Locator
-${dynamicFormInformationSectionLocator}=                xpath://h3[contains(@class, 'slds-section__title')]//span[text()='<title-name>']
+# Dynamic Form Section — target the h3 (has layout); the inner span often has zero size and breaks Scroll Into View.
+${dynamicFormInformationSectionLocator}=                xpath://h3[contains(@class, 'slds-section__title')][.//span[normalize-space()='<title-name>']]
 
 # Locator for Empty Message Container that appears when no record is found through search.
 ${emptyContainerListViewLocator}=                       xpath://div[contains(@class,'emptyContent')]

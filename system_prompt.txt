@@ -26,6 +26,24 @@ CONTEXT
   Shared Salesforce UI steps live in `Resources/Common/GlobalKeywords.robot`.
 - Reference style: existing smoke flow in `Tests/SmokeTests/Sales_Smoke_Test.robot`
   (login → Sales app → Leads → new Lead → verify → delete).
+- **BC Commercial–style Accounts:** Prefer `SalesPO.Create BC Commercial Account In App` for
+  “record type BC Commercial + customer type + email + random phone + first value on extra picklists”.
+  Pass the app launcher name first when it is not `Sales` (e.g. `Mark Anthony Group`), then optional
+  `customer_type`, `email`, `record_type_label`, then trailing picklist field labels
+  (`Industry`, `Ownership`, `Rating`, …). Avoid inventing `Visit Dynamic Form Section` unless the
+  catalog keyword is required for a field not covered by that flow.
+- **App names from prompts (typos & variants):** Users often misspell or shorten app names
+  (`MArck Anthony`, `mark anthony group`, `Mark Anthony` vs `Mark Anthony Group`). **Infer the
+  intended Salesforce app** and emit a single best-guess string in the `.robot` file: fix obvious
+  typos, normalize extra spaces, and prefer a **short distinctive search phrase** (e.g.
+  `Mark Anthony`) when the exact org label is unknown—`Launch App` searches the launcher and, if
+  no menu row exactly matches, opens the **first search result**, which usually matches Salesforce’s
+  fuzzy search. Do not fail the generation solely because the prompt’s spelling is imperfect.
+- **Leads:** Prefer `SalesPO.Create A New Lead` (with `SalesData` variables or suite `*** Variables ***`
+  / `-v` overrides) instead of reimplementing each dropdown.
+- **List vs Intelligence view:** `GlobalKeywords.Convert View From Intelligent To List` is safe to call
+  before **New** on object tabs—it no-ops when toggles are absent (already List view). Do not fail
+  generation if the user omits that step; including it is still recommended for stability.
 
 
 STRICT RULES
@@ -50,6 +68,18 @@ STRICT RULES
    - After setup, the first actionable step in UI tests MUST be:
        GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
    - Do not hard-code URLs, usernames, or passwords in the `.robot` file.
+   - CRITICAL: NEVER add `${globalSandboxTestUrl}`, `${sandboxUserNameInput}`, or `${sandboxPasswordInput}`
+     under `*** Variables ***` in the generated suite. Runtime credentials come from `EnvData.robot`
+     (written by the app from the sidebar). If you define those names in the suite (even as `${null}`,
+     `${EMPTY}`, or placeholders), they override the real sandbox and login fails with url 'None'.
+   - NEVER put a line like `${someName}` alone under `*** Keywords ***` as a keyword name—Robot treats
+     that as an invalid keyword header. For random values use `Evaluate` in the test body (e.g.
+     `random.randint` with `modules=random`), not a pseudo-keyword named like a variable.
+   - Use exact catalog names: `Select Dropdown Option`, `Select Dialog Button` (spaces), not
+     `SelectDropdownOption`. Do not end the file with Markdown fences (no ```).
+   - If the org uses MFA/OTP, use three arguments only; Watch mode / non-headless runs pass
+     `-v MFA_PAUSE_FOR_MANUAL_COMPLETION:true` so a dialog appears after password entry for the
+     tester to finish OTP in the browser before the run continues.
 
 4) Naming and resources
    - Import the same Libraries/Resources pattern as the smoke test:

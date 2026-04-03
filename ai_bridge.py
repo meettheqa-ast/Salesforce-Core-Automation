@@ -8,7 +8,7 @@ Loads system_prompt.txt + keyword_catalog.json, calls Gemini or OpenAI, extracts
 Configure via .env (never commit real keys). Default provider is Gemini:
   LLM_PROVIDER=gemini          # or openai
   GEMINI_API_KEY=...           # or GOOGLE_API_KEY (from https://aistudio.google.com/apikey)
-  GEMINI_MODEL=gemini-2.0-flash
+  GEMINI_MODEL=gemini-2.5-flash   # if 429/limit 0, try gemini-2.5-flash-lite or gemini-1.5-flash
   OPENAI_API_KEY=sk-...        # if LLM_PROVIDER=openai
   OPENAI_MODEL=gpt-4o
 """
@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -160,6 +161,73 @@ def _load_catalog_compact() -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+CREDENTIAL_SUITE_VARS = (
+    "${globalSandboxTestUrl}",
+    "${sandboxUserNameInput}",
+    "${sandboxPasswordInput}",
+)
+
+
+def strip_credential_variable_overrides(robot_source: str) -> str:
+    """
+    Remove *** Variables *** lines that redefine sandbox URL / login fields.
+
+    The LLM often emits ${globalSandboxTestUrl}    ${null} etc.; those override
+    EnvData.robot (first-wins in suite scope) and Selenium then navigates to None.
+    """
+    lines = robot_source.splitlines()
+    out: list[str] = []
+    in_variables = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("***") and stripped.replace(" ", "") == "***Variables***":
+            in_variables = True
+            out.append(line)
+            continue
+        if stripped.startswith("***") and in_variables:
+            in_variables = False
+        if in_variables:
+            lead = line.lstrip()
+            if any(lead.startswith(name) for name in CREDENTIAL_SUITE_VARS):
+                continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if robot_source.endswith("\n") else "")
+
+
+_INVALID_USER_KW_NAME = re.compile(r"^\$\{[^{}]+\}\s*$")
+
+
+def strip_llm_robot_garbage(robot_source: str) -> str:
+    """
+    Remove trailing Markdown fences and invalid user-keyword headers like `${foo}` with
+    `[Arguments]    ${}` (LLM mistakes variable names for keyword names).
+    """
+    lines = robot_source.splitlines()
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        s = line.strip()
+        if s == "```" or (s.startswith("```") and not s.startswith("```robot")):
+            break
+        if _INVALID_USER_KW_NAME.match(s) and not line.startswith((" ", "\t")):
+            i += 1
+            while i < len(lines):
+                inner = lines[i]
+                if inner.startswith((" ", "\t")):
+                    i += 1
+                    continue
+                if not inner.strip():
+                    i += 1
+                    continue
+                break
+            continue
+        out.append(line)
+        i += 1
+    text = "\n".join(out)
+    return text + ("\n" if robot_source.endswith("\n") else "")
+
+
 def extract_robot_code(response_text: str) -> str:
     """
     Pull .robot source from an LLM reply (fences, delimiter, or *** sections).
@@ -218,15 +286,28 @@ def _call_gemini(system_prompt: str, user_content: str) -> str:
         )
 
     genai.configure(api_key=api_key)
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    # Free tier often has quota 0 for some models (e.g. gemini-2.0-flash); 2.5 Flash / 1.5 Flash usually work.
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     model = genai.GenerativeModel(
         model_name,
         system_instruction=system_prompt,
     )
-    resp = model.generate_content(
-        user_content,
-        generation_config={"temperature": 0.2},
-    )
+    try:
+        resp = model.generate_content(
+            user_content,
+            generation_config={"temperature": 0.2},
+        )
+    except Exception as exc:  # noqa: BLE001 — surface 429 with actionable hint
+        err = str(exc).lower()
+        if "429" in str(exc) or "quota" in err or "resource exhausted" in err:
+            raise RuntimeError(
+                "Gemini quota or rate limit (often free tier shows limit 0 for a given model). "
+                "Set GEMINI_MODEL in `.env` to a model your key can use — try "
+                "`gemini-2.5-flash`, `gemini-2.5-flash-lite`, or `gemini-1.5-flash`, then restart. "
+                "See https://ai.google.dev/gemini-api/docs/rate-limits\n"
+                f"Original error: {exc}"
+            ) from exc
+        raise
     try:
         out = (resp.text or "").strip()
     except ValueError:
@@ -270,6 +351,9 @@ def generate_test_from_prompt(user_input: str) -> Path:
     robot_source = extract_robot_code(raw)
     if not robot_source.strip():
         raise ValueError("LLM returned no usable .robot content.")
+
+    robot_source = strip_credential_variable_overrides(robot_source)
+    robot_source = strip_llm_robot_garbage(robot_source)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(robot_source.rstrip() + "\n", encoding="utf-8")

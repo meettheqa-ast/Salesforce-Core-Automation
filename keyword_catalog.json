@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-02T17:48:01.116373+00:00",
+  "generated_at": "2026-04-03T05:35:01.156414+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 126,
+  "keyword_count": 131,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -480,6 +480,43 @@
       "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
     },
     {
+      "keyword_name": "Go To Accounts Tab For App",
+      "arguments": [
+        "${app_display_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Launches the given app (as shown in App Launcher), opens Accounts, switches to List view.",
+      "documentation_source": "author",
+      "natural_language_summary": "Launches the given app (as shown in App Launcher), opens Accounts, switches to List view.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Fill New Account Dialog After Record Type Selected",
+      "arguments": [
+        "${customer_type}",
+        "${email}",
+        "${account_name}=${EMPTY}",
+        "@{picklists_use_first_option}"
+      ],
+      "documentation": "After ``Open New Dialog    Account`` and ``Select Account Record Type`` (including Next): sets Account Name (random if blank), Customer Type, Email, random Phone, then for each extra label tries to open that picklist and take the first real Lightning option.",
+      "documentation_source": "author",
+      "natural_language_summary": "After ``Open New Dialog    Account`` and ``Select Account Record Type`` (including Next): sets Account Name (random if blank), Customer Type, Email, random Phone, then for each extra label tries to open that picklist and take the first real Lightning option.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Create BC Commercial Account In App",
+      "arguments": [],
+      "documentation": "End-to-end: Accounts tab → New Account → record type BC Commercial → fill LIC / email / random phone and optional first-option picklists (e.g. Industry). Pass app name for orgs that use a custom app (e.g. Mark Anthony Group).",
+      "documentation_source": "author",
+      "natural_language_summary": "End-to-end: Accounts tab → New Account → record type BC Commercial → fill LIC / email / random phone and optional first-option picklists (e.g. Industry). Pass app name for orgs that use a custom app (e.g. Mark Anthony Group).",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
       "keyword_name": "Create A New Lead",
       "arguments": [],
       "documentation": null,
@@ -788,11 +825,12 @@
       "arguments": [
         "${instanceURL}",
         "${instanceUsername}",
-        "${instancePassword}"
+        "${instancePassword}",
+        "${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}"
       ],
-      "documentation": "The Login To Sandbox test case automates the process of logging into the Sandbox environment by navigating to the specified test URL, entering the username and password into their respective input fields, clicking the login button, and waiting for the Sandbox 360 logo to appear, indicating a successful login.",
+      "documentation": "Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
       "documentation_source": "author",
-      "natural_language_summary": "The Login To Sandbox test case automates the process of logging into the Sandbox environment by navigating to the specified test URL, entering the username and password into their respective input fields, clicking the login button, and waiting for the Sandbox 360 logo to appear, indicating a successful login.",
+      "natural_language_summary": "Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
       "inferred_description": null,
       "tags": [
         "login"
@@ -804,9 +842,9 @@
       "arguments": [
         "${appName}"
       ],
-      "documentation": "Launches an app using Salesforce app menu / app launcher. It navigates to the app launcher, searches for the specified app by name, and waits for the app to appear. It then clicks on the app to open it and waits for the launch 360 logo to become visible. After confirming the app is active, it verifies the app's presence on the page to ensure successful launch. Finally, a short pause is added to confirm the app is fully loaded.",
+      "documentation": "Opens an app from the App Launcher. Uses exact title match when possible. If the menu item text does not exactly match (typos, \"Mark Anthony\" vs \"Mark Anthony Group\"), still types the given name into search and clicks the **first** visible result—Salesforce search is usually fuzzy, so this tolerates approximate names from prompts.",
       "documentation_source": "author",
-      "natural_language_summary": "Launches an app using Salesforce app menu / app launcher. It navigates to the app launcher, searches for the specified app by name, and waits for the app to appear. It then clicks on the app to open it and waits for the launch 360 logo to become visible. After confirming the app is active, it verifies the app's presence on the page to ensure successful launch. Finally, a short pause is added to confirm the app is fully loaded.",
+      "natural_language_summary": "Opens an app from the App Launcher. Uses exact title match when possible. If the menu item text does not exactly match (typos, \"Mark Anthony\" vs \"Mark Anthony Group\"), still types the given name into search and clicks the **first** visible result—Salesforce search is usually fuzzy, so this tolerates approximate names from prompts.",
       "inferred_description": null,
       "tags": [
         "navigation"
@@ -832,9 +870,9 @@
       "arguments": [
         "${dialogName}"
       ],
-      "documentation": "Opens a new dialog within an application. It begins by clicking the element to create a new record, dynamically identifies the dialog by its name, waits for the dialog title to become visible, and then clicks on it to ensure proper interaction with the modal.",
+      "documentation": "Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).",
       "documentation_source": "author",
-      "natural_language_summary": "Opens a new dialog within an application. It begins by clicking the element to create a new record, dynamically identifies the dialog by its name, waits for the dialog title to become visible, and then clicks on it to ensure proper interaction with the modal.",
+      "natural_language_summary": "Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).",
       "inferred_description": null,
       "tags": [
         "modal",
@@ -891,6 +929,20 @@
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
     {
+      "keyword_name": "Scroll Element Into View With Fallback",
+      "arguments": [
+        "${locator}"
+      ],
+      "documentation": "Uses Selenium scroll; if it fails (common for zero-size SLDS labels/spans), scrolls via JavaScript scrollIntoView.",
+      "documentation_source": "author",
+      "natural_language_summary": "Uses Selenium scroll; if it fails (common for zero-size SLDS labels/spans), scrolls via JavaScript scrollIntoView.",
+      "inferred_description": null,
+      "tags": [
+        "utilities"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
       "keyword_name": "Open Dropdown",
       "arguments": [
         "${dropdownFieldArg}"
@@ -915,6 +967,20 @@
       "documentation": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
       "documentation_source": "author",
       "natural_language_summary": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select First Lightning Dropdown Option In Modal",
+      "arguments": [],
+      "documentation": "After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.",
+      "documentation_source": "author",
+      "natural_language_summary": "After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1146,9 +1212,9 @@
     {
       "keyword_name": "Convert View From Intelligent To List",
       "arguments": [],
-      "documentation": "Converts the current view from an \"Intelligent View\" to a \"List View.\" It first checks if the \"Intelligent View\" button is present and visible on the page. If the button is not found, it clicks the \"List View\" button to switch the view to a list format.",
+      "documentation": "Switches to List view when Salesforce shows Intelligence/List toggles. If **no** toggle appears (already in List view, split view, or org-specific layout), exits without failing—this is the usual fix for \"List View button not found\". Otherwise clicks List View using exact then flexible locators.",
       "documentation_source": "author",
-      "natural_language_summary": "Converts the current view from an \"Intelligent View\" to a \"List View.\" It first checks if the \"Intelligent View\" button is present and visible on the page. If the button is not found, it clicks the \"List View\" button to switch the view to a list format.",
+      "natural_language_summary": "Switches to List view when Salesforce shows Intelligence/List toggles. If **no** toggle appears (already in List view, split view, or org-specific layout), exits without failing—this is the usual fix for \"List View button not found\". Otherwise clicks List View using exact then flexible locators.",
       "inferred_description": null,
       "tags": [
         "utilities",
@@ -1207,9 +1273,9 @@
       "arguments": [
         "${dynamicFormInformationSectionArg}"
       ],
-      "documentation": "This keyword is used to navigate to a specific section within a dynamic form by locating the section title based on the provided argument. It waits for the section to become visible on the page and scrolls the section into view for user interaction.",
+      "documentation": "Scrolls to a dynamic form section by section title. Targets the section ``h3`` (not the inner span) and uses a JS scroll fallback so SLDS does not throw \"element has no size and location\".",
       "documentation_source": "author",
-      "natural_language_summary": "This keyword is used to navigate to a specific section within a dynamic form by locating the section title based on the provided argument. It waits for the section to become visible on the page and scrolls the section into view for user interaction.",
+      "natural_language_summary": "Scrolls to a dynamic form section by section title. Targets the section ``h3`` (not the inner span) and uses a JS scroll fallback so SLDS does not throw \"element has no size and location\".",
       "inferred_description": null,
       "tags": [
         "navigation",

@@ -31,6 +31,9 @@ ${opportunityType}=                         New Business
 ${opportunityLeadSource}=                   Customer Event
 ${opportunityDescription}=                  Test Description
 
+# App display name as it appears in the Salesforce app launcher (e.g. Mark Anthony Group)
+${salesAutomationAppName}=                  Sales
+
 # Account Test Data
 ${accountName}=                             ${{FakerLibrary.FakerLibrary().name()}}
 ${accountPhone}=                            1 (${rawPhoneNumber[0:3]}) ${rawPhoneNumber[3:6]}-${rawPhoneNumber[6:10]}

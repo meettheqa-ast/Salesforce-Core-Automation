@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,56 @@ GENERATED_SUITE = ROOT / "Tests" / "Generated" / "temp_test.robot"
 CATALOG_JSON_PATH = ROOT / "keyword_catalog.json"
 
 CLARIFY_SESSION_KEY = "clarify_context"
+
+
+def _open_local_path(path: Path) -> None:
+    """Open a file with the OS default app (e.g. browser for HTML). file:// links from localhost often do nothing."""
+    path = path.resolve()
+    if not path.is_file():
+        return
+    if os.name == "nt":
+        os.startfile(str(path))  # noqa: S606
+    elif sys.platform == "darwin":
+        subprocess.run(["open", str(path)], check=False)
+    else:
+        subprocess.run(["xdg-open", str(path)], check=False)
+
+
+def _render_report_log_actions(
+    report_path: Path | None,
+    log_path: Path | None,
+    out_dir_rel: str,
+    *,
+    key_prefix: str,
+    passed: bool | None = None,
+) -> None:
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        if report_path and report_path.is_file():
+            if st.button(
+                "Open Report",
+                key=f"{key_prefix}_report",
+                help="Opens report.html in your default browser.",
+            ):
+                _open_local_path(report_path)
+        else:
+            st.caption("report.html not found.")
+    with col_b:
+        if log_path and log_path.is_file():
+            if st.button(
+                "Open Log",
+                key=f"{key_prefix}_log",
+                help="Opens log.html in your default browser.",
+            ):
+                _open_local_path(log_path)
+        else:
+            st.caption("log.html not found.")
+    with col_c:
+        st.caption(f"Output folder: `{out_dir_rel}`")
+        if passed is True:
+            st.success("Last run: Passed")
+        elif passed is False:
+            st.error("Last run: Failed")
 
 
 # --- Framework maintenance: keep keyword_catalog.json aligned with PO/Common ---
@@ -229,37 +280,23 @@ def run_automation_pipeline(
     report_html = out_dir / "report.html"
     log_html = out_dir / "log.html"
 
-    report_uri = report_html.as_uri() if report_html.is_file() else None
-    log_uri = log_html.as_uri() if log_html.is_file() else None
+    report_path = report_html if report_html.is_file() else None
+    log_path = log_html if log_html.is_file() else None
 
     st.session_state.last_run = {
         "out_dir": str(out_dir.relative_to(ROOT)),
-        "report_uri": report_uri,
-        "log_uri": log_uri,
+        "report_path": str(report_html.resolve()) if report_path else None,
+        "log_path": str(log_html.resolve()) if log_path else None,
         "passed": code == 0,
     }
 
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        if report_uri:
-            st.link_button(
-                "Open Report",
-                report_uri,
-                help="Opens report.html in your browser (file URL).",
-            )
-        else:
-            st.caption("report.html not found.")
-    with col_b:
-        if log_uri:
-            st.link_button(
-                "Open Log",
-                log_uri,
-                help="Opens log.html in your browser (file URL).",
-            )
-        else:
-            st.caption("log.html not found.")
-    with col_c:
-        st.caption(f"Output folder: `{out_dir.relative_to(ROOT)}`")
+    _render_report_log_actions(
+        report_path,
+        log_path,
+        str(out_dir.relative_to(ROOT)),
+        key_prefix="inline_run",
+        passed=None,
+    )
 
     with st.expander("Full log (copy)"):
         st.code(full_log or "(empty)", language="text")
@@ -289,32 +326,27 @@ if st.session_state.get("_catalog_init_error"):
 
 
 def render_persisted_run_panel() -> None:
-    """Keep report/log links available across Streamlit reruns."""
+    """Keep report/log actions available across Streamlit reruns."""
     lr = st.session_state.get("last_run")
     if not lr:
         return
     st.divider()
     st.subheader("Latest test results")
     st.caption(
-        "Artifacts stay here until you run again. Open Report / Log in your browser when ready."
+        "Artifacts stay here until you run again. Use the buttons below to open report/log in your browser."
     )
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if lr.get("report_uri"):
-            st.link_button("Open Report", lr["report_uri"], help="Robot report.html")
-        else:
-            st.caption("Report not available.")
-    with c2:
-        if lr.get("log_uri"):
-            st.link_button("Open Log", lr["log_uri"], help="Robot log.html")
-        else:
-            st.caption("Log not available.")
-    with c3:
-        st.caption(f"Folder: `{lr.get('out_dir', '')}`")
-        if lr.get("passed") is True:
-            st.success("Last run: Passed")
-        elif lr.get("passed") is False:
-            st.error("Last run: Failed")
+    rp = lr.get("report_path")
+    lp = lr.get("log_path")
+    report_path = Path(rp) if rp else None
+    log_path = Path(lp) if lp else None
+
+    _render_report_log_actions(
+        report_path if report_path and report_path.is_file() else None,
+        log_path if log_path and log_path.is_file() else None,
+        str(lr.get("out_dir", "")),
+        key_prefix="persisted_run",
+        passed=lr.get("passed"),
+    )
 
 
 def stream_robot_logs(cmd: list[str], cwd: Path) -> tuple[int, str]:
