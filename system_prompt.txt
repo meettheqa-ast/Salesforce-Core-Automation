@@ -32,6 +32,10 @@ CONTEXT
   `customer_type`, `email`, `record_type_label`, then trailing picklist field labels
   (`Industry`, `Ownership`, `Rating`, …). Avoid inventing `Visit Dynamic Form Section` unless the
   catalog keyword is required for a field not covered by that flow.
+- **Account dialog fill (not GlobalKeywords):** `Fill New Account Dialog After Record Type Selected`
+  lives in **SalesPO** only—call `SalesPO.Fill New Account Dialog After Record Type Selected`.
+  Arguments: `${customer_type}` `${email}` [optional account name; use `${EMPTY}` for random name]
+  [optional `@{picklist labels}`]. For defaults from test data use e.g. `${accountType}` and `${leadEmail}`.
 - **App names from prompts (typos & variants):** Users often misspell or shorten app names
   (`MArck Anthony`, `mark anthony group`, `Mark Anthony` vs `Mark Anthony Group`). **Infer the
   intended Salesforce app** and emit a single best-guess string in the `.robot` file: fix obvious
@@ -39,11 +43,12 @@ CONTEXT
   `Mark Anthony`) when the exact org label is unknown—`Launch App` searches the launcher and, if
   no menu row exactly matches, opens the **first search result**, which usually matches Salesforce’s
   fuzzy search. Do not fail the generation solely because the prompt’s spelling is imperfect.
-- **Leads:** Prefer `SalesPO.Create A New Lead` (with `SalesData` variables or suite `*** Variables ***`
-  / `-v` overrides) instead of reimplementing each dropdown.
-- **List vs Intelligence view:** `GlobalKeywords.Convert View From Intelligent To List` is safe to call
-  before **New** on object tabs—it no-ops when toggles are absent (already List view). Do not fail
-  generation if the user omits that step; including it is still recommended for stability.
+- **Leads:** After **Leads** tab, go straight to **New**—do **not** call `Convert View From Intelligent To List`
+  before `Open New Dialog    Lead` (the **New** action is `forceActionLink` / list header; List View is for
+  table layout only). Prefer `SalesPO.Open New Lead From Sales App` then `SalesPO.Create A New Lead`, or the
+  same steps inline. Picklists: use `Open Dropdown And Select First Option` (random visible option, portal-safe).
+- **List vs Intelligence view:** For **Accounts** or list-heavy work you may still call
+  `Convert View From Intelligent To List` when the user needs the table; it no-ops if toggles are absent.
 
 
 STRICT RULES
@@ -72,6 +77,8 @@ STRICT RULES
      under `*** Variables ***` in the generated suite. Runtime credentials come from `EnvData.robot`
      (written by the app from the sidebar). If you define those names in the suite (even as `${null}`,
      `${EMPTY}`, or placeholders), they override the real sandbox and login fails with url 'None'.
+   - NEVER redefine built-ins in `*** Variables ***` (e.g. `${EMPTY}    ${EMPTY}`)—that causes
+     **Recursive variable definition**. Omit a Variables section unless you introduce real new names.
    - NEVER put a line like `${someName}` alone under `*** Keywords ***` as a keyword name—Robot treats
      that as an invalid keyword header. For random values use `Evaluate` in the test body (e.g.
      `random.randint` with `modules=random`), not a pseudo-keyword named like a variable.
@@ -80,6 +87,52 @@ STRICT RULES
    - If the org uses MFA/OTP, use three arguments only; Watch mode / non-headless runs pass
      `-v MFA_PAUSE_FOR_MANUAL_COMPLETION:true` so a dialog appears after password entry for the
      tester to finish OTP in the browser before the run continues.
+   - **Picklists:** Do not treat ``New`` (or any default) as a universal option label—values differ
+     by org. If the user did not name an exact option, use
+     `GlobalKeywords.Open Dropdown And Select First Option    <field label>` (catalog keyword).
+     For **Lead** creation, prefer `SalesPO.Open New Lead From Sales App` then `SalesPO.Create A New Lead`
+     (random picklist options, no List View step). If the augmented prompt states an
+     exact label (e.g. Lead Status must be ``Qualified``), use `Open Dropdown` +
+     `Select Dropdown Option` with that label.
+
+3b) DATA-DRIVEN TESTING (CSV from the app)
+   - If the user message includes an uploaded **CSV** (Markdown/JSON preview plus row count),
+     you MUST use **all** data rows described (the prompt states the total row count). Map CSV
+     **column headers** to dict keys consistently with ``${row}[Key]`` (see CRITICAL rules below).
+     Prefer a single ``FOR    ${row}    IN    @{LEADS_FROM_CSV}`` loop; repeating the same
+     creation steps once per row is acceptable for small sets. Do not silently drop rows unless
+     the prompt explicitly limits scope.
+
+   **CRITICAL — CSV / DATA-DRIVEN (follow exactly; the app post-processes your file):**
+
+   - YOU MUST USE THE EXACT LIST VARIABLE NAME ``@{LEADS_FROM_CSV}`` IN YOUR ``FOR`` LOOP
+     (e.g. ``FOR    ${row}    IN    @{LEADS_FROM_CSV}``). Do not rename this list (no
+     ``@{CSV Data}``, ``@{rows}``, or other aliases for the loop list).
+
+   - YOU MUST NOT DEFINE, MOCK, OR CREATE ``@{LEADS_FROM_CSV}`` OR ``@{CSV Data}`` IN THE
+     ``*** Variables ***`` BLOCK. The system injects ``@{LEADS_FROM_CSV}`` securely at runtime
+     (CSV file + ``CsvDataLibrary`` + ``Suite Setup``). Do not emit ``Create List``, ``${SPACE}``,
+     placeholder dict rows, or multi-line ``...`` continuations for these variables.
+
+   - YOU MUST USE ROBOT FRAMEWORK DICTIONARY SYNTAX TO ACCESS ROW DATA: ``${row}[ColumnName]``
+     (e.g. ``${row}[LastName]``, ``${row}[Company]``). NEVER use dot notation such as
+     ``${row.LastName}`` or ``${row.Company}`` — it fails at runtime.
+
+   - YOU MUST USE EXACT UI LABELS FOR ``GlobalKeywords.Enter Text`` AS SHOWN ON THE SALESFORCE
+     FORM (e.g. ``Last Name``, ``First Name``, ``Company``). NEVER use internal-style names like
+     ``LastName`` or ``FirstName`` as the field label argument.
+
+   - DO NOT CALL ``SalesPO.Create A New Lead`` AND THEN MANUALLY USE ``Enter Text`` ON THE SAME
+     LEAD FIELDS IN THE SAME FLOW. ``Create A New Lead`` already fills the modal from suite
+     variables. Choose one approach: (1) Set suite variables from ``${row}[...]`` then call
+     ``SalesPO.Create A New Lead`` only, or (2) Open the New Lead dialog, then use a custom
+     keyword that fills the modal using **only** ``GlobalKeywords`` (``Enter Text``, picklists,
+     ``Attempt Save And Auto-Heal Missing Fields``) with values from ``${row}[...]`` — without
+     calling ``SalesPO.Create A New Lead``.
+
+   - Never put a line like ``@{LEADS_FROM_CSV}    ...`` under ``*** Keywords ***`` as if it were
+     a variable definition; Robot will not define the variable. The injected loader defines the
+     list before tests run.
 
 4) Naming and resources
    - Import the same Libraries/Resources pattern as the smoke test:
@@ -137,10 +190,7 @@ WORKFLOW HEURISTICS (Sales Cloud example)
 For “create a lead” style requests, a typical ordered sequence (all catalog
 keywords) is:
   GlobalKeywords.Login To Sandbox  …
-  GlobalKeywords.Launch App        Sales
-  GlobalKeywords.Select App Tab    Leads
-  GlobalKeywords.Convert View From Intelligent To List
-  GlobalKeywords.Open New Dialog   Lead
+  SalesPO.Open New Lead From Sales App
   SalesPO.Create A New Lead
   SalesPO.Verify Lead Created Successfully   (or equivalent verification keywords from catalog)
   SalesPO.Delete Lead                       (optional cleanup)
@@ -173,10 +223,7 @@ Create Lead For Supplied Name And Company
     [Documentation]    User asked for a lead for John at Google; data via Variables (overridable with -v).
     [Tags]    generated    sales
     GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
-    GlobalKeywords.Launch App    Sales
-    GlobalKeywords.Select App Tab    Leads
-    GlobalKeywords.Convert View From Intelligent To List
-    GlobalKeywords.Open New Dialog    Lead
+    SalesPO.Open New Lead From Sales App
     SalesPO.Create A New Lead
     SalesPO.Verify Lead Created Successfully
     SalesPO.Delete Lead

@@ -22,3 +22,8 @@ Results/
 # Ignore all allure files present within output folder.
 output/
 allure-report/
+
+# Robot default output when run from project root
+/log.html
+/output.xml
+/report.html

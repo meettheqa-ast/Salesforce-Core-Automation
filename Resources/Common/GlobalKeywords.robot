@@ -2,6 +2,8 @@
 Library     SeleniumLibrary
 Library     String
 Library     Dialogs
+Library     Collections
+Library     FakerLibrary
 # EnvData must load before GlobalVariables / PlatformData so runtime URL & login
 # (written by run_test.py / Streamlit) win over repo defaults. Robot keeps first scalar definition.
 Resource    ../../Resources/TestData/EnvData.robot
@@ -171,6 +173,84 @@ Select Dialog Button
     Wait Until Element Is Visible    ${buttonAction}
     Click Button    ${buttonAction}
 
+Attempt Save And Auto-Heal Missing Fields
+    [Documentation]    Clicks **Save** in the active modal up to **3** times. After each click waits 2s; if Salesforce shows the snag / ``errorsList`` panel, reads linked field names and runs ``Heal Missing Modal Field By Label`` for each, then retries. Exits early when validation UI is gone (save succeeded). Fails if save never clears after 3 attempts.
+    [Tags]    modal    interaction    self-heal
+    ${saved}=    Set Variable    ${FALSE}
+    FOR    ${_}    IN RANGE    3
+        Select Dialog Button    Save
+        Sleep    2s
+        ${snag}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${salesforceModalValidationErrorLocator}    1.5s
+        IF    not ${snag}
+            ${saved}=    Set Variable    ${TRUE}
+            Exit For Loop
+        END
+        @{links}=    Get WebElements    ${snagErrorFieldLinksLocator}
+        ${n}=    Get Length    ${links}
+        IF    ${n} == 0
+            Log    Validation UI visible but no field links under errorsList / fieldLevelErrors; cannot auto-heal.    WARN
+            Exit For Loop
+        END
+        FOR    ${el}    IN    @{links}
+            ${label}=    Get Text    ${el}
+            ${label}=    Strip String    ${label}
+            IF    '${label}' != '${EMPTY}'
+                Heal Missing Modal Field By Label    ${label}
+            END
+        END
+    END
+    IF    not ${saved}
+        Fail    Save did not complete successfully after up to 3 attempts (Salesforce validation may still be visible or field links were not found).
+    END
+
+Heal Missing Modal Field By Label
+    [Documentation]    Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).
+    [Tags]    modal    interaction    self-heal
+    [Arguments]    ${field_label}
+    ${fl}=    Convert To Lower Case    ${field_label}
+    ${is_address}=    Evaluate    'address' in '''${fl}'''
+    IF    ${is_address}
+        ${v_street}=    Street Address
+        ${v_city}=    City
+        ${v_zip}=    Zipcode
+        ${v_country}=    Country
+        ${a}=    Run Keyword And Return Status    Enter Text    Street    ${v_street}
+        IF    not ${a}
+            Log    Address heal: Street not filled (missing or non-text on layout).    WARN
+        END
+        ${b}=    Run Keyword And Return Status    Enter Text    City    ${v_city}
+        IF    not ${b}
+            Log    Address heal: City not filled (missing or non-text on layout).    WARN
+        END
+        ${c}=    Run Keyword And Return Status    Enter Text    Zip/Postal Code    ${v_zip}
+        IF    not ${c}
+            Log    Address heal: Zip/Postal Code not filled (missing or non-text on layout).    WARN
+        END
+        ${d}=    Run Keyword And Return Status    Enter Text    Country    ${v_country}
+        IF    not ${d}
+            Log    Address heal: Country not filled (missing or non-text on layout).    WARN
+        END
+        RETURN
+    END
+    ${opened}=    Run Keyword And Return Status    Open Dropdown    ${field_label}
+    IF    ${opened}
+        ${picked}=    Run Keyword And Return Status    Select Random Valid Picklist Option
+        IF    not ${picked}
+            Log    Could not pick a valid option for "${field_label}" after opening dropdown.    WARN
+        END
+        RETURN
+    END
+    ${is_numish}=    Evaluate    'phone' in '''${fl}''' or 'fax' in '''${fl}'''
+    IF    ${is_numish}
+        ${fill}=    Numerify    ##########
+    ELSE
+        ${fill}=    Word
+    END
+    ${typed}=    Run Keyword And Return Status    Enter Text    ${field_label}    ${fill}
+    IF    not ${typed}
+        Log    Could not fill text for "${field_label}" (field may be absent, read-only, or non-text).    WARN
+    END
+
 Scroll Element Into View With Fallback
     [Documentation]    Uses Selenium scroll; if it fails (common for zero-size SLDS labels/spans), scrolls via JavaScript scrollIntoView.
     [Tags]    utilities
@@ -182,14 +262,24 @@ Scroll Element Into View With Fallback
     END
 
 Open Dropdown
-    [Documentation]    Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.
+    [Documentation]    Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.
     [Tags]    interaction    pick list
     [Arguments]    ${dropdownFieldArg}
     ${dropdownField}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
     Wait Until Element Is Visible    ${dropdownField}
     Scroll Element Into View With Fallback    ${dropdownField}
-    Sleep    1s
     ${dropdownFieldJS}=    Get Webelement    ${dropdownField}
+    Execute Javascript    arguments[0].scrollIntoView({block:'center', inline:'nearest'});    ARGUMENTS    ${dropdownFieldJS}
+    Sleep    0.3s
+    ${aria_dis}=    Get Element Attribute    ${dropdownField}    aria-disabled
+    IF    '${aria_dis}' == 'true'
+        Fail    The dropdown ${dropdownFieldArg} is disabled. This is likely a dependent picklist waiting for a controlling field.
+    END
+    ${enabled}=    Run Keyword And Return Status    Element Should Be Enabled    ${dropdownField}
+    IF    not ${enabled}
+        Fail    The dropdown ${dropdownFieldArg} is disabled. This is likely a dependent picklist waiting for a controlling field.
+    END
+    Sleep    0.5s
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${dropdownFieldJS}
 
 Select Dropdown Option
@@ -205,14 +295,119 @@ Select Dropdown Option
     Scroll Element Into View With Fallback    ${dropdownOption}
     Click Element    ${dropdownOption}
 
-Select First Lightning Dropdown Option In Modal
-    [Documentation]    After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.
+Select Multiselect Option
+    [Documentation]    Dual-list / dueling-list multiselect in the **modal**: for each value in ``@{selected_values}``, finds the row in the **first** ``slds-dueling-list__options`` list (Available), clicks it, then clicks a **Move to Chosen**-style control scoped under the field. ``${fieldLabel}`` should match visible label/legend text (substring match). No-op if the value list is empty. Requires light-DOM list items (standard SLDS); closed shadow roots need different tooling.
+    [Tags]    interaction    multiselect
+    [Arguments]    ${fieldLabel}    @{selected_values}
+    ${n}=    Get Length    ${selected_values}
+    Return From Keyword If    ${n} == 0
+    ${scope}=    Replace String    ${multiselectScopeDialogLocator}    <field-label>    ${fieldLabel}
+    Wait Until Element Is Visible    ${scope}    timeout=15s
+    Scroll Element Into View With Fallback    ${scope}
+    FOR    ${val}    IN    @{selected_values}
+        ${item}=    Set Variable    ${scope}//div[contains(@class,'slds-dueling-list')]//ul[contains(@class,'slds-dueling-list__options')][1]//li[.//span[normalize-space()='${val}']]
+        ${ok_item}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${item}    timeout=5s
+        IF    not ${ok_item}
+            ${item}=    Set Variable    ${scope}//div[contains(@class,'slds-dueling-list')]//ul[contains(@class,'slds-dueling-list__options')][1]//*[@role='option'][.//span[normalize-space()='${val}']]
+            Wait Until Element Is Visible    ${item}    timeout=10s
+        END
+        Scroll Element Into View With Fallback    ${item}
+        Click Element    ${item}
+        Sleep    0.25s
+        @{move_x}=    Create List
+        ...    ${scope}//button[contains(@title,'Move selection to Chosen')]
+        ...    ${scope}//button[contains(translate(@title,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'chosen')]
+        ...    ${scope}//button[contains(@aria-label,'Chosen')]
+        ...    ${scope}//button[contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'chosen')]
+        ${moved}=    Set Variable    ${FALSE}
+        FOR    ${mb}    IN    @{move_x}
+            ${click_ok}=    Run Keyword And Return Status    Click Element    ${mb}
+            IF    ${click_ok}
+                ${moved}=    Set Variable    ${TRUE}
+                Exit For Loop
+            END
+        END
+        IF    not ${moved}
+            Fail    Multiselect "${fieldLabel}": could not click a "Move to Chosen" control after selecting "${val}".
+        END
+        Sleep    0.3s
+    END
+
+Select Random Dropdown Option In Modal
+    [Documentation]    After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.
     [Tags]    interaction    pick list
-    ${firstOpt}=    Set Variable
-    ...    xpath:(//*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option' and string-length(@data-value) > 0])[1]
-    Wait Until Element Is Visible    ${firstOpt}    15s
-    ${el}=    Get Webelement    ${firstOpt}
-    Execute Javascript    arguments[0].scrollIntoView({block: 'center'}); arguments[0].click();    ARGUMENTS    ${el}
+    Sleep    0.4s
+    @{scopes}=    Create List
+    ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://div[contains(@class,'slds-listbox')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://lightning-base-combobox-item[@role='option']
+    @{pick_list}=    Create List
+    FOR    ${scope}    IN    @{scopes}
+        ${batch}=    Get WebElements    ${scope}
+        ${len}=    Get Length    ${batch}
+        IF    ${len} > 0
+            @{pick_list}=    Copy List    ${batch}
+            Exit For Loop
+        END
+    END
+    ${n}=    Get Length    ${pick_list}
+    Should Be True    ${n} > 0    No Lightning combobox options found after Open Dropdown (list may be in a portal—check field label).
+    ${r}=    Evaluate    random.randint(0, int(${n}) - 1)    modules=random
+    ${el}=    Get From List    ${pick_list}    ${r}
+    Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el}
+
+Select Random Valid Picklist Option
+    [Documentation]    After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.
+    [Tags]    interaction    pick list
+    Sleep    0.4s
+    @{scopes}=    Create List
+    ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://div[contains(@class,'slds-listbox')]//lightning-base-combobox-item[@role='option']
+    ...    xpath://lightning-base-combobox-item[@role='option']
+    @{valid}=    Create List
+    FOR    ${scope}    IN    @{scopes}
+        ${batch}=    Get WebElements    ${scope}
+        ${len}=    Get Length    ${batch}
+        IF    ${len} == 0
+            Continue For Loop
+        END
+        @{valid}=    Create List
+        FOR    ${el}    IN    @{batch}
+            ${dv}=    Get Element Attribute    ${el}    data-value
+            ${dv}=    Strip String    ${dv}
+            ${dv_len}=    Get Length    ${dv}
+            ${txt}=    Get Text    ${el}
+            ${txt}=    Strip String    ${txt}
+            ${txt_l}=    Convert To Lower Case    ${txt}
+            ${is_none_label}=    Set Variable If    '${txt_l}' == '--none--'    ${TRUE}    ${FALSE}
+            IF    ${dv_len} > 0 and not ${is_none_label}
+                Append To List    ${valid}    ${el}
+            END
+        END
+        ${vc}=    Get Length    ${valid}
+        IF    ${vc} > 0
+            Exit For Loop
+        END
+    END
+    ${vc}=    Get Length    ${valid}
+    Should Be True    ${vc} > 0    No valid picklist options after filtering (need non-empty data-value; exclude --None--).
+    ${r}=    Evaluate    random.randint(0, int(${vc}) - 1)    modules=random
+    ${pick}=    Get From List    ${valid}    ${r}
+    Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${pick}
+
+Select First Lightning Dropdown Option In Modal
+    [Documentation]    Deprecated name: now selects a **random** visible option (same as ``Select Random Dropdown Option In Modal``) for orgs where ``data-value`` or portal placement broke the old first-item xpath.
+    [Tags]    interaction    pick list
+    Select Random Dropdown Option In Modal
+
+Open Dropdown And Select First Option
+    [Documentation]    Opens the picklist and selects a **random** visible Lightning option (stable when exact labels or DOM differ). For an exact label use ``Open Dropdown`` + ``Select Dropdown Option``.
+    [Tags]    interaction    pick list
+    [Arguments]    ${dropdownFieldArg}
+    Open Dropdown    ${dropdownFieldArg}
+    Select Random Dropdown Option In Modal
 
 Enter Text
     [Documentation]    Use this keyword to enter a value into the Input Field. It first identifies the input field using the provided label name, waits for the field to become visible, and scrolls it into view. It then clicks on the input field using JavaScript to ensure it is focused, and finally enters the specified text value into the field.
@@ -299,13 +494,27 @@ Get Plural Form
     RETURN    ${pluralForm}
 
 Verify Record Creation With Data
-    [Documentation]    Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. It first replaces spaces in the provided record type and field names with empty strings. Then it constructs the locator for the record field, incorporating the field name and the expected data. After waiting for the field to be visible on the page, it scrolls to the field and checks that the data matches the expected value. Use 'Checkbox-Check' and 'Checkbox-Uncheck' for verifying checkboxes.
+    [Documentation]    Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. Record type and field names are normalized (spaces removed) for ``data-target-selection-name`` locators. For fields whose API-style name is ``Phone``, ends with ``Phone`` (e.g. ``MobilePhone``), or is ``Fax``, compares **digits only**: UI text and expected value are passed through ``Replace String Using Regexp`` with ``\\D+`` removed so ``(123) 456-7890`` matches ``1234567890``. All other fields still use ``contains(text(),'<actual-data>')`` in the xpath. Use ``Checkbox-Check`` and ``Checkbox-Uncheck`` for checkboxes.
     [Tags]    records    verification
     [Arguments]    ${recordDataTypeArg}    ${recordDataFieldArg}    ${recordDataArg}
     ${recordDataTypeArg}=    Replace String    ${recordDataTypeArg}    ${SPACE}    ${EMPTY}
-    ${recordDataType}=    Replace String    ${recordDataLocator}    <record-type>    ${recordDataTypeArg}
     ${recordDataFieldArg}=    Replace String    ${recordDataFieldArg}    ${SPACE}    ${EMPTY}
+    ${fk_l}=    Convert To Lower Case    ${recordDataFieldArg}
+    ${is_phoneish}=    Evaluate    '''${fk_l}''' == 'phone' or '''${fk_l}'''.endswith('phone') or '''${fk_l}''' == 'fax'
+    ${recordDataType}=    Replace String    ${recordDataLocator}    <record-type>    ${recordDataTypeArg}
     ${recordDataField}=    Replace String    ${recordDataType}    <field-name>    ${recordDataFieldArg}
+    IF    ${is_phoneish} and '${recordDataArg}' != 'Checkbox-Check' and '${recordDataArg}' != 'Checkbox-Uncheck'
+        ${block}=    Replace String    ${recordFieldBlockLocator}    <record-type>    ${recordDataTypeArg}
+        ${block}=    Replace String    ${block}    <field-name>    ${recordDataFieldArg}
+        Wait Until Element Is Visible    ${block}
+        Scroll Element Into View    ${block}
+        Element Should Be Visible    ${block}
+        ${ui_text}=    Get Text    ${block}
+        ${ui_digits}=    Replace String Using Regexp    ${ui_text}    \\D+    ${EMPTY}
+        ${exp_digits}=    Replace String Using Regexp    ${recordDataArg}    \\D+    ${EMPTY}
+        Should Be Equal As Strings    ${ui_digits}    ${exp_digits}
+        RETURN
+    END
     ${recordActualDataLocator}=    Replace String    ${recordDataField}    <actual-data>    ${recordDataArg}
     IF    '${recordDataArg}' == 'Checkbox-Check'
         ${recordActualDataLocator}=    Set Variable    ${recordActualDataLocator}\[@checked]

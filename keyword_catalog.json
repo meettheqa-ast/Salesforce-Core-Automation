@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-03T05:35:01.156414+00:00",
+  "generated_at": "2026-04-04T14:53:36.888508+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 131,
+  "keyword_count": 138,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -517,12 +517,22 @@
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
     {
+      "keyword_name": "Open New Lead From Sales App",
+      "arguments": [],
+      "documentation": "Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
       "keyword_name": "Create A New Lead",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Creates a new Lead using the current modal or form and saves when complete.",
-      "inferred_description": "Creates a new Lead using the current modal or form and saves when complete.",
+      "documentation": "Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -539,10 +549,10 @@
     {
       "keyword_name": "Verify First Name, Company And Title On Lead Page",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Verifies that First Name, Company And Title On Lead Page.",
-      "inferred_description": "Verifies that First Name, Company And Title On Lead Page.",
+      "documentation": "Name field includes salutation from the picklist (unknown when using first option); assert first/last appear on the page and other fields exactly.",
+      "documentation_source": "author",
+      "natural_language_summary": "Name field includes salutation from the picklist (unknown when using first option); assert first/last appear on the page and other fields exactly.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -929,6 +939,36 @@
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
     {
+      "keyword_name": "Attempt Save And Auto-Heal Missing Fields",
+      "arguments": [],
+      "documentation": "Clicks **Save** in the active modal up to **3** times. After each click waits 2s; if Salesforce shows the snag / ``errorsList`` panel, reads linked field names and runs ``Heal Missing Modal Field By Label`` for each, then retries. Exits early when validation UI is gone (save succeeded). Fails if save never clears after 3 attempts.",
+      "documentation_source": "author",
+      "natural_language_summary": "Clicks **Save** in the active modal up to **3** times. After each click waits 2s; if Salesforce shows the snag / ``errorsList`` panel, reads linked field names and runs ``Heal Missing Modal Field By Label`` for each, then retries. Exits early when validation UI is gone (save succeeded). Fails if save never clears after 3 attempts.",
+      "inferred_description": null,
+      "tags": [
+        "modal",
+        "interaction",
+        "self-heal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Heal Missing Modal Field By Label",
+      "arguments": [
+        "${field_label}"
+      ],
+      "documentation": "Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).",
+      "documentation_source": "author",
+      "natural_language_summary": "Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).",
+      "inferred_description": null,
+      "tags": [
+        "modal",
+        "interaction",
+        "self-heal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
       "keyword_name": "Scroll Element Into View With Fallback",
       "arguments": [
         "${locator}"
@@ -947,9 +987,9 @@
       "arguments": [
         "${dropdownFieldArg}"
       ],
-      "documentation": "Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.",
+      "documentation": "Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens up the dropdown field. It first identifies the dropdown field using the provided argument, waits for it to become visible, and scrolls it into view. After a short pause, it uses JavaScript to simulate a click event on the dropdown field, thereby opening it for further interactions.",
+      "natural_language_summary": "Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -976,11 +1016,71 @@
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
     {
+      "keyword_name": "Select Multiselect Option",
+      "arguments": [
+        "${fieldLabel}",
+        "@{selected_values}"
+      ],
+      "documentation": "Dual-list / dueling-list multiselect in the **modal**: for each value in ``@{selected_values}``, finds the row in the **first** ``slds-dueling-list__options`` list (Available), clicks it, then clicks a **Move to Chosen**-style control scoped under the field. ``${fieldLabel}`` should match visible label/legend text (substring match). No-op if the value list is empty. Requires light-DOM list items (standard SLDS); closed shadow roots need different tooling.",
+      "documentation_source": "author",
+      "natural_language_summary": "Dual-list / dueling-list multiselect in the **modal**: for each value in ``@{selected_values}``, finds the row in the **first** ``slds-dueling-list__options`` list (Available), clicks it, then clicks a **Move to Chosen**-style control scoped under the field. ``${fieldLabel}`` should match visible label/legend text (substring match). No-op if the value list is empty. Requires light-DOM list items (standard SLDS); closed shadow roots need different tooling.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "multiselect"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select Random Dropdown Option In Modal",
+      "arguments": [],
+      "documentation": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.",
+      "documentation_source": "author",
+      "natural_language_summary": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select Random Valid Picklist Option",
+      "arguments": [],
+      "documentation": "After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.",
+      "documentation_source": "author",
+      "natural_language_summary": "After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
       "keyword_name": "Select First Lightning Dropdown Option In Modal",
       "arguments": [],
-      "documentation": "After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.",
+      "documentation": "Deprecated name: now selects a **random** visible option (same as ``Select Random Dropdown Option In Modal``) for orgs where ``data-value`` or portal placement broke the old first-item xpath.",
       "documentation_source": "author",
-      "natural_language_summary": "After ``Open Dropdown``, picks the first real ``lightning-base-combobox-item`` in the modal (skips empty data-value). Use when the exact option label is unknown.",
+      "natural_language_summary": "Deprecated name: now selects a **random** visible option (same as ``Select Random Dropdown Option In Modal``) for orgs where ``data-value`` or portal placement broke the old first-item xpath.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Dropdown And Select First Option",
+      "arguments": [
+        "${dropdownFieldArg}"
+      ],
+      "documentation": "Opens the picklist and selects a **random** visible Lightning option (stable when exact labels or DOM differ). For an exact label use ``Open Dropdown`` + ``Select Dropdown Option``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens the picklist and selects a **random** visible Lightning option (stable when exact labels or DOM differ). For an exact label use ``Open Dropdown`` + ``Select Dropdown Option``.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1106,9 +1206,9 @@
         "${recordDataFieldArg}",
         "${recordDataArg}"
       ],
-      "documentation": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. It first replaces spaces in the provided record type and field names with empty strings. Then it constructs the locator for the record field, incorporating the field name and the expected data. After waiting for the field to be visible on the page, it scrolls to the field and checks that the data matches the expected value. Use 'Checkbox-Check' and 'Checkbox-Uncheck' for verifying checkboxes.",
+      "documentation": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. Record type and field names are normalized (spaces removed) for ``data-target-selection-name`` locators. For fields whose API-style name is ``Phone``, ends with ``Phone`` (e.g. ``MobilePhone``), or is ``Fax``, compares **digits only**: UI text and expected value are passed through ``Replace String Using Regexp`` with ``\\\\D+`` removed so ``(123) 456-7890`` matches ``1234567890``. All other fields still use ``contains(text(),'<actual-data>')`` in the xpath. Use ``Checkbox-Check`` and ``Checkbox-Uncheck`` for checkboxes.",
       "documentation_source": "author",
-      "natural_language_summary": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. It first replaces spaces in the provided record type and field names with empty strings. Then it constructs the locator for the record field, incorporating the field name and the expected data. After waiting for the field to be visible on the page, it scrolls to the field and checks that the data matches the expected value. Use 'Checkbox-Check' and 'Checkbox-Uncheck' for verifying checkboxes.",
+      "natural_language_summary": "Verifies the creation of a record by checking if the specified data is correctly displayed in the appropriate field. Record type and field names are normalized (spaces removed) for ``data-target-selection-name`` locators. For fields whose API-style name is ``Phone``, ends with ``Phone`` (e.g. ``MobilePhone``), or is ``Fax``, compares **digits only**: UI text and expected value are passed through ``Replace String Using Regexp`` with ``\\\\D+`` removed so ``(123) 456-7890`` matches ``1234567890``. All other fields still use ``contains(text(),'<actual-data>')`` in the xpath. Use ``Checkbox-Check`` and ``Checkbox-Uncheck`` for checkboxes.",
       "inferred_description": null,
       "tags": [
         "records",

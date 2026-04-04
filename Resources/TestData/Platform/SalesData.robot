@@ -1,9 +1,11 @@
 *** Variables ***
-# Dropdown value of the lead status can be set into this field
-${leadStatusOption}=                        New
+# Lead Status: leave empty for org-agnostic random valid option; set a label/API value when PM specifies (``-v leadStatusOption:...``).
+${leadStatusOption}=                        ${EMPTY}
 
-# Raw Phone Number without formatting
-${rawPhoneNumber}=                          ${{FakerLibrary.FakerLibrary().password(length=10, special_chars=False, digits=True, upper_case=False, lower_case=False)}}
+# Strict 10-digit phone (digits only—no spaces, hyphens, or parentheses) for orgs with tight phone validation
+${randomPhone}=                             ${{FakerLibrary.FakerLibrary().numerify(text='##########')}}
+# Backward-compatible alias used by legacy slicing / display patterns
+${rawPhoneNumber}=                         ${randomPhone}
 
 # Lead test data
 ${salutationOption}=                        Mr.
@@ -11,7 +13,7 @@ ${leadFirstName}=                           ${{FakerLibrary.FakerLibrary().first
 ${leadLastName}=                            ${{FakerLibrary.FakerLibrary().last_name()}}
 ${leadCompany}=                             ${{FakerLibrary.FakerLibrary().company()}}
 ${leadWebsite}=                             www.ptest.com
-${leadPhone}=                               1 (${rawPhoneNumber[0:3]}) ${rawPhoneNumber[3:6]}-${rawPhoneNumber[6:10]}
+${leadPhone}=                               ${randomPhone}
 ${leadTitle}=                               Test Lead
 ${leadEmail}=                               ${{FakerLibrary.FakerLibrary().email()}}
 ${leadSourceOption}=                        Advertisement
@@ -36,7 +38,7 @@ ${salesAutomationAppName}=                  Sales
 
 # Account Test Data
 ${accountName}=                             ${{FakerLibrary.FakerLibrary().name()}}
-${accountPhone}=                            1 (${rawPhoneNumber[0:3]}) ${rawPhoneNumber[3:6]}-${rawPhoneNumber[6:10]}
+${accountPhone}=                            ${randomPhone}
 # ${accountPhone}=    +1 ${{FakerLibrary.FakerLibrary().password(length=10, special_chars=False, digits=True, upper_case=False, lower_case=False)}}
 ${accountWebsite}=                          www.ptest.com
 ${accountType}=                             Prospect

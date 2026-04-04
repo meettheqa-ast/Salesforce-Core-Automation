@@ -33,8 +33,7 @@ Fill New Account Dialog After Record Type Selected
         ${exists}=    Run Keyword And Return Status    Page Should Contain Element
         ...    xpath://*[contains(@class,'modal-container')]//button[contains(@aria-label,'${label}')]
         IF    ${exists}
-            Open Dropdown    ${label}
-            Select First Lightning Dropdown Option In Modal
+            Open Dropdown And Select First Option    ${label}
         END
     END
 
@@ -52,11 +51,15 @@ Create BC Commercial Account In App
     Fill New Account Dialog After Record Type Selected    ${customer_type}    ${email}    ${EMPTY}    @{picklists_use_first_option}
     Select Dialog Button    Save
 
+Open New Lead From Sales App
+    [Documentation]    Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.
+    Launch App    ${salesAutomationAppName}
+    Select App Tab    Leads
+    Open New Dialog    Lead
+
 Create A New Lead
-    Open Dropdown    Lead Status
-    Select Dropdown Option    Lead Status    ${leadStatusOption}
-    Open Dropdown    Salutation
-    Select Dropdown Option    Salutation    ${salutationOption}
+    [Documentation]    Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.
+    Open Dropdown And Select First Option    Salutation
     Enter Text    Website    ${leadWebsite}
     Enter Text    First Name    ${leadFirstName}
     Enter Text    Last Name    ${leadLastName}
@@ -64,9 +67,16 @@ Create A New Lead
     Enter Text    Phone    ${leadPhone}
     Enter Text    Title    ${leadTitle}
     Enter Text    Email    ${leadEmail}
-    Open Dropdown    Lead Source
-    Select Dropdown Option    Lead Source    ${leadSourceOption}
-    Select Dialog Button    Save
+    Open Dropdown And Select First Option    Lead Source
+    Open Dropdown    Lead Status
+    ${lead_status_trim}=    Strip String    ${leadStatusOption}
+    ${lead_status_len}=    Get Length    ${lead_status_trim}
+    IF    ${lead_status_len} > 0
+        Select Dropdown Option    Lead Status    ${lead_status_trim}
+    ELSE
+        Select Random Valid Picklist Option
+    END
+    Attempt Save And Auto-Heal Missing Fields
 
 Verify Lead Created Successfully
     [Documentation]    Confirms Lead save via record-details success toast, then validates key Lead fields on the page.
@@ -74,7 +84,9 @@ Verify Lead Created Successfully
     Verify First Name, Company And Title On Lead Page
 
 Verify First Name, Company And Title On Lead Page
-    Verify Record Creation With Data    Lead    Name    ${salutationOption} ${leadFirstName} ${leadLastName}
+    [Documentation]    Name field includes salutation from the picklist (unknown when using first option); assert first/last appear on the page and other fields exactly.
+    Page Should Contain    ${leadFirstName}
+    Page Should Contain    ${leadLastName}
     Verify Record Creation With Data    Lead    Company    ${leadCompany}
     Verify Record Creation With Data    Lead    Title    ${leadTitle}
 
@@ -125,7 +137,7 @@ Create A New Account
     Select Dropdown Option    Industry    ${accountIndustry}
     Enter Text    Website    ${accountWebsite}
     Enter Text    Employees    ${accountEmployees}
-    Select Dialog Button    Save
+    Attempt Save And Auto-Heal Missing Fields
 
 Verify Account Creation
     Verify Record Creation With Data    Account    Name    ${accountName}

@@ -18,8 +18,8 @@ ${tabInAppLocator}=                                     xpath://one-app-nav-bar-
 # The last or part for this locator is used to handle the intelligent view breadcrumbs
 ${activeTabLocator}=                                    xpath://lst-breadcrumbs//span[text()='<tab-name>'] | //lst-breadcrumbs//h1[text()='<tab-name>'] | //*[@class='slds-page-header__name-meta'][contains(text(), '<tab-name>')]
 
-# New Record Dialog
-${newRecord}=                                           xpath://a[@role='button']//div[@title='New']
+# New Record — list header / split view (Aura forceActionLink + LWC role=button)
+${newRecord}=                                           xpath:(//a[@role='button' and (@title='New' or .//div[@title='New'])])[1] | (//a[contains(@class,'forceActionLink') and @title='New'])[1]
 # Record-type / picker layer that can sit above the list header and intercept New (Aura forceChangeRecordType)
 ${sfRecordTypeOverlay}=                                 xpath://div[contains(@class,'forceChangeRecordType')]
 # ${newRecordDialogTitleLocator}=    xpath://h2[normalize-space()='New <record-name>']
@@ -32,8 +32,8 @@ ${dialogAction}=                                        xpath://*[contains(@clas
 # Search Input Field Dialog
 ${searchInputFieldDialogLocator}=                       xpath://*[contains(@class,'modal-container')]//input[@placeholder='Search <search-input-field>...' or @placeholder='Search <search-input-field>']
 ${searchSuggestionTermDialogLocator}=                   xpath:(//*[contains(@class,'modal-container')]//input[@aria-expanded='true']/ancestor::div[3]/following-sibling::div//lightning-base-combobox-formatted-text[@title='<search-term>'])[<pos>]|(//*[contains(@class,'modal-container')]//div[contains(@class, 'uiInput--lookup') and not(contains(@class, 'invisible'))]//div[contains(@class, 'primaryLabel') and @title='<search-term>'])[<pos>]
-# Dropdown Locator. Pass State Province Abrreviation for Shipping and Billing Address
-${dropdownDialogLocator}=                               xpath://*[contains(@class,'modal-container')]//div[contains(@class, 'uiInputSelect') and .//span[contains(text(), '<dropdown-field>')]]//a | //*[contains(@class,'modal-container')]//button[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//input[@aria-label='<dropdown-field>']
+# Dropdown Locator. Aura uiInputSelect + LWC combobox (button / searchable input) + lightning-base-combobox by label
+${dropdownDialogLocator}=                               xpath://*[contains(@class,'modal-container')]//div[contains(@class, 'uiInputSelect') and .//span[contains(text(), '<dropdown-field>')]]//a | //*[contains(@class,'modal-container')]//button[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//input[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox//button[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox//input[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//button[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//input[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label') or contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//button[contains(@class,'slds-combobox__input')][1] | //*[contains(@class,'modal-container')]//lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label') or contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//input[contains(@class,'slds-combobox__input')][1] | //*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//*[self::button or self::input][contains(@class,'combobox') or contains(@class,'slds-combobox__input')][1]
 ${dropdownOptionsDialogLocator}=                        xpath:(//div[contains(@class, 'select-options') and contains(@class, 'visible')]//a[@title='<dropdown-value>']) | (//*[contains(@class,'modal-container')]//button[@aria-expanded='true']/ancestor::div[1]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>']) | (//*[contains(@class,'modal-container')]//input[@aria-expanded='true']/ancestor::div[3]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>'])
 # Normal Input Field
 ${inputFieldDialogLocator}=                             xpath://*[contains(@class,'modal-container')]//label[.//text()[normalize-space()='<field-name>'] or normalize-space()='<field-name>']//following::*[(self::input or self::textarea)][1]
@@ -42,6 +42,9 @@ ${dateFieldDialogLocator}=                              xpath:(//*[contains(@cla
 ${timeFieldDialogLocator}=                              xpath:(//*[contains(@class,'modal-container')]//legend[normalize-space(.)='<time-field-name>']/following-sibling::*//input)[2]
 # Checkbox
 ${checkboxDialogLocator}=                               xpath:(//*[contains(@class,'modal-container')]//label[.//text()[normalize-space(.)='<checkbox-field>']]/following-sibling::*//input[@type='checkbox']) | (//*[contains(@class,'modal-container')]//label[.//text()[normalize-space(.)='<checkbox-field>']]/following-sibling::input[@type='checkbox'])
+
+# Multiselect / SLDS dueling list inside modal (Available → Chosen). Replace <field-label> with visible field name.
+${multiselectScopeDialogLocator}=                       xpath://*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//label[contains(normalize-space(.), '<field-label>')] or .//span[contains(@class,'test-id__field-label') or contains(@class,'form-element__label')][contains(normalize-space(.), '<field-label>')] or .//legend[contains(normalize-space(.), '<field-label>')]]
 
 # Lead Convert Dialog Create New Field Values
 ${leadConvertFieldDialogLocator}=                       xpath://*[contains(@class,'modal-container')]//fieldset[legend[text()="<field-name>"]]//button
@@ -57,7 +60,7 @@ ${dialogFieldRequired}=                                 //*[contains(@class,"mod
 ${searchInputFieldLocator}=                             xpath://input[@placeholder='Search <search-input-field>...' or @placeholder='Search <search-input-field>']
 ${searchSuggestionTermLocator}=                         xpath:(//input[@aria-expanded='true']/ancestor::div[3]/following-sibling::div//lightning-base-combobox-formatted-text[@title='<search-term>'])[<pos>]|(//div[contains(@class, 'uiInput--lookup') and not(contains(@class, 'invisible'))]//div[contains(@class, 'primaryLabel') and @title='<search-term>'])[<pos>]
 # Dropdown Locator. Pass State Province Abrreviation for Shipping and Billing Address General
-${dropdownLocator}=                                     xpath://div[contains(@class, 'uiInputSelect') and .//span[contains(text(), '<dropdown-field>')]]//a | //button[@aria-label='<dropdown-field>'] | //input[@aria-label='<dropdown-field>']
+${dropdownLocator}=                                     xpath://div[contains(@class, 'uiInputSelect') and .//span[contains(text(), '<dropdown-field>')]]//a | //button[@aria-label='<dropdown-field>'] | //input[@aria-label='<dropdown-field>'] | //lightning-base-combobox//button[@aria-label='<dropdown-field>'] | //lightning-base-combobox//input[@aria-label='<dropdown-field>'] | //button[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //input[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label')][contains(normalize-space(.), '<dropdown-field>')]]//button[contains(@class,'slds-combobox__input')][1] | //lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label')][contains(normalize-space(.), '<dropdown-field>')]]//input[contains(@class,'slds-combobox__input')][1]
 ${dropdownOptionsLocator}=                              xpath:(//div[contains(@class, 'select-options') and contains(@class, 'visible')]//a[@title='<dropdown-value>']) | (//button[@aria-expanded='true']/ancestor::div[1]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>']) | (//input[@aria-expanded='true']/ancestor::div[3]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>'])
 # Normal Input Field General
 ${inputFieldLocator}=                                   xpath://label[.//text()[normalize-space()='<field-name>'] or normalize-space()='<field-name>']//following::*[(self::input or self::textarea)][1]
@@ -75,6 +78,8 @@ ${headerQuickActionDropdownLocator}=                    xpath:(//*[@data-target-
 
 # Record Details Page
 ${recordDataLocator}=                                   xpath://*[@data-target-selection-name='sfdc:RecordField.<record-type>.<field-name>']//*[contains(text(),'<actual-data>')] | //*[@data-target-selection-name='sfdc:RecordField.<record-type>.<field-name>Id']//*[contains(text(),'<actual-data>')] | //*[@data-target-selection-name='sfdc:RecordField.<record-type>.<field-name>']//lightning-primitive-input-checkbox
+# Same field targets without embedded expected text (for digit-normalized Phone/Fax checks)
+${recordFieldBlockLocator}=                             xpath:(//*[@data-target-selection-name='sfdc:RecordField.<record-type>.<field-name>'])[1] | (//*[@data-target-selection-name='sfdc:RecordField.<record-type>.<field-name>Id'])[1]
 
 # Record Details Page Left Side bar
 ${relatedRecordDropdownNameLocator}=                    xpath://article[@aria-label='<record-type>']
@@ -119,6 +124,10 @@ ${fieldRequired}=                                       //span[@class="slds-assi
 
 # Locator for Required Field present in Snag message (applicable for dialog and record page)
 ${snagFieldRequired}=                                   xpath://div[@class="fieldLevelErrors"]//ul/li/a[text()="<snag-field-name>"]
+
+# Salesforce modal validation ("We hit a snag" / field-level list) — used by Attempt Save And Auto-Heal Missing Fields
+${salesforceModalValidationErrorLocator}=                 xpath:(//*[contains(@class,'modal-container')]//ul[contains(@class,'errorsList')])[1] | (//*[contains(@class,'modal-container')]//*[contains(normalize-space(.),'We hit a snag')])[1] | (//*[contains(@class,'modal-container')]//div[contains(@class,'fieldLevelErrors')])[1]
+${snagErrorFieldLinksLocator}=                          xpath://*[contains(@class,'modal-container')]//ul[contains(@class,'errorsList')]//li/a | //*[contains(@class,'modal-container')]//div[contains(@class,'fieldLevelErrors')]//ul//li/a
 
 # Dont Touch This
 # ${dialog}=    ${EMPTY}

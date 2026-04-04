@@ -15,11 +15,12 @@ Configure via .env (never commit real keys). Default provider is Gemini:
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
 import sys
-import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -34,9 +35,39 @@ ROOT = Path(__file__).resolve().parent
 SYSTEM_PROMPT_PATH = ROOT / "system_prompt.txt"
 CATALOG_PATH = ROOT / "keyword_catalog.json"
 OUTPUT_PATH = ROOT / "Tests" / "Generated" / "temp_test.robot"
+UPLOADED_CSV_FILENAME = "uploaded_test_data.csv"
 DOTENV_PATH = ROOT / ".env"
 
+_LEADS_FROM_CSV_LINE = re.compile(r"^@\{\s*LEADS_FROM_CSV\s*\}\s+", re.I)
+_CSV_DATA_LIST_LINE = re.compile(r"^@\{\s*CSV\s+Data\s*\}\s+", re.I)
+
 load_dotenv(DOTENV_PATH)
+
+# Appended to the user prompt when Streamlit passes parsed CSV text (data-driven generation).
+CSV_DATA_DRIVEN_INSTRUCTION_FOOTER = (
+    "Please generate a Robot Framework script that iterates through this data. "
+    "You can either use a Robot Framework FOR loop to iterate over the rows, or explicitly "
+    "write out the creation keyword (like SalesPO.Create A New Lead) multiple times, once "
+    "for each row in the data, injecting the specific values from the CSV."
+)
+
+
+def append_csv_data_to_prompt(user_prompt: str, csv_formatted: str) -> str:
+    """
+    If csv_formatted is non-empty, append Salesforce data-driven instructions and the table/JSON
+    payload for the LLM. Used by the Streamlit app after PM clarification blocks.
+    """
+    user_prompt = (user_prompt or "").rstrip()
+    csv_formatted = (csv_formatted or "").strip()
+    if not csv_formatted:
+        return user_prompt
+    return (
+        user_prompt
+        + "\n\nThe user has uploaded a CSV file with the following test data:\n\n"
+        + csv_formatted
+        + "\n\n"
+        + CSV_DATA_DRIVEN_INSTRUCTION_FOOTER
+    )
 
 
 def hydrate_llm_env() -> None:
@@ -95,10 +126,85 @@ class PromptFieldAnalysis(TypedDict):
     mentions_company: bool
     mentions_last_name: bool
     missing_lead_fields: list[str]
+    optional_picklist_fields: list[str]
+    should_show_lead_pm_form: bool
     should_warn_placeholders: bool
 
 
-def analyze_prompt_for_required_fields(user_prompt: str) -> PromptFieldAnalysis:
+def _norm_csv_header(h: str) -> str:
+    s = (h or "").strip().lower().replace("_", " ")
+    while "  " in s:
+        s = s.replace("  ", " ")
+    return s
+
+
+def _csv_header_is_last_name(norm: str) -> bool:
+    return norm in (
+        "last name",
+        "lastname",
+        "surname",
+        "lead last name",
+        "lname",
+        "family name",
+    )
+
+
+def _csv_header_is_company(norm: str) -> bool:
+    if norm == "company":
+        return True
+    return norm in (
+        "company name",
+        "account name",
+        "organization",
+        "organisation",
+        "org",
+        "organization name",
+        "organisation name",
+        "account",
+    )
+
+
+def analyze_csv_lead_column_coverage(csv_bytes: bytes | None) -> dict[str, bool]:
+    """
+    Detect whether uploaded CSV supplies Company / Last Name via column headers
+    and at least one non-empty data row. Used to skip redundant PM form fields.
+    """
+    out: dict[str, bool] = {"Company": False, "Last Name": False}
+    if not csv_bytes or not csv_bytes.strip():
+        return out
+    try:
+        text = csv_bytes.decode("utf-8-sig", errors="replace")
+    except Exception:
+        return out
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return out
+    headers = [h or "" for h in reader.fieldnames]
+    company_cols = [h for h in headers if _csv_header_is_company(_norm_csv_header(h))]
+    last_cols = [h for h in headers if _csv_header_is_last_name(_norm_csv_header(h))]
+    if not company_cols and not last_cols:
+        return out
+    saw_row = False
+    for row in reader:
+        saw_row = True
+        if company_cols and not out["Company"]:
+            if any(str(row.get(c) or "").strip() for c in company_cols):
+                out["Company"] = True
+        if last_cols and not out["Last Name"]:
+            if any(str(row.get(c) or "").strip() for c in last_cols):
+                out["Last Name"] = True
+        if out["Company"] and out["Last Name"]:
+            break
+    if not saw_row:
+        return {"Company": False, "Last Name": False}
+    return out
+
+
+def analyze_prompt_for_required_fields(
+    user_prompt: str,
+    *,
+    csv_bytes: bytes | None = None,
+) -> PromptFieldAnalysis:
     """
     PM Assistant: detect Lead-creation intent and whether Company / Last Name cues exist.
 
@@ -131,18 +237,37 @@ def analyze_prompt_for_required_fields(user_prompt: str) -> PromptFieldAnalysis:
     )
 
     missing: list[str] = []
+    optional_picklists: list[str] = []
     if is_lead_creation:
         if not mentions_company:
             missing.append("Company")
         if not mentions_last_name:
             missing.append("Last Name")
+        if not re.search(r"\blead\s+status\b", lower):
+            optional_picklists.append("Lead Status")
+        if not re.search(r"\bsalutation\b", lower):
+            optional_picklists.append("Salutation")
+        if not re.search(r"\blead\s+source\b", lower):
+            optional_picklists.append("Lead Source")
+
+    csv_cov = analyze_csv_lead_column_coverage(csv_bytes)
+    if csv_cov:
+        missing = [f for f in missing if not csv_cov.get(f, False)]
+        if csv_cov.get("Company"):
+            mentions_company = True
+        if csv_cov.get("Last Name"):
+            mentions_last_name = True
+
+    show_pm = bool(is_lead_creation and (missing or optional_picklists))
 
     result: PromptFieldAnalysis = {
         "is_lead_creation": is_lead_creation,
         "mentions_company": mentions_company,
         "mentions_last_name": mentions_last_name,
         "missing_lead_fields": missing,
-        "should_warn_placeholders": bool(is_lead_creation and missing),
+        "optional_picklist_fields": optional_picklists,
+        "should_show_lead_pm_form": show_pm,
+        "should_warn_placeholders": show_pm,
     }
     return result
 
@@ -166,6 +291,54 @@ CREDENTIAL_SUITE_VARS = (
     "${sandboxUserNameInput}",
     "${sandboxPasswordInput}",
 )
+
+# List variables the LLM must not define in *** Variables *** (runtime injection loads LEADS_FROM_CSV).
+_CSV_HALLUCINATED_LIST_VAR = re.compile(
+    r"^@\{\s*(?:LEADS_FROM_CSV|CSV\s+Data)\s*\}\s*",
+    re.IGNORECASE,
+)
+
+
+def strip_hallucinated_csv_variables_from_suite(robot_source: str) -> str:
+    """
+    Remove @{LEADS_FROM_CSV} and @{CSV Data} definitions from *** Variables *** sections,
+    including ``Create List`` plus ``...`` continuation lines (stops runaway multi-thousand-line files).
+    """
+    lines = robot_source.splitlines()
+    out: list[str] = []
+    in_variables = False
+    i = 0
+    nl = "\n" if robot_source.endswith("\n") else ""
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped.startswith("***") and stripped.replace(" ", "").lower() == "***variables***":
+            in_variables = True
+            out.append(line)
+            i += 1
+            continue
+
+        if stripped.startswith("***") and in_variables:
+            in_variables = False
+
+        if in_variables and _CSV_HALLUCINATED_LIST_VAR.match(stripped):
+            if re.search(r"=\s*Create\s+List\s*$", stripped, re.IGNORECASE):
+                i += 1
+                while i < len(lines):
+                    if lines[i].lstrip().startswith("..."):
+                        i += 1
+                        continue
+                    break
+                continue
+            i += 1
+            continue
+
+        out.append(line)
+        i += 1
+
+    return "\n".join(out) + nl
 
 
 def strip_credential_variable_overrides(robot_source: str) -> str:
@@ -225,6 +398,97 @@ def strip_llm_robot_garbage(robot_source: str) -> str:
         out.append(line)
         i += 1
     text = "\n".join(out)
+    return text + ("\n" if robot_source.endswith("\n") else "")
+
+
+def inject_csv_loader_into_robot(robot_source: str) -> str:
+    """
+    When the LLM emits FOR ... @{LEADS_FROM_CSV} but leaves the list undefined
+    (often under *** Keywords ***), drop bogus lines, add CsvDataLibrary, Suite Setup,
+    and a keyword that loads Tests/Generated/uploaded_test_data.csv.
+    """
+    robot_source = strip_hallucinated_csv_variables_from_suite(robot_source)
+    lines = [
+        ln
+        for ln in robot_source.splitlines()
+        if not _LEADS_FROM_CSV_LINE.match(ln.strip()) and not _CSV_DATA_LIST_LINE.match(ln.strip())
+    ]
+
+    lib_token = "CsvDataLibrary.py"
+    csv_kw = "Load Uploaded Csv Into Lead List"
+    has_lib = any(lib_token in ln for ln in lines)
+
+    s_start: int | None = None
+    s_end: int | None = None
+    for i, ln in enumerate(lines):
+        st = ln.strip()
+        if re.match(r"^\*\*\*\s*Settings\s*\*\*\*", st, re.I):
+            s_start = i
+            continue
+        if s_start is not None and s_end is None and st.startswith("***") and "settings" not in st.lower():
+            s_end = i
+            break
+    if s_start is None:
+        return "\n".join(lines) + ("\n" if robot_source.endswith("\n") else "")
+
+    if s_end is None:
+        s_end = len(lines)
+
+    settings_body = lines[s_start + 1 : s_end]
+    new_body: list[str] = []
+    suite_rest: str | None = None
+    for ln in settings_body:
+        st = ln.strip()
+        if re.match(r"^Suite Setup\s+", st, re.I):
+            m = re.match(r"^Suite Setup\s+(.+)$", st, re.I)
+            suite_rest = (m.group(1).strip() if m else "") or None
+            continue
+        new_body.append(ln)
+
+    if suite_rest:
+        rest_stripped = suite_rest.strip()
+        if rest_stripped == csv_kw or rest_stripped.startswith(f"{csv_kw}    "):
+            new_ss = f"Suite Setup    {suite_rest}"
+        else:
+            new_ss = f"Suite Setup    Run Keywords    {csv_kw}    AND    {suite_rest}"
+    else:
+        new_ss = f"Suite Setup    {csv_kw}"
+
+    insert: list[str] = []
+    if not has_lib:
+        insert.append("Library             ../../Libraries/CsvDataLibrary.py")
+    insert.append(new_ss)
+
+    merged = lines[: s_start + 1] + insert + new_body + lines[s_end:]
+    text = "\n".join(merged)
+
+    # Do not use ``csv_kw in text`` — Suite Setup already contains that phrase.
+    if re.search(rf"^{re.escape(csv_kw)}\s*$", text, re.M | re.I):
+        return text + ("\n" if robot_source.endswith("\n") else "")
+
+    row_line = (
+        "    @{rows}=    Load Csv As List Of Dicts    ${CURDIR}${/}"
+        + UPLOADED_CSV_FILENAME
+        + "\n    Set Suite Variable    @{LEADS_FROM_CSV}    @{rows}\n"
+    )
+    append_kw = f"{csv_kw}\n{row_line}"
+
+    if re.search(r"^\*\*\*\s*Keywords\s*\*\*\*", text, re.M | re.I):
+        text = re.sub(
+            r"(^\*\*\*\s*Keywords\s*\*\*\*\s*\n)",
+            lambda m: m.group(1) + append_kw,
+            text,
+            count=1,
+            flags=re.M | re.I,
+        )
+    else:
+        blk = "*** Keywords ***\n" + append_kw + "\n"
+        m = re.search(r"^\*\*\*\s*Test Cases\s*\*\*\*", text, re.M | re.I)
+        if m:
+            text = text[: m.start()] + blk + text[m.start() :]
+        else:
+            text = text.rstrip() + "\n\n" + blk
+
     return text + ("\n" if robot_source.endswith("\n") else "")
 
 
@@ -322,10 +586,14 @@ def _call_gemini(system_prompt: str, user_content: str) -> str:
     return out
 
 
-def generate_test_from_prompt(user_input: str) -> Path:
+def generate_test_from_prompt(user_input: str, csv_bytes: bytes | None = None) -> Path:
     """
     Send system prompt + keyword catalog + user_input to the configured LLM,
     extract .robot code, save to Tests/Generated/temp_test.robot.
+
+    If ``csv_bytes`` is set, writes ``uploaded_test_data.csv`` next to the suite and,
+    when the generated source references ``@{LEADS_FROM_CSV}``, injects library + Suite Setup
+    so the FOR loop receives real rows.
 
     Returns path to the written file.
     """
@@ -354,8 +622,14 @@ def generate_test_from_prompt(user_input: str) -> Path:
 
     robot_source = strip_credential_variable_overrides(robot_source)
     robot_source = strip_llm_robot_garbage(robot_source)
+    robot_source = strip_hallucinated_csv_variables_from_suite(robot_source)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if csv_bytes and csv_bytes.strip():
+        (OUTPUT_PATH.parent / UPLOADED_CSV_FILENAME).write_bytes(csv_bytes)
+        if "LEADS_FROM_CSV" in robot_source:
+            robot_source = inject_csv_loader_into_robot(robot_source)
+
     OUTPUT_PATH.write_text(robot_source.rstrip() + "\n", encoding="utf-8")
     return OUTPUT_PATH
 

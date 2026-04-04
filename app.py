@@ -7,6 +7,8 @@ Run from project root:
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import subprocess
@@ -22,6 +24,86 @@ GENERATED_SUITE = ROOT / "Tests" / "Generated" / "temp_test.robot"
 CATALOG_JSON_PATH = ROOT / "keyword_catalog.json"
 
 CLARIFY_SESSION_KEY = "clarify_context"
+# Limits for LLM context size (full row count still passed in summary line).
+_CSV_MARKDOWN_MAX_ROWS = 50
+_CSV_JSON_MAX_ROWS = 120
+
+
+def format_uploaded_csv_for_llm(file_bytes: bytes) -> str:
+    """
+    Parse CSV bytes into Markdown table preview + JSON row list for the LLM.
+    Large files: truncate displayed rows but state total data row count.
+    """
+    if not file_bytes or not file_bytes.strip():
+        return ""
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return "_Could not read CSV column headers._"
+    headers = [h or "" for h in reader.fieldnames]
+    rows: list[dict[str, str]] = []
+    for row in reader:
+        rows.append({h: str(row.get(h) or "").strip() for h in headers})
+    if not rows:
+        return f"_No data rows (headers only)._\n\n**Columns:** `{', '.join(headers)}`"
+
+    def _esc_cell(val: object) -> str:
+        return str(val).replace("|", "\\|").replace("\n", " ").replace("\r", "")
+
+    md_lines = [
+        "| " + " | ".join(_esc_cell(h) for h in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows[:_CSV_MARKDOWN_MAX_ROWS]:
+        md_lines.append("| " + " | ".join(_esc_cell(row.get(h, "")) for h in headers) + " |")
+    md = "\n".join(md_lines)
+    if len(rows) > _CSV_MARKDOWN_MAX_ROWS:
+        md += f"\n\n_Showing first {_CSV_MARKDOWN_MAX_ROWS} of **{len(rows)}** data rows._"
+
+    json_rows = rows[:_CSV_JSON_MAX_ROWS]
+    json_note = ""
+    if len(rows) > _CSV_JSON_MAX_ROWS:
+        json_note = (
+            f"\n_JSON array truncated to first {_CSV_JSON_MAX_ROWS} objects; "
+            f"**total data rows: {len(rows)}** — still generate tests that cover every row._"
+        )
+    json_block = json.dumps(json_rows, indent=2, ensure_ascii=False)
+    return (
+        f"**Tabular preview (Markdown)**\n\n{md}\n\n"
+        f"**Row objects (JSON, file order)**{json_note}\n```json\n{json_block}\n```\n\n"
+        f"**Total data rows in file:** {len(rows)}"
+    )
+
+
+def _sync_csv_session_cache(uploaded: object | None) -> str:
+    """Cache formatted CSV text in session_state; return LLM block or empty."""
+    if uploaded is None:
+        st.session_state.pop("csv_llm_block", None)
+        st.session_state.pop("csv_upload_sig", None)
+        return ""
+    if hasattr(uploaded, "getvalue"):
+        raw: bytes = uploaded.getvalue()
+    else:
+        raw = uploaded.read()
+        if hasattr(uploaded, "seek"):
+            uploaded.seek(0)
+    sig = (getattr(uploaded, "name", ""), len(raw))
+    if st.session_state.get("csv_upload_sig") != sig:
+        st.session_state["csv_upload_sig"] = sig
+        st.session_state["csv_llm_block"] = format_uploaded_csv_for_llm(raw)
+    return str(st.session_state.get("csv_llm_block") or "")
+
+
+def _csv_upload_bytes(uploaded: object | None) -> bytes | None:
+    """Raw bytes for the current CSV upload (for coverage checks). Same file as _sync_csv_session_cache."""
+    if uploaded is None:
+        return None
+    if hasattr(uploaded, "getvalue"):
+        return uploaded.getvalue()
+    raw = uploaded.read()
+    if hasattr(uploaded, "seek"):
+        uploaded.seek(0)
+    return raw
 
 
 def _open_local_path(path: Path) -> None:
@@ -192,6 +274,8 @@ def _field_input_label(field_name: str) -> str:
         return "Lead Last Name"
     if field_name == "Company":
         return "Company"
+    if field_name in ("Lead Status", "Salutation", "Lead Source"):
+        return f"{field_name} (optional — blank = random dropdown option)"
     return field_name
 
 
@@ -199,19 +283,51 @@ def build_augmented_prompt(
     original_prompt: str,
     missing_fields: list[str],
     field_values: dict[str, str],
+    optional_picklist_fields: list[str],
+    csv_llm_block: str | None = None,
 ) -> str:
-    """Append PM clarifications in natural language for the LLM."""
+    """Append PM clarifications in natural language for the LLM; optionally append CSV data-driven block."""
+    try:
+        from ai_bridge import append_csv_data_to_prompt
+    except ImportError:
+
+        def append_csv_data_to_prompt(p: str, c: str) -> str:  # type: ignore[misc]
+            return p.rstrip() + (f"\n\n{c}" if (c or "").strip() else "")
+
+    blocks: list[str] = []
     clauses: list[str] = []
     for field in missing_fields:
-        value = field_values[field].strip()
+        value = str(field_values.get(field, "")).strip()
         if field == "Last Name":
             clauses.append(f"the Last Name is {value}")
         elif field == "Company":
             clauses.append(f"the Company is {value}")
         else:
             clauses.append(f"the {field} is {value}")
-    suffix = "The user has clarified that " + " and ".join(clauses) + "."
-    return f"{original_prompt.rstrip()}\n\n{suffix}"
+    if clauses:
+        blocks.append("The user has clarified that " + " and ".join(clauses) + ".")
+
+    pick_parts: list[str] = []
+    for field in optional_picklist_fields:
+        raw = str(field_values.get(field, "")).strip()
+        if raw:
+            pick_parts.append(
+                f"{field} must be {raw!r} — use Open Dropdown then Select Dropdown Option with that exact visible label"
+            )
+        else:
+            pick_parts.append(
+                f"{field}: use GlobalKeywords.Open Dropdown And Select First Option with field label {field!r} (picks a random visible option)"
+            )
+    if pick_parts:
+        blocks.append("Picklist handling: " + " ".join(pick_parts) + ".")
+
+    if not blocks:
+        out = original_prompt.rstrip()
+    else:
+        out = original_prompt.rstrip() + "\n\n" + " ".join(blocks)
+    if csv_llm_block and str(csv_llm_block).strip():
+        out = append_csv_data_to_prompt(out, str(csv_llm_block).strip())
+    return out
 
 
 def run_automation_pipeline(
@@ -221,6 +337,7 @@ def run_automation_pipeline(
     username: str,
     password: str,
     headless: bool,
+    csv_bytes: bytes | None = None,
 ) -> None:
     """Refresh catalog, generate .robot via AI, execute Robot, persist result links."""
     try:
@@ -238,7 +355,10 @@ def run_automation_pipeline(
 
     try:
         with st.spinner("AI is architecting your test case…"):
-            out_path = generate_test_from_prompt(final_prompt.strip())
+            out_path = generate_test_from_prompt(
+                final_prompt.strip(),
+                csv_bytes=csv_bytes,
+            )
         if not GENERATED_SUITE.is_file():
             st.error("Generated suite was not written to disk.")
             return
@@ -490,6 +610,18 @@ def main_ui() -> None:
         help="Natural language description of what the test should do.",
     )
 
+    uploaded_csv = st.file_uploader(
+        "Upload Test Data (CSV)",
+        type=["csv"],
+        help="Optional. Each row is formatted and sent to the AI so it can generate FOR loops or repeated create steps.",
+        key="pm_test_data_csv",
+    )
+    csv_llm_block = _sync_csv_session_cache(uploaded_csv)
+    if csv_llm_block:
+        with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
+            preview = csv_llm_block if len(csv_llm_block) <= 14000 else csv_llm_block[:14000] + "\n\n…_(truncated in UI only)_"
+            st.markdown(preview)
+
     with st.expander("💡 What can I ask for? (Available Capabilities)", expanded=False):
         render_capabilities_cheat_sheet()
 
@@ -511,40 +643,61 @@ def main_ui() -> None:
             st.error("Please enter a user prompt.")
             return
 
-        pm_hint = analyze_prompt_for_required_fields(prompt.strip())
-        if pm_hint["should_warn_placeholders"]:
+        pm_hint = analyze_prompt_for_required_fields(
+            prompt.strip(),
+            csv_bytes=_csv_upload_bytes(uploaded_csv),
+        )
+        if pm_hint["should_show_lead_pm_form"]:
             st.session_state[CLARIFY_SESSION_KEY] = {
                 "original_prompt": prompt.strip(),
                 "missing_fields": list(pm_hint["missing_lead_fields"]),
+                "optional_picklists": list(pm_hint["optional_picklist_fields"]),
             }
             st.warning(
-                "Some Lead-related fields were not found in your prompt. "
-                "Complete the form below, then click **Submit & Run Automation**."
+                "Lead flow: fill **required** fields below. **Picklist** rows are optional—leave blank "
+                "to generate tests that pick a **random visible** dropdown option (stable across orgs). "
+                "Then click **Submit & Run Automation**."
             )
         else:
             st.session_state.pop(CLARIFY_SESSION_KEY, None)
+            try:
+                from ai_bridge import append_csv_data_to_prompt
+            except ImportError:
+
+                def append_csv_data_to_prompt(p: str, c: str) -> str:  # type: ignore[misc]
+                    p, c = (p or "").rstrip(), (c or "").strip()
+                    return p if not c else f"{p}\n\nThe user uploaded CSV test data:\n\n{c}"
+
+            final_prompt = append_csv_data_to_prompt(prompt.strip(), csv_llm_block)
             run_automation_pipeline(
-                prompt.strip(),
+                final_prompt,
                 sandbox_url=sandbox_url,
                 username=username,
                 password=password,
                 headless=headless,
+                csv_bytes=_csv_upload_bytes(uploaded_csv),
             )
 
     # --- Interactive clarification (same run after state set, or later reruns) ---
     clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
     if clarify_ctx:
         with st.form("missing_salesforce_data"):
-            st.markdown("### ⚠️ Missing Required Salesforce Data")
+            st.markdown("### ⚠️ Lead test — PM details")
             st.caption(
-                "Enter the values your test should use. They will be appended to your "
-                "prompt for the AI."
+                "Required fields must be filled. Picklist fields are optional; leave blank to use "
+                "`Open Dropdown And Select First Option` (random visible option) in generated tests."
             )
             field_values: dict[str, str] = {}
             for field in clarify_ctx["missing_fields"]:
                 field_values[field] = st.text_input(
                     _field_input_label(field),
                     key=f"clarify_input_{field.replace(' ', '_')}",
+                )
+            for field in clarify_ctx.get("optional_picklists", []):
+                field_values[field] = st.text_input(
+                    _field_input_label(field),
+                    key=f"clarify_picklist_{field.replace(' ', '_')}",
+                    help="Leave blank: random visible option in that dropdown. Or type the exact option label.",
                 )
             submit_clarify = st.form_submit_button("Submit & Run Automation")
 
@@ -553,6 +706,7 @@ def main_ui() -> None:
                 st.error("Please fill in Sandbox URL, Username, and Password in the sidebar.")
                 return
             missing = clarify_ctx["missing_fields"]
+            optional_pl = clarify_ctx.get("optional_picklists", [])
             empty = [f for f in missing if not str(field_values.get(f, "")).strip()]
             if empty:
                 st.error(
@@ -561,10 +715,13 @@ def main_ui() -> None:
                 )
                 return
 
+            csv_for_llm = str(st.session_state.get("csv_llm_block") or "")
             augmented = build_augmented_prompt(
                 clarify_ctx["original_prompt"],
                 missing,
                 field_values,
+                optional_pl,
+                csv_llm_block=csv_for_llm,
             )
             st.session_state.pop(CLARIFY_SESSION_KEY, None)
             run_automation_pipeline(
@@ -573,6 +730,7 @@ def main_ui() -> None:
                 username=username,
                 password=password,
                 headless=headless,
+                csv_bytes=_csv_upload_bytes(uploaded_csv),
             )
 
 
