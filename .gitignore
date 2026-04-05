@@ -13,6 +13,9 @@ __pycache__/
 # LLM-generated tests (optional local only)
 Tests/Generated/
 
+# Saved workspace projects (user tests + CSV — do not commit customer data)
+Saved_Projects/
+
 # Ignore the entire venv folder
 venv/
 

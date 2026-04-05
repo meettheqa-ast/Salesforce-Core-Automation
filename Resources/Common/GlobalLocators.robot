@@ -18,7 +18,9 @@ ${tabInAppLocator}=                                     xpath://one-app-nav-bar-
 # The last or part for this locator is used to handle the intelligent view breadcrumbs
 ${activeTabLocator}=                                    xpath://lst-breadcrumbs//span[text()='<tab-name>'] | //lst-breadcrumbs//h1[text()='<tab-name>'] | //*[@class='slds-page-header__name-meta'][contains(text(), '<tab-name>')]
 
-# New Record — list header / split view (Aura forceActionLink + LWC role=button)
+# New Record — tiered locators: CSS title+role → LWC lightning-button → XPath fallback (§1.1)
+${newRecordTier1}=                                      css:a[title='New'][role='button']
+${newRecordTier2}=                                      xpath://lightning-button//a[@title='New']
 ${newRecord}=                                           xpath:(//a[@role='button' and (@title='New' or .//div[@title='New'])])[1] | (//a[contains(@class,'forceActionLink') and @title='New'])[1]
 # Record-type / picker layer that can sit above the list header and intercept New (Aura forceChangeRecordType)
 ${sfRecordTypeOverlay}=                                 xpath://div[contains(@class,'forceChangeRecordType')]
@@ -35,8 +37,13 @@ ${searchSuggestionTermDialogLocator}=                   xpath:(//*[contains(@cla
 # Dropdown Locator. Aura uiInputSelect + LWC combobox (button / searchable input) + lightning-base-combobox by label
 ${dropdownDialogLocator}=                               xpath://*[contains(@class,'modal-container')]//div[contains(@class, 'uiInputSelect') and .//span[contains(text(), '<dropdown-field>')]]//a | //*[contains(@class,'modal-container')]//button[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//input[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox//button[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox//input[@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//button[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//input[contains(@class,'slds-combobox__input')][@aria-label='<dropdown-field>'] | //*[contains(@class,'modal-container')]//lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label') or contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//button[contains(@class,'slds-combobox__input')][1] | //*[contains(@class,'modal-container')]//lightning-base-combobox[.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'form-element__label') or contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//input[contains(@class,'slds-combobox__input')][1] | //*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//label[contains(normalize-space(.), '<dropdown-field>')] or .//span[contains(@class,'test-id__field-label')][contains(normalize-space(.), '<dropdown-field>')]]//*[self::button or self::input][contains(@class,'combobox') or contains(@class,'slds-combobox__input')][1]
 ${dropdownOptionsDialogLocator}=                        xpath:(//div[contains(@class, 'select-options') and contains(@class, 'visible')]//a[@title='<dropdown-value>']) | (//*[contains(@class,'modal-container')]//button[@aria-expanded='true']/ancestor::div[1]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>']) | (//*[contains(@class,'modal-container')]//input[@aria-expanded='true']/ancestor::div[3]/following-sibling::div[@aria-label='<dropdown-field>']//lightning-base-combobox-item[@data-value='<dropdown-value>'])
-# Normal Input Field
+# Dropdown primary locators — shorter, tried first by Open Dropdown / Select Dropdown Option (§1.1)
+${dropdownDialogAriaLabel}=                             xpath://*[contains(@class,'modal-container')]//*[self::button or self::input][@aria-label='<dropdown-field>']
+${dropdownOptionByDataValue}=                           xpath://lightning-base-combobox-item[@data-value='<dropdown-value>']
+# Normal Input Field (exact label match)
 ${inputFieldDialogLocator}=                             xpath://*[contains(@class,'modal-container')]//label[.//text()[normalize-space()='<field-name>'] or normalize-space()='<field-name>']//following::*[(self::input or self::textarea)][1]
+# Custom / richly-labelled field fallback — uses contains() across label/span text; catches custom fields with nested spans, required asterisks, or non-standard SLDS markup
+${customInputFieldDialogLocator}=                       xpath:(//*[contains(@class,'modal-container')]//label[contains(normalize-space(.),'<field-name>')]//following::*[(self::input or self::textarea)][1]) | (//*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//*[self::label or self::span][contains(normalize-space(.),'<field-name>')]]//input[not(@type='hidden')])[1] | (//*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//*[self::label or self::span][contains(normalize-space(.),'<field-name>')]]//textarea)[1]
 # Date-Times Fields
 ${dateFieldDialogLocator}=                              xpath:(//*[contains(@class,'modal-container')]//legend[normalize-space(.)='<date-field-name>']/following-sibling::*//input)[1] | (//*[contains(@class,'modal-container')]//lightning-datepicker[.//text()[normalize-space(.)='<date-field-name>']]//input) | //*[contains(@class,'modal-container')]//label[.//text()[normalize-space(.)='<date-field-name>']]/following-sibling::*//input | //*[contains(@class,'modal-container')]//label[.//text()[normalize-space(.)='<date-field-name>']]/following-sibling::input
 ${timeFieldDialogLocator}=                              xpath:(//*[contains(@class,'modal-container')]//legend[normalize-space(.)='<time-field-name>']/following-sibling::*//input)[2]
@@ -87,15 +94,15 @@ ${relatedRecordDropdownLocator}=                        xpath://article[@aria-la
 ${relatedRecordDropdownOptionLocator}=                  xpath://div[contains(@class, 'actionMenu') and (contains(@class, 'visible'))]//a[@title='<dropdown-option>']
 
 ${dialogLocator}=                                       xpath://*[contains(@class,'modal-container')]
-${successToastMessageOnRecordDetailsPageLocator}=       xpath://div[@data-key='success']//a//div
+${successToastMessageOnRecordDetailsPageLocator}=       css:div[data-key='success'] a div
 ${relatedRecordsViewAllLocator}=                        xpath://article[@aria-label='<record-type>']//span[@class='view-all-label']
 ${realtedRecordListViewTitleLocator}=                   xpath://h1[@title='<record-type>']
 ${tableCellLocator}=                                    xpath:(//a[starts-with(@href, '/lightning/r/') and contains(@href, '/view')][.//text()='<record-id>'])[<pos>]
-${successToastMessageLocator}=                          xpath://div[@data-key='success']
+${successToastMessageLocator}=                          css:div[data-key='success']
 
 ${relatedRecordParentBreadcrumbLocator}=                xpath://nav[@role='navigation' and @aria-label='Breadcrumbs']//li[2]
 
-${spinnerLoadingWOLocator}=                             xpath://lightning-spinner
+${spinnerLoadingWOLocator}=                             css:lightning-spinner
 
 # List view toggle (exact + flexible—LWC / labels vary by org)
 ${listViewButton}=                                      xpath://button[normalize-space()='List View']
@@ -112,7 +119,7 @@ ${dynamicFormInformationSectionLocator}=                xpath://h3[contains(@cla
 ${emptyContainerListViewLocator}=                       xpath://div[contains(@class,'emptyContent')]
 ${listViewDropdownLocator}=                             xpath://button[@title="Select a List View: <record-type>"]
 ${listViewDropdownOptionLocator}=                       xpath://div[@role="dialog" and @aria-hidden="false"]//li/a/span[text()="<dropdown-value>"]
-${listViewSearchSpinner}=                               xpath://div[@class='slds-spinner_container slds-grid']
+${listViewSearchSpinner}=                               css:div.slds-spinner_container.slds-grid
 
 # Locators to change path option
 ${pathOption}=                                          xpath://ul[@class="slds-path__nav"]//li[@data-name="<path-option>"]/a

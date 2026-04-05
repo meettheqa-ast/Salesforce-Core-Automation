@@ -5,7 +5,10 @@ headless = true
 gatherUsageStats = false
 
 [theme]
-primaryColor = "#0176d3"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f3f3f3"
-textColor = "#080707"
+# Enterprise light theme — high contrast, internal SaaS feel
+base = "light"
+primaryColor = "#0052CC"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F5F7"
+textColor = "#172B4D"
+font = "sans serif"

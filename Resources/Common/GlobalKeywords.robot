@@ -67,7 +67,6 @@ Launch App
         Wait Until Element Is Visible    ${searchAppLauncher}
         Clear Element Text    ${searchAppLauncher}
         Input Text    ${searchAppLauncher}    ${appName}
-        Sleep    0.5s
         ${appInLauncher}=    Replace String    ${appInLauncherLocator}    <app-name>    ${appName}
         ${exactHit}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${appInLauncher}    5s
         IF    ${exactHit}
@@ -83,7 +82,7 @@ Launch App
             Log    Opened first App Launcher search result for "${appName}"; active header may not match the string exactly (typos / alternate app title).    WARN
         END
     END
-    Sleep    3s
+    Wait Until Element Is Visible    ${activeApp}    timeout=5s
 
 Select App Tab
     [Documentation]    Selects a specific tab within an app that includes dropdown options. It dynamically locates the desired tab by its name, waits for it to become visible, and then clicks on it. After selecting the tab, it verifies that the tab is active by checking for the presence of the corresponding element on the page.
@@ -97,24 +96,24 @@ Select App Tab
     Page Should Contain Element    ${activeTab}
 
 Open New Dialog
-    [Documentation]    Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).
+    [Documentation]    Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.
     [Tags]    modal    navigation
     [Arguments]    ${dialogName}
-    Wait Until Element Is Visible    ${newRecord}    timeout=20s
-    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=15s
+    ${newBtn}=    Resolve Tiered Locator    ${newRecordTier1}    ${newRecordTier2}    ${newRecord}
+    Wait Until Element Is Visible    ${newBtn}    timeout=20s
+    Wait For Lightning Spinners Absent    timeout=15s
     Run Keyword And Ignore Error    Press Keys    xpath://body    ESCAPE
-    Sleep    0.3s
+    Wait For Lightning Spinners Absent    timeout=5s
     ${overlay}=    Run Keyword And Return Status    Element Should Be Visible    ${sfRecordTypeOverlay}    2s
     IF    ${overlay}
         Run Keyword And Ignore Error    Press Keys    xpath://body    ESCAPE
-        Sleep    0.5s
-        Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${sfRecordTypeOverlay}    timeout=10s
+        Wait For Record Type Overlay Cleared    timeout=10s
     END
-    Scroll Element Into View With Fallback    ${newRecord}
-    Sleep    0.5s
-    ${clicked}=    Run Keyword And Return Status    Click Element    ${newRecord}
+    Scroll Element Into View With Fallback    ${newBtn}
+    Wait For Lightning Spinners Absent    timeout=5s
+    ${clicked}=    Run Keyword And Return Status    Click Element    ${newBtn}
     IF    not ${clicked}
-        ${nr}=    Get Webelement    ${newRecord}
+        ${nr}=    Get Webelement    ${newBtn}
         Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${nr}
     END
     ${newRecordDialogTitle}=    Replace String    ${newRecordDialogTitleLocator}    <record-name>    ${dialogName}
@@ -136,7 +135,6 @@ Open Item
     Wait Until Element Is Visible    ${itemInLauncher}
     Click Element    ${itemInLauncher}
     Wait Until Element Is Visible    ${sandboxlaunch360logo}
-    Sleep    2s
 
 Enter Into Search Field
     [Documentation]    Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.
@@ -160,7 +158,7 @@ Enter Into Search Field
         ${searchSuggestionTerm}=    Replace String    ${searchSuggestionTerm}    <pos>    ${searchPos}
         Wait Until Element Is Visible    ${searchSuggestionTerm}    timeout=10s
         Scroll Element Into View    ${searchSuggestionTerm}
-        Sleep    2s
+        Wait Until Element Is Enabled    ${searchSuggestionTerm}    timeout=5s
         ${searchSuggestionTerm}=    Get Webelement    ${searchSuggestionTerm}
         Click Element    ${searchSuggestionTerm}
     END
@@ -179,8 +177,7 @@ Attempt Save And Auto-Heal Missing Fields
     ${saved}=    Set Variable    ${FALSE}
     FOR    ${_}    IN RANGE    3
         Select Dialog Button    Save
-        Sleep    2s
-        ${snag}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${salesforceModalValidationErrorLocator}    1.5s
+        ${snag}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${salesforceModalValidationErrorLocator}    5s
         IF    not ${snag}
             ${saved}=    Set Variable    ${TRUE}
             Exit For Loop
@@ -204,7 +201,13 @@ Attempt Save And Auto-Heal Missing Fields
     END
 
 Heal Missing Modal Field By Label
-    [Documentation]    Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).
+    [Documentation]    Tries **Open Dropdown With Fallback** + ``Select Random Valid Picklist Option`` for ``${field_label}`` (custom fields tolerated).
+    ...    If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but
+    ...    the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and
+    ...    ``Enter Text With Fallback`` then **RETURN**s.
+    ...    Otherwise if not a picklist, fills text via ``Enter Text With Fallback``
+    ...    using ``Word`` / ``Numerify`` (Phone/Fax). Custom field labels are handled by the
+    ...    fallback strategies in both keywords.
     [Tags]    modal    interaction    self-heal
     [Arguments]    ${field_label}
     ${fl}=    Convert To Lower Case    ${field_label}
@@ -214,25 +217,25 @@ Heal Missing Modal Field By Label
         ${v_city}=    City
         ${v_zip}=    Zipcode
         ${v_country}=    Country
-        ${a}=    Run Keyword And Return Status    Enter Text    Street    ${v_street}
+        ${a}=    Enter Text With Fallback    Street    ${v_street}
         IF    not ${a}
             Log    Address heal: Street not filled (missing or non-text on layout).    WARN
         END
-        ${b}=    Run Keyword And Return Status    Enter Text    City    ${v_city}
+        ${b}=    Enter Text With Fallback    City    ${v_city}
         IF    not ${b}
             Log    Address heal: City not filled (missing or non-text on layout).    WARN
         END
-        ${c}=    Run Keyword And Return Status    Enter Text    Zip/Postal Code    ${v_zip}
+        ${c}=    Enter Text With Fallback    Zip/Postal Code    ${v_zip}
         IF    not ${c}
             Log    Address heal: Zip/Postal Code not filled (missing or non-text on layout).    WARN
         END
-        ${d}=    Run Keyword And Return Status    Enter Text    Country    ${v_country}
+        ${d}=    Enter Text With Fallback    Country    ${v_country}
         IF    not ${d}
             Log    Address heal: Country not filled (missing or non-text on layout).    WARN
         END
         RETURN
     END
-    ${opened}=    Run Keyword And Return Status    Open Dropdown    ${field_label}
+    ${opened}=    Open Dropdown With Fallback    ${field_label}
     IF    ${opened}
         ${picked}=    Run Keyword And Return Status    Select Random Valid Picklist Option
         IF    not ${picked}
@@ -246,9 +249,9 @@ Heal Missing Modal Field By Label
     ELSE
         ${fill}=    Word
     END
-    ${typed}=    Run Keyword And Return Status    Enter Text    ${field_label}    ${fill}
+    ${typed}=    Enter Text With Fallback    ${field_label}    ${fill}
     IF    not ${typed}
-        Log    Could not fill text for "${field_label}" (field may be absent, read-only, or non-text).    WARN
+        Log    Could not fill text for "${field_label}" (field may be absent, read-only, non-text, or a custom field not found by any strategy).    WARN
     END
 
 Scroll Element Into View With Fallback
@@ -262,15 +265,20 @@ Scroll Element Into View With Fallback
     END
 
 Open Dropdown
-    [Documentation]    Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.
+    [Documentation]    Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls the control into view (Selenium + JS centering), refuses **disabled** / **aria-disabled** controls, then JS-clicks to open the list.
     [Tags]    interaction    pick list
     [Arguments]    ${dropdownFieldArg}
-    ${dropdownField}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
+    ${primaryLoc}=    Replace String    ${dropdownDialogAriaLabel}    <dropdown-field>    ${dropdownFieldArg}
+    ${ok_primary}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${primaryLoc}    timeout=3s
+    IF    ${ok_primary}
+        ${dropdownField}=    Set Variable    ${primaryLoc}
+    ELSE
+        ${dropdownField}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
+    END
     Wait Until Element Is Visible    ${dropdownField}
     Scroll Element Into View With Fallback    ${dropdownField}
     ${dropdownFieldJS}=    Get Webelement    ${dropdownField}
     Execute Javascript    arguments[0].scrollIntoView({block:'center', inline:'nearest'});    ARGUMENTS    ${dropdownFieldJS}
-    Sleep    0.3s
     ${aria_dis}=    Get Element Attribute    ${dropdownField}    aria-disabled
     IF    '${aria_dis}' == 'true'
         Fail    The dropdown ${dropdownFieldArg} is disabled. This is likely a dependent picklist waiting for a controlling field.
@@ -279,13 +287,76 @@ Open Dropdown
     IF    not ${enabled}
         Fail    The dropdown ${dropdownFieldArg} is disabled. This is likely a dependent picklist waiting for a controlling field.
     END
-    Sleep    0.5s
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${dropdownFieldJS}
 
+Open Dropdown With Fallback
+    [Documentation]    Resilient variant of ``Open Dropdown`` for custom / non-standard Salesforce picklists.
+    ...    Tries three strategies in order:
+    ...    1. The full ``dropdownDialogLocator`` (exact aria-label + vendor-specific selectors).
+    ...    2. A broad ``contains(aria-label)`` combobox search that tolerates partial label matches.
+    ...    3. A ``contains(@class,'slds-combobox')`` parent scope search by label text.
+    ...    Returns ``${TRUE}`` on success, ``${FALSE}`` (with WARN log) if all strategies fail.
+    [Tags]    interaction    pick list    self-heal
+    [Arguments]    ${dropdownFieldArg}
+    # Strategy 1 — existing full locator (exact aria-label)
+    ${loc1}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
+    ${ok1}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc1}    timeout=4s
+    IF    ${ok1}
+        Scroll Element Into View With Fallback    ${loc1}
+        ${aria_dis}=    Get Element Attribute    ${loc1}    aria-disabled
+        ${enabled}=    Run Keyword And Return Status    Element Should Be Enabled    ${loc1}
+        IF    '${aria_dis}' == 'true' or not ${enabled}
+            Log    Open Dropdown With Fallback: "${dropdownFieldArg}" is disabled (dependent picklist?). Skipping.    WARN
+            RETURN    ${FALSE}
+        END
+        ${el1}=    Get Webelement    ${loc1}
+        Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el1}
+        RETURN    ${TRUE}
+    END
+    # Strategy 2 — contains(aria-label) for custom picklists whose label text is a partial match
+    ${loc2}=    Set Variable    xpath://*[contains(@class,'modal-container')]//*[self::button or self::input][contains(@class,'slds-combobox__input')][contains(@aria-label,'${dropdownFieldArg}')]
+    ${ok2}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc2}    timeout=4s
+    IF    ${ok2}
+        Scroll Element Into View With Fallback    ${loc2}
+        ${aria_dis}=    Get Element Attribute    ${loc2}    aria-disabled
+        ${enabled}=    Run Keyword And Return Status    Element Should Be Enabled    ${loc2}
+        IF    '${aria_dis}' == 'true' or not ${enabled}
+            Log    Open Dropdown With Fallback: "${dropdownFieldArg}" (contains match) is disabled. Skipping.    WARN
+            RETURN    ${FALSE}
+        END
+        ${el2}=    Get Webelement    ${loc2}
+        Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el2}
+        RETURN    ${TRUE}
+    END
+    # Strategy 3 — parent slds-form-element scope by label contains text
+    ${loc3}=    Set Variable    xpath:(//*[contains(@class,'modal-container')]//div[contains(@class,'slds-form-element')][.//*[self::label or self::span][contains(normalize-space(),'${dropdownFieldArg}')]]//*[self::button or self::input][contains(@class,'combobox') or contains(@class,'slds-combobox__input')])[1]
+    ${ok3}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc3}    timeout=4s
+    IF    ${ok3}
+        Scroll Element Into View With Fallback    ${loc3}
+        ${aria_dis}=    Get Element Attribute    ${loc3}    aria-disabled
+        ${enabled}=    Run Keyword And Return Status    Element Should Be Enabled    ${loc3}
+        IF    '${aria_dis}' == 'true' or not ${enabled}
+            Log    Open Dropdown With Fallback: "${dropdownFieldArg}" (scope match) is disabled. Skipping.    WARN
+            RETURN    ${FALSE}
+        END
+        ${el3}=    Get Webelement    ${loc3}
+        Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el3}
+        RETURN    ${TRUE}
+    END
+    Log    Open Dropdown With Fallback: could not find combobox for "${dropdownFieldArg}" with any strategy. Field may be absent on layout or not a picklist.    WARN
+    RETURN    ${FALSE}
+
 Select Dropdown Option
-    [Documentation]    Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.
+    [Documentation]    Selects an option in the expanded dropdown. Tries direct ``data-value`` targeting on ``lightning-base-combobox-item`` first (most resilient per §1.1), then falls back to the full XPath union for Classic / Aura dropdowns.
     [Tags]    interaction    pick list
     [Arguments]    ${dropdownNameArg}    ${dropdownOptionArg}
+    ${dvLoc}=    Replace String    ${dropdownOptionByDataValue}    <dropdown-value>    ${dropdownOptionArg}
+    ${ok_dv}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${dvLoc}    timeout=3s
+    IF    ${ok_dv}
+        Scroll Element Into View With Fallback    ${dvLoc}
+        Click Element    ${dvLoc}
+        RETURN
+    END
     ${dropdownOptionsDialogLocator}=    Replace String
     ...    ${dropdownOptionsDialogLocator}
     ...    <dropdown-field>
@@ -313,7 +384,6 @@ Select Multiselect Option
         END
         Scroll Element Into View With Fallback    ${item}
         Click Element    ${item}
-        Sleep    0.25s
         @{move_x}=    Create List
         ...    ${scope}//button[contains(@title,'Move selection to Chosen')]
         ...    ${scope}//button[contains(translate(@title,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'chosen')]
@@ -330,13 +400,12 @@ Select Multiselect Option
         IF    not ${moved}
             Fail    Multiselect "${fieldLabel}": could not click a "Move to Chosen" control after selecting "${val}".
         END
-        Sleep    0.3s
     END
 
 Select Random Dropdown Option In Modal
     [Documentation]    After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.
     [Tags]    interaction    pick list
-    Sleep    0.4s
+    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=5s
     @{scopes}=    Create List
     ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
     ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
@@ -360,7 +429,7 @@ Select Random Dropdown Option In Modal
 Select Random Valid Picklist Option
     [Documentation]    After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.
     [Tags]    interaction    pick list
-    Sleep    0.4s
+    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=5s
     @{scopes}=    Create List
     ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
     ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
@@ -419,6 +488,59 @@ Enter Text
     ${inputTextFieldJS}=    Get Webelement    ${inputField}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${inputTextFieldJS}
     Input Text    ${inputField}    ${textValue}
+
+Enter Text With Fallback
+    [Documentation]    Resilient variant of ``Enter Text`` for custom / non-standard Salesforce fields.
+    ...    Tries four strategies in order:
+    ...    1. Exact label match (``inputFieldDialogLocator``).
+    ...    2. Broad label-contains match (``customInputFieldDialogLocator``).
+    ...    3. Direct ``aria-label`` attribute on the input/textarea itself.
+    ...    4. ``data-field-name`` attribute on surrounding form element's input.
+    ...    Logs a WARN and returns ${FALSE} if all four fail; never blocks the test.
+    [Tags]    interaction    input field    self-heal
+    [Arguments]    ${labelName}    ${textValue}
+    # Strategy 1 — exact label
+    ${loc1}=    Replace String    ${inputFieldDialogLocator}    <field-name>    ${labelName}
+    ${ok1}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc1}    timeout=4s
+    IF    ${ok1}
+        Scroll Element Into View With Fallback    ${loc1}
+        ${el1}=    Get Webelement    ${loc1}
+        Execute Javascript    arguments[0].click();    ARGUMENTS    ${el1}
+        Input Text    ${loc1}    ${textValue}
+        RETURN    ${TRUE}
+    END
+    # Strategy 2 — broad label-contains (custom fields with extra markup)
+    ${loc2}=    Replace String    ${customInputFieldDialogLocator}    <field-name>    ${labelName}
+    ${ok2}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc2}    timeout=4s
+    IF    ${ok2}
+        Scroll Element Into View With Fallback    ${loc2}
+        ${el2}=    Get Webelement    ${loc2}
+        Execute Javascript    arguments[0].click();    ARGUMENTS    ${el2}
+        Input Text    ${loc2}    ${textValue}
+        RETURN    ${TRUE}
+    END
+    # Strategy 3 — aria-label directly on the input/textarea
+    ${loc3}=    Set Variable    xpath://*[contains(@class,'modal-container')]//*[(self::input or self::textarea)][@aria-label='${labelName}']
+    ${ok3}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc3}    timeout=4s
+    IF    ${ok3}
+        Scroll Element Into View With Fallback    ${loc3}
+        ${el3}=    Get Webelement    ${loc3}
+        Execute Javascript    arguments[0].click();    ARGUMENTS    ${el3}
+        Input Text    ${loc3}    ${textValue}
+        RETURN    ${TRUE}
+    END
+    # Strategy 4 — data-field-name attribute (LWC custom fields rendered with API name)
+    ${loc4}=    Set Variable    xpath://*[contains(@class,'modal-container')]//*[self::input or self::textarea][contains(@data-field-name,'${labelName}') or contains(@name,'${labelName}')]
+    ${ok4}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc4}    timeout=4s
+    IF    ${ok4}
+        Scroll Element Into View With Fallback    ${loc4}
+        ${el4}=    Get Webelement    ${loc4}
+        Execute Javascript    arguments[0].click();    ARGUMENTS    ${el4}
+        Input Text    ${loc4}    ${textValue}
+        RETURN    ${TRUE}
+    END
+    Log    Enter Text With Fallback: could not locate field "${labelName}" with any strategy (exact label, contains label, aria-label, data-field-name). Field may be read-only, absent on layout, or hidden.    WARN
+    RETURN    ${FALSE}
 
 Enter Date
     [Documentation]    Enters a date value into a date input field. It first identifies the date field using the provided field name, waits for the field to become visible, and scrolls it into view. It then enters the specified date value into the field.
@@ -535,7 +657,7 @@ Open Related Record Dropdown
     ...    ${relatedRecordDropdownArg}
     Wait Until Element Is Visible    ${relatedRecordDropdownName}
     Scroll Element Into View    ${relatedRecordDropdownName}
-    Sleep    2s
+    Wait Until Element Is Enabled    ${relatedRecordDropdownName}    timeout=5s
     ${relatedRecordDropdown}=    Replace String
     ...    ${relatedRecordDropdownLocator}
     ...    <record-type>
@@ -606,7 +728,6 @@ Return To Previous Page
 Convert View From Intelligent To List
     [Documentation]    Switches to List view when Salesforce shows Intelligence/List toggles. If **no** toggle appears (already in List view, split view, or org-specific layout), exits without failing—this is the usual fix for "List View button not found". Otherwise clicks List View using exact then flexible locators.
     [Tags]    utilities    view
-    Sleep    1s
     ${hasIntel}=    Run Keyword And Return Status
     ...    Wait Until Element Is Visible    ${intelligentListButton}    timeout=4s
     ${listExact}=    Run Keyword And Return Status
@@ -621,7 +742,7 @@ Convert View From Intelligent To List
         Scroll Element Into View With Fallback    ${listViewButton}
         ${ok}=    Run Keyword And Return Status    Click Element    ${listViewButton}
         IF    ${ok}
-            Sleep    1s
+            Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=10s
             RETURN
         END
     END
@@ -629,7 +750,7 @@ Convert View From Intelligent To List
         Scroll Element Into View With Fallback    ${listViewButtonFlexible}
         ${ok2}=    Run Keyword And Return Status    Click Element    ${listViewButtonFlexible}
         IF    ${ok2}
-            Sleep    1s
+            Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=10s
             RETURN
         END
     END
@@ -726,7 +847,6 @@ Search In List View
     [Documentation]    Searches for a specific record in the list view. Inputs the record ID into the search box, performs the search, and verifies the presence of the record in the resulting list.
     [Tags]    search in list view    interaction
     [Arguments]    ${recordIdArg}
-    sleep    1s
     ${listViewSearchInput}=    Replace String    ${searchInputFieldLocator}    <search-input-field>    this list
     Wait Until Element Is Visible    ${listViewSearchInput}
     Input Text    ${listViewSearchInput}    ${recordIdArg}
@@ -824,6 +944,64 @@ Verify Field Present In Error Snag
     ${reqSnagFieldName}=    Replace String    ${snagFieldRequired}    <snag-field-name>    ${reqSnagFieldName}
     Wait Until Element Is Visible    ${reqSnagFieldName}
     Element Should Be Visible    ${reqSnagFieldName}
+
+Resolve Tiered Locator
+    [Documentation]    Tries each locator in order and returns the first one where the element is present on the page within a short timeout. Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns. Use this to implement tiered locator strategies (§1.1) where CSS / ``aria-label`` locators are preferred but a heavier XPath fallback must remain available.
+    [Tags]    utilities    locators
+    [Arguments]    @{locators}
+    FOR    ${loc}    IN    @{locators}
+        ${ok}=    Run Keyword And Return Status    Wait Until Page Contains Element    ${loc}    timeout=3s
+        IF    ${ok}
+            RETURN    ${loc}
+        END
+    END
+    RETURN    ${locators}[-1]
+
+# ---------------------------------------------------------------------------
+# Infrastructure: Lightning waits, Shadow DOM, iFrame utilities
+# ---------------------------------------------------------------------------
+
+Wait For Lightning Spinners Absent
+    [Documentation]    Waits until standard Salesforce Lightning spinners are no longer visible. Covers list-view search spinner, generic ``lightning-spinner``, and SLDS ``slds-spinner`` containers. Each check uses ``Run Keyword And Ignore Error`` so a missing spinner does not fail the keyword (the spinner may never have appeared). Use instead of ``Sleep`` after actions that trigger server round-trips.
+    [Tags]    utilities    wait    lightning
+    [Arguments]    ${timeout}=30s
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=${timeout}
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${spinnerLoadingWOLocator}    timeout=${timeout}
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    css:div.slds-spinner_container    timeout=${timeout}
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    css:div.slds-spinner    timeout=${timeout}
+
+Wait For Record Type Overlay Cleared
+    [Documentation]    Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Safe to call when the overlay may or may not be present — uses ``Run Keyword And Ignore Error`` internally. Use after pressing ESC to dismiss the overlay rather than a static ``Sleep``.
+    [Tags]    utilities    wait    lightning
+    [Arguments]    ${timeout}=15s
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${sfRecordTypeOverlay}    timeout=${timeout}
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    css:div.forceChangeRecordType    timeout=${timeout}
+
+Click In Shadow Root
+    [Documentation]    Clicks an element inside a **shadow root** that standard Selenium locators cannot reach. ``${host_css_selector}`` is a **CSS selector** for the light-DOM host element whose ``shadowRoot`` contains the target. ``${inner_css_selector}`` is resolved inside ``host.shadowRoot.querySelector``. Centralizes shadow-pierce JS so individual tests never contain ad-hoc shadow scripts.
+    [Tags]    utilities    shadow dom
+    [Arguments]    ${host_css_selector}    ${inner_css_selector}
+    Execute Javascript
+    ...    var host = document.querySelector(arguments[0]);
+    ...    if (!host) { throw new Error('Shadow host not found: ' + arguments[0]); }
+    ...    var root = host.shadowRoot;
+    ...    if (!root) { throw new Error('No shadowRoot on host: ' + arguments[0]); }
+    ...    var el = root.querySelector(arguments[1]);
+    ...    if (!el) { throw new Error('Inner element not found in shadow: ' + arguments[1]); }
+    ...    el.scrollIntoView({block:'center'});
+    ...    el.click();
+    ...    ARGUMENTS    ${host_css_selector}    ${inner_css_selector}
+
+Run Keyword In Salesforce Iframe
+    [Documentation]    Switches into the given iframe, runs ``${keyword_name}`` with ``@{args}``, and **always** switches back to the default content via ``TRY / FINALLY``. Use for Classic console tabs, Visualforce embeds, or any Salesforce page that renders inside an ``<iframe>``. ``${iframe_locator}`` should be a stable locator (``css:iframe[name='...']``, ``id``, ``title``).
+    [Tags]    utilities    iframe
+    [Arguments]    ${iframe_locator}    ${keyword_name}    @{args}
+    Select Frame    ${iframe_locator}
+    TRY
+        Run Keyword    ${keyword_name}    @{args}
+    FINALLY
+        Unselect Frame
+    END
 
 # Use Modal
 #    [Arguments]    ${state}

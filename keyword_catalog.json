@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-04T14:53:36.888508+00:00",
+  "generated_at": "2026-04-05T08:37:59.375336+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 138,
+  "keyword_count": 153,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -480,6 +480,75 @@
       "source_file": "Resources/PO/LucyChatBot/WarrantiesPO.robot"
     },
     {
+      "keyword_name": "Open New Contact From Sales App",
+      "arguments": [],
+      "documentation": "Launches the configured Sales app, navigates to the Contacts tab, and opens the New Contact dialog.",
+      "documentation_source": "author",
+      "natural_language_summary": "Launches the configured Sales app, navigates to the Contacts tab, and opens the New Contact dialog.",
+      "inferred_description": null,
+      "tags": [
+        "navigation",
+        "contact"
+      ],
+      "source_file": "Resources/PO/Platform/ContactPO.robot"
+    },
+    {
+      "keyword_name": "Create A New Contact",
+      "arguments": [],
+      "documentation": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors.",
+      "documentation_source": "author",
+      "natural_language_summary": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "contact",
+        "modal"
+      ],
+      "source_file": "Resources/PO/Platform/ContactPO.robot"
+    },
+    {
+      "keyword_name": "Verify Contact Created Successfully",
+      "arguments": [],
+      "documentation": "Confirms the Contact was saved via the success toast, then verifies Last Name and Title are visible on the record page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Confirms the Contact was saved via the success toast, then verifies Last Name and Title are visible on the record page.",
+      "inferred_description": null,
+      "tags": [
+        "verification",
+        "contact"
+      ],
+      "source_file": "Resources/PO/Platform/ContactPO.robot"
+    },
+    {
+      "keyword_name": "Edit Contact Title",
+      "arguments": [
+        "${new_title}=Updated Smoke Title"
+      ],
+      "documentation": "Opens Edit on the current Contact record, updates the Title field, saves, and verifies the toast.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens Edit on the current Contact record, updates the Title field, saves, and verifies the toast.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "contact"
+      ],
+      "source_file": "Resources/PO/Platform/ContactPO.robot"
+    },
+    {
+      "keyword_name": "Delete Contact",
+      "arguments": [],
+      "documentation": "Deletes the currently open Contact record and confirms the redirect.",
+      "documentation_source": "author",
+      "natural_language_summary": "Deletes the currently open Contact record and confirms the redirect.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "contact",
+        "delete"
+      ],
+      "source_file": "Resources/PO/Platform/ContactPO.robot"
+    },
+    {
       "keyword_name": "Go To Accounts Tab For App",
       "arguments": [
         "${app_display_name}=${salesAutomationAppName}"
@@ -807,6 +876,72 @@
       "source_file": "Resources/PO/Platform/WorkOrdersPO.robot"
     },
     {
+      "keyword_name": "API Seed Lead",
+      "arguments": [
+        "${LastName}",
+        "${Company}",
+        "&{extra_fields}"
+      ],
+      "documentation": "Create a Lead via the REST API and return its record ID. Pass field values as named arguments matching Salesforce API names. At minimum ``LastName`` and ``Company`` are required by most orgs.",
+      "documentation_source": "author",
+      "natural_language_summary": "Create a Lead via the REST API and return its record ID. Pass field values as named arguments matching Salesforce API names. At minimum ``LastName`` and ``Company`` are required by most orgs.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
+      "keyword_name": "API Seed Account",
+      "arguments": [
+        "${Name}",
+        "&{extra_fields}"
+      ],
+      "documentation": "Create an Account via the REST API and return its record ID.",
+      "documentation_source": "author",
+      "natural_language_summary": "Create an Account via the REST API and return its record ID.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
+      "keyword_name": "API Seed Contact",
+      "arguments": [
+        "${LastName}",
+        "&{extra_fields}"
+      ],
+      "documentation": "Create a Contact via the REST API and return its record ID. ``AccountId`` should be provided to link the Contact to an Account.",
+      "documentation_source": "author",
+      "natural_language_summary": "Create a Contact via the REST API and return its record ID. ``AccountId`` should be provided to link the Contact to an Account.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
+      "keyword_name": "API Cleanup Record",
+      "arguments": [
+        "${object_name}",
+        "${record_id}"
+      ],
+      "documentation": "Delete a record by SObject name and ID. Wrapper around ``API Delete Record``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Delete a record by SObject name and ID. Wrapper around ``API Delete Record``.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding",
+        "teardown"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
       "keyword_name": "Begin Web Test",
       "arguments": [],
       "documentation": "The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs.",
@@ -880,9 +1015,9 @@
       "arguments": [
         "${dialogName}"
       ],
-      "documentation": "Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).",
+      "documentation": "Clicks **New** then the dialog title row. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException). All timing uses spinner/overlay wait keywords instead of static ``Sleep``.",
       "documentation_source": "author",
-      "natural_language_summary": "Clicks **New** then the dialog title row. Waits out list spinners, tries to clear a blocking ``forceChangeRecordType`` overlay (ESC + wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException).",
+      "natural_language_summary": "Clicks **New** then the dialog title row. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException). All timing uses spinner/overlay wait keywords instead of static ``Sleep``.",
       "inferred_description": null,
       "tags": [
         "modal",
@@ -957,9 +1092,9 @@
       "arguments": [
         "${field_label}"
       ],
-      "documentation": "Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).",
+      "documentation": "Tries **Open Dropdown With Fallback** + ``Select Random Valid Picklist Option`` for ``${field_label}`` (custom fields tolerated). If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and ``Enter Text With Fallback`` then **RETURN**s. Otherwise if not a picklist, fills text via ``Enter Text With Fallback`` using ``Word`` / ``Numerify`` (Phone/Fax). Custom field labels are handled by the fallback strategies in both keywords.",
       "documentation_source": "author",
-      "natural_language_summary": "Tries **Open Dropdown** + ``Select Random Valid Picklist Option`` for ``${field_label}``. If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and **RETURN**s. Otherwise if not a picklist, fills text via ``Word`` / ``Numerify`` (Phone/Fax).",
+      "natural_language_summary": "Tries **Open Dropdown With Fallback** + ``Select Random Valid Picklist Option`` for ``${field_label}`` (custom fields tolerated). If the label looks like a compound **Address** snag (e.g. validation says ``Address`` but the layout uses Street/City/Zip/Country), fills those sub-fields with **FakerLibrary** and ``Enter Text With Fallback`` then **RETURN**s. Otherwise if not a picklist, fills text via ``Enter Text With Fallback`` using ``Word`` / ``Numerify`` (Phone/Fax). Custom field labels are handled by the fallback strategies in both keywords.",
       "inferred_description": null,
       "tags": [
         "modal",
@@ -995,6 +1130,23 @@
         "interaction",
         "pick",
         "list"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Open Dropdown With Fallback",
+      "arguments": [
+        "${dropdownFieldArg}"
+      ],
+      "documentation": "Resilient variant of ``Open Dropdown`` for custom / non-standard Salesforce picklists. Tries three strategies in order: 1. The full ``dropdownDialogLocator`` (exact aria-label + vendor-specific selectors). 2. A broad ``contains(aria-label)`` combobox search that tolerates partial label matches. 3. A ``contains(@class,'slds-combobox')`` parent scope search by label text. Returns ``${TRUE}`` on success, ``${FALSE}`` (with WARN log) if all strategies fail.",
+      "documentation_source": "author",
+      "natural_language_summary": "Resilient variant of ``Open Dropdown`` for custom / non-standard Salesforce picklists. Tries three strategies in order: 1. The full ``dropdownDialogLocator`` (exact aria-label + vendor-specific selectors). 2. A broad ``contains(aria-label)`` combobox search that tolerates partial label matches. 3. A ``contains(@class,'slds-combobox')`` parent scope search by label text. Returns ``${TRUE}`` on success, ``${FALSE}`` (with WARN log) if all strategies fail.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "pick",
+        "list",
+        "self-heal"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
@@ -1103,6 +1255,24 @@
         "interaction",
         "input",
         "field"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Enter Text With Fallback",
+      "arguments": [
+        "${labelName}",
+        "${textValue}"
+      ],
+      "documentation": "Resilient variant of ``Enter Text`` for custom / non-standard Salesforce fields. Tries four strategies in order: 1. Exact label match (``inputFieldDialogLocator``). 2. Broad label-contains match (``customInputFieldDialogLocator``). 3. Direct ``aria-label`` attribute on the input/textarea itself. 4. ``data-field-name`` attribute on surrounding form element's input. Logs a WARN and returns ${FALSE} if all four fail; never blocks the test.",
+      "documentation_source": "author",
+      "natural_language_summary": "Resilient variant of ``Enter Text`` for custom / non-standard Salesforce fields. Tries four strategies in order: 1. Exact label match (``inputFieldDialogLocator``). 2. Broad label-contains match (``customInputFieldDialogLocator``). 3. Direct ``aria-label`` attribute on the input/textarea itself. 4. ``data-field-name`` attribute on surrounding form element's input. Logs a WARN and returns ${FALSE} if all four fail; never blocks the test.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "input",
+        "field",
+        "self-heal"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
@@ -1500,6 +1670,72 @@
         "records",
         "verification",
         "modal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Wait For Lightning Spinners Absent",
+      "arguments": [
+        "${timeout}=30s"
+      ],
+      "documentation": "Waits until standard Salesforce Lightning spinners are no longer visible. Covers list-view search spinner, generic ``lightning-spinner``, and SLDS ``slds-spinner`` containers. Each check uses ``Run Keyword And Ignore Error`` so a missing spinner does not fail the keyword (the spinner may never have appeared). Use instead of ``Sleep`` after actions that trigger server round-trips.",
+      "documentation_source": "author",
+      "natural_language_summary": "Waits until standard Salesforce Lightning spinners are no longer visible. Covers list-view search spinner, generic ``lightning-spinner``, and SLDS ``slds-spinner`` containers. Each check uses ``Run Keyword And Ignore Error`` so a missing spinner does not fail the keyword (the spinner may never have appeared). Use instead of ``Sleep`` after actions that trigger server round-trips.",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "wait",
+        "lightning"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Wait For Record Type Overlay Cleared",
+      "arguments": [
+        "${timeout}=15s"
+      ],
+      "documentation": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Safe to call when the overlay may or may not be present — uses ``Run Keyword And Ignore Error`` internally. Use after pressing ESC to dismiss the overlay rather than a static ``Sleep``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Safe to call when the overlay may or may not be present — uses ``Run Keyword And Ignore Error`` internally. Use after pressing ESC to dismiss the overlay rather than a static ``Sleep``.",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "wait",
+        "lightning"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Click In Shadow Root",
+      "arguments": [
+        "${host_css_selector}",
+        "${inner_css_selector}"
+      ],
+      "documentation": "Clicks an element inside a **shadow root** that standard Selenium locators cannot reach. ``${host_css_selector}`` is a **CSS selector** for the light-DOM host element whose ``shadowRoot`` contains the target. ``${inner_css_selector}`` is resolved inside ``host.shadowRoot.querySelector``. Centralizes shadow-pierce JS so individual tests never contain ad-hoc shadow scripts.",
+      "documentation_source": "author",
+      "natural_language_summary": "Clicks an element inside a **shadow root** that standard Selenium locators cannot reach. ``${host_css_selector}`` is a **CSS selector** for the light-DOM host element whose ``shadowRoot`` contains the target. ``${inner_css_selector}`` is resolved inside ``host.shadowRoot.querySelector``. Centralizes shadow-pierce JS so individual tests never contain ad-hoc shadow scripts.",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "shadow",
+        "dom"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Run Keyword In Salesforce Iframe",
+      "arguments": [
+        "${iframe_locator}",
+        "${keyword_name}",
+        "@{args}"
+      ],
+      "documentation": "Switches into the given iframe, runs ``${keyword_name}`` with ``@{args}``, and **always** switches back to the default content via ``TRY / FINALLY``. Use for Classic console tabs, Visualforce embeds, or any Salesforce page that renders inside an ``<iframe>``. ``${iframe_locator}`` should be a stable locator (``css:iframe[name='...']``, ``id``, ``title``).",
+      "documentation_source": "author",
+      "natural_language_summary": "Switches into the given iframe, runs ``${keyword_name}`` with ``@{args}``, and **always** switches back to the default content via ``TRY / FINALLY``. Use for Classic console tabs, Visualforce embeds, or any Salesforce page that renders inside an ``<iframe>``. ``${iframe_locator}`` should be a stable locator (``css:iframe[name='...']``, ``id``, ``title``).",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "iframe"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },

@@ -7,6 +7,7 @@ selenium==4.41.0
 robotframework-seleniumlibrary==6.8.0
 
 # --- Other Robot ecosystem ---
+robotframework-pabot==5.2.2
 robotframework-tidy==4.18.0
 robotframework-faker==6.0.0
 robotframework-requests==0.9.7
@@ -14,6 +15,9 @@ allure-robotframework==2.15.3
 
 # --- Build / tooling ---
 setuptools==82.0.1
+
+# --- Salesforce API data seeding ---
+simple-salesforce==1.12.6
 
 # --- App & AI ---
 python-dotenv==1.2.2

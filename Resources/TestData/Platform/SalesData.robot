@@ -44,3 +44,12 @@ ${accountWebsite}=                          www.ptest.com
 ${accountType}=                             Prospect
 ${accountIndustry}=                         Manufacturing
 ${accountEmployees}=                        2
+
+# Contact Test Data
+${contactFirstName}=                        ${{FakerLibrary.FakerLibrary().first_name()}}
+${contactLastName}=                         ${{FakerLibrary.FakerLibrary().last_name()}}
+${contactTitle}=                            Smoke Contact
+${contactEmail}=                            ${{FakerLibrary.FakerLibrary().email()}}
+${contactPhone}=                            ${randomPhone}
+# Link contact to this existing account (leave empty to skip Account Name lookup)
+${contactAccountName}=                      ${opportunityAccountName}

@@ -25,6 +25,11 @@ from pathlib import Path
 from typing import TypedDict
 
 try:
+    from smoke_templates import detect_smoke_intent as _detect_smoke_intent
+except ImportError:
+    _detect_smoke_intent = None  # type: ignore[assignment]
+
+try:
     from dotenv import load_dotenv
 except ImportError:
     def load_dotenv(*_args: object, **_kwargs: object) -> bool:
@@ -68,6 +73,17 @@ def append_csv_data_to_prompt(user_prompt: str, csv_formatted: str) -> str:
         + "\n\n"
         + CSV_DATA_DRIVEN_INSTRUCTION_FOOTER
     )
+
+
+def detect_smoke_intent(prompt: str) -> dict | None:
+    """
+    Detect smoke-test intent in a user prompt.
+    Returns {"object": "Lead"|"Account"|"Contact"|"Opportunity"} or None.
+    Delegates to smoke_templates.detect_smoke_intent when available.
+    """
+    if _detect_smoke_intent is not None:
+        return _detect_smoke_intent(prompt)
+    return None
 
 
 def hydrate_llm_env() -> None:
@@ -586,7 +602,11 @@ def _call_gemini(system_prompt: str, user_content: str) -> str:
     return out
 
 
-def generate_test_from_prompt(user_input: str, csv_bytes: bytes | None = None) -> Path:
+def generate_test_from_prompt(
+    user_input: str,
+    csv_bytes: bytes | None = None,
+    output_path: Path | None = None,
+) -> Path:
     """
     Send system prompt + keyword catalog + user_input to the configured LLM,
     extract .robot code, save to Tests/Generated/temp_test.robot.
@@ -630,7 +650,15 @@ def generate_test_from_prompt(user_input: str, csv_bytes: bytes | None = None) -
         if "LEADS_FROM_CSV" in robot_source:
             robot_source = inject_csv_loader_into_robot(robot_source)
 
-    OUTPUT_PATH.write_text(robot_source.rstrip() + "\n", encoding="utf-8")
+    final_source = robot_source.rstrip() + "\n"
+    OUTPUT_PATH.write_text(final_source, encoding="utf-8")
+
+    # Also save to project path when provided (project copy is canonical; temp is cache).
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(final_source, encoding="utf-8")
+        return output_path
+
     return OUTPUT_PATH
 
 

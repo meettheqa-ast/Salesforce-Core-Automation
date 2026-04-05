@@ -236,6 +236,55 @@ Notes for operators (internal to you; do not print unless product allows):
       python run_test.py ... --test_path Tests/Generated/Lead_John_Google.robot -- -v leadFirstName:John -v leadCompany:Google
 
 
+SMOKE TEST STANDARDS
+--------------------
+When a user asks for a "smoke test", "full smoke", "lifecycle test", or similar for a standard object (Lead, Account, Contact, Opportunity):
+1) The AI MUST generate a full lifecycle test traversing all standard phases:
+   - Create the record.
+   - Verify the record was created successfully.
+   - Edit/Update the record (using `Perform Action On Record Details Page Header` > `Edit`).
+   - Convert (for Leads) or Delete (for others).
+2) The AI MUST use `Attempt Save And Auto-Heal Missing Fields` for all Save actions during the smoke test instead of `Select Dialog Button  Save` to handle unexpected required fields automatically.
+3) The AI MUST use `Enter Text With Fallback` instead of `Enter Text` for all text field inputs to handle custom field markup gracefully.
+4) If the user prompt specifically includes a block of "DISCOVERED FIELD VALUES", the AI MUST use EXACT values from that list for picklists. If a picklist field being filled is not in the list, use `Open Dropdown And Select First Option`.
+5) The AI MUST use the `${smokeAppName}` variable for the `Launch App` keyword instead of hardcoding "Sales".
+
+API DATA SEEDING
+----------------
+The framework includes a Salesforce REST API layer for instant data seeding.
+It lives in `Resources/Common/GlobalApi.robot` (backed by
+`Libraries/SalesforceApiLibrary.py` and the `simple-salesforce` package).
+
+Available keywords (imported by adding `Resource  Resources/Common/GlobalApi.robot`):
+
+| Keyword              | Arguments                              | Returns        |
+|----------------------|----------------------------------------|----------------|
+| API Create Record    | object_name, **field=value             | Record ID      |
+| API Delete Record    | object_name, record_id                 | —              |
+| API Query Records    | soql                                   | List of dicts  |
+| API Seed Lead        | LastName, Company, &extra_fields       | Record ID      |
+| API Seed Account     | Name, &extra_fields                    | Record ID      |
+| API Seed Contact     | LastName, &extra_fields                | Record ID      |
+| API Cleanup Record   | object_name, record_id                 | —              |
+
+RULES for the AI:
+1) If a test requires **prerequisite data** (e.g. an existing Account before
+   creating an Opportunity, or a Contact to modify/delete), the AI MUST use
+   `API Create Record` or the convenience wrappers (`API Seed Lead`, etc.)
+   from `GlobalApi.robot` to instantly seed the data in the Suite Setup or
+   Test Setup, rather than navigating the UI to create it.
+2) The AI MUST add `Resource  Resources/Common/GlobalApi.robot` in the
+   `*** Settings ***` section of any generated `.robot` file that uses API
+   seeding keywords.
+3) API-seeded records SHOULD be cleaned up in `[Teardown]` or Suite Teardown
+   using `API Cleanup Record` / `API Delete Record` to avoid polluting the org.
+4) When the test's *purpose* is to verify UI record creation (e.g. "create a
+   Lead via the UI"), do NOT replace the UI flow with API seeding. API seeding
+   is strictly for *prerequisite* data.
+5) The `${sandboxSecurityToken}` variable is written to `EnvData.robot` by the
+   runner. If the user has not supplied a security token, API keywords will
+   still attempt authentication but may fail if the IP is not whitelisted.
+
 MAINTENANCE
 -----------
 Regenerate `keyword_catalog.json` with `python generate_keyword_mapping.py`

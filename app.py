@@ -1,431 +1,52 @@
 """
-Streamlit UI: Salesforce AI Automation Architect.
+Streamlit UI: Test Intelligence Platform (AI QA automation).
 
 Run from project root:
   streamlit run app.py
+
+Orchestration lives here; helpers are split across app_config, app_csv, app_catalog, app_pipeline,
+and app_reporting (in-app run summaries after each Robot execution, invoked from app_pipeline).
 """
 
 from __future__ import annotations
 
-import csv
-import io
-import json
-import os
-import subprocess
-import sys
-from collections import defaultdict
-from datetime import datetime
-from pathlib import Path
-
 import streamlit as st
 
-ROOT = Path(__file__).resolve().parent
-GENERATED_SUITE = ROOT / "Tests" / "Generated" / "temp_test.robot"
-CATALOG_JSON_PATH = ROOT / "keyword_catalog.json"
-
-CLARIFY_SESSION_KEY = "clarify_context"
-# Limits for LLM context size (full row count still passed in summary line).
-_CSV_MARKDOWN_MAX_ROWS = 50
-_CSV_JSON_MAX_ROWS = 120
-
-
-def format_uploaded_csv_for_llm(file_bytes: bytes) -> str:
-    """
-    Parse CSV bytes into Markdown table preview + JSON row list for the LLM.
-    Large files: truncate displayed rows but state total data row count.
-    """
-    if not file_bytes or not file_bytes.strip():
-        return ""
-    text = file_bytes.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        return "_Could not read CSV column headers._"
-    headers = [h or "" for h in reader.fieldnames]
-    rows: list[dict[str, str]] = []
-    for row in reader:
-        rows.append({h: str(row.get(h) or "").strip() for h in headers})
-    if not rows:
-        return f"_No data rows (headers only)._\n\n**Columns:** `{', '.join(headers)}`"
-
-    def _esc_cell(val: object) -> str:
-        return str(val).replace("|", "\\|").replace("\n", " ").replace("\r", "")
-
-    md_lines = [
-        "| " + " | ".join(_esc_cell(h) for h in headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
-    ]
-    for row in rows[:_CSV_MARKDOWN_MAX_ROWS]:
-        md_lines.append("| " + " | ".join(_esc_cell(row.get(h, "")) for h in headers) + " |")
-    md = "\n".join(md_lines)
-    if len(rows) > _CSV_MARKDOWN_MAX_ROWS:
-        md += f"\n\n_Showing first {_CSV_MARKDOWN_MAX_ROWS} of **{len(rows)}** data rows._"
-
-    json_rows = rows[:_CSV_JSON_MAX_ROWS]
-    json_note = ""
-    if len(rows) > _CSV_JSON_MAX_ROWS:
-        json_note = (
-            f"\n_JSON array truncated to first {_CSV_JSON_MAX_ROWS} objects; "
-            f"**total data rows: {len(rows)}** — still generate tests that cover every row._"
-        )
-    json_block = json.dumps(json_rows, indent=2, ensure_ascii=False)
-    return (
-        f"**Tabular preview (Markdown)**\n\n{md}\n\n"
-        f"**Row objects (JSON, file order)**{json_note}\n```json\n{json_block}\n```\n\n"
-        f"**Total data rows in file:** {len(rows)}"
-    )
-
-
-def _sync_csv_session_cache(uploaded: object | None) -> str:
-    """Cache formatted CSV text in session_state; return LLM block or empty."""
-    if uploaded is None:
-        st.session_state.pop("csv_llm_block", None)
-        st.session_state.pop("csv_upload_sig", None)
-        return ""
-    if hasattr(uploaded, "getvalue"):
-        raw: bytes = uploaded.getvalue()
-    else:
-        raw = uploaded.read()
-        if hasattr(uploaded, "seek"):
-            uploaded.seek(0)
-    sig = (getattr(uploaded, "name", ""), len(raw))
-    if st.session_state.get("csv_upload_sig") != sig:
-        st.session_state["csv_upload_sig"] = sig
-        st.session_state["csv_llm_block"] = format_uploaded_csv_for_llm(raw)
-    return str(st.session_state.get("csv_llm_block") or "")
-
-
-def _csv_upload_bytes(uploaded: object | None) -> bytes | None:
-    """Raw bytes for the current CSV upload (for coverage checks). Same file as _sync_csv_session_cache."""
-    if uploaded is None:
-        return None
-    if hasattr(uploaded, "getvalue"):
-        return uploaded.getvalue()
-    raw = uploaded.read()
-    if hasattr(uploaded, "seek"):
-        uploaded.seek(0)
-    return raw
-
-
-def _open_local_path(path: Path) -> None:
-    """Open a file with the OS default app (e.g. browser for HTML). file:// links from localhost often do nothing."""
-    path = path.resolve()
-    if not path.is_file():
-        return
-    if os.name == "nt":
-        os.startfile(str(path))  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.run(["open", str(path)], check=False)
-    else:
-        subprocess.run(["xdg-open", str(path)], check=False)
-
-
-def _render_report_log_actions(
-    report_path: Path | None,
-    log_path: Path | None,
-    out_dir_rel: str,
-    *,
-    key_prefix: str,
-    passed: bool | None = None,
-) -> None:
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        if report_path and report_path.is_file():
-            if st.button(
-                "Open Report",
-                key=f"{key_prefix}_report",
-                help="Opens report.html in your default browser.",
-            ):
-                _open_local_path(report_path)
-        else:
-            st.caption("report.html not found.")
-    with col_b:
-        if log_path and log_path.is_file():
-            if st.button(
-                "Open Log",
-                key=f"{key_prefix}_log",
-                help="Opens log.html in your default browser.",
-            ):
-                _open_local_path(log_path)
-        else:
-            st.caption("log.html not found.")
-    with col_c:
-        st.caption(f"Output folder: `{out_dir_rel}`")
-        if passed is True:
-            st.success("Last run: Passed")
-        elif passed is False:
-            st.error("Last run: Failed")
-
-
-# --- Framework maintenance: keep keyword_catalog.json aligned with PO/Common ---
-def rebuild_keyword_catalog() -> None:
-    """Regenerate keyword_catalog.json from Resources/PO and Resources/Common."""
-    from generate_keyword_mapping import main as regenerate_catalog
-
-    regenerate_catalog()
-    _load_keyword_catalog_payload.clear()
-
-
-def _normalize_source_path(source_file: str) -> str:
-    return source_file.replace("\\", "/")
-
-
-def _capability_group_for_source(source_file: str) -> str:
-    """Map catalog source_file to a PM-friendly capability section title."""
-    p = _normalize_source_path(source_file)
-    exact: dict[str, str] = {
-        "Resources/Common/GlobalKeywords.robot": "Common Actions",
-        "Resources/PO/Platform/SalesPO.robot": "Sales Features",
-        "Resources/PO/Platform/WorkOrdersPO.robot": "Work Orders",
-        "Resources/Common/LucyChatBot/LucyChatBotCommon.robot": "Lucy Chatbot — Shared",
-        "Resources/Common/B2B/B2BCommon.robot": "B2B — Shared",
-        "Resources/Common/OmsChatBot/OmsChatBotCommon.robot": "OMS Chatbot — Shared",
-        "Resources/Common/Platform/PlatformCommon.robot": "Platform — Shared",
-        "Resources/PO/B2B/B2BPageName1PO.robot": "B2B Features",
-        "Resources/PO/OmsChatBot/OmsBotPageName1PO.robot": "OMS Chatbot Features",
-    }
-    if p in exact:
-        return exact[p]
-    if "/PO/LucyChatBot/" in p:
-        stem = Path(p).stem
-        if stem.endswith("PO") and len(stem) > 2:
-            stem = stem[:-2]
-        return f"Lucy Chatbot — {stem}"
-    if p.startswith("Resources/PO/Platform/"):
-        return f"Platform PO — {Path(p).stem}"
-    if p.startswith("Resources/PO/"):
-        return f"Other Page Objects — {Path(p).stem}"
-    if p.startswith("Resources/Common/"):
-        return f"Other Common — {Path(p).stem}"
-    return "Other"
-
-
-def _format_arguments_line(arguments: list[str]) -> str:
-    if not arguments:
-        return "*No keyword arguments — data usually comes from test variables or prior steps.*"
-    joined = ", ".join(f"`{a}`" for a in arguments)
-    return f"**Arguments:** {joined}"
-
-
-@st.cache_data(ttl=30, show_spinner=False)
-def _load_keyword_catalog_payload() -> dict:
-    """Cached parse of keyword_catalog.json (short TTL picks up regenerations quickly)."""
-    if not CATALOG_JSON_PATH.is_file():
-        return {"keywords": [], "_missing_file": True}
-    try:
-        return json.loads(CATALOG_JSON_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {"keywords": [], "_parse_error": True}
-
-
-def render_capabilities_cheat_sheet() -> None:
-    """Expandable reference: keywords grouped by source area, with argument hints."""
-    payload = _load_keyword_catalog_payload()
-    if payload.get("_missing_file"):
-        st.warning(
-            f"`keyword_catalog.json` was not found at `{CATALOG_JSON_PATH.relative_to(ROOT)}`. "
-            "Run the app once or execute `python generate_keyword_mapping.py`."
-        )
-        return
-    if payload.get("_parse_error"):
-        st.error("Could not parse `keyword_catalog.json`. Regenerate the catalog.")
-        return
-
-    keywords = payload.get("keywords") or []
-    if not keywords:
-        st.info("No keywords found in the catalog yet.")
-        return
-
-    st.caption(
-        f"{len(keywords)} keywords from your Page Objects and common libraries. "
-        "Mention these flows in natural language; the AI maps them to keywords."
-    )
-
-    grouped: dict[str, list[dict]] = defaultdict(list)
-    for entry in keywords:
-        src = entry.get("source_file") or "unknown"
-        grouped[_capability_group_for_source(src)].append(entry)
-
-    group_names = sorted(grouped.keys(), key=str.casefold)
-    for idx, group_name in enumerate(group_names):
-        entries = grouped[group_name]
-        entries.sort(key=lambda e: (e.get("keyword_name") or "").casefold())
-        blocks: list[str] = [f"##### {group_name}"]
-        for kw in entries:
-            name = kw.get("keyword_name") or "(unnamed)"
-            args_line = _format_arguments_line(list(kw.get("arguments") or []))
-            summary = kw.get("natural_language_summary") or kw.get("documentation")
-            short = ""
-            if summary:
-                short = summary.strip()
-                if len(short) > 140:
-                    short = short[:137].rstrip() + "…"
-            block = f"**{name}**  \n{args_line}"
-            if short:
-                block += f"  \n*{short}*"
-            blocks.append(block)
-        st.markdown("\n\n".join(blocks))
-        if idx < len(group_names) - 1:
-            st.divider()
-
-
-def _field_input_label(field_name: str) -> str:
-    """Human-readable label for missing-field form inputs."""
-    if field_name == "Last Name":
-        return "Lead Last Name"
-    if field_name == "Company":
-        return "Company"
-    if field_name in ("Lead Status", "Salutation", "Lead Source"):
-        return f"{field_name} (optional — blank = random dropdown option)"
-    return field_name
-
-
-def build_augmented_prompt(
-    original_prompt: str,
-    missing_fields: list[str],
-    field_values: dict[str, str],
-    optional_picklist_fields: list[str],
-    csv_llm_block: str | None = None,
-) -> str:
-    """Append PM clarifications in natural language for the LLM; optionally append CSV data-driven block."""
-    try:
-        from ai_bridge import append_csv_data_to_prompt
-    except ImportError:
-
-        def append_csv_data_to_prompt(p: str, c: str) -> str:  # type: ignore[misc]
-            return p.rstrip() + (f"\n\n{c}" if (c or "").strip() else "")
-
-    blocks: list[str] = []
-    clauses: list[str] = []
-    for field in missing_fields:
-        value = str(field_values.get(field, "")).strip()
-        if field == "Last Name":
-            clauses.append(f"the Last Name is {value}")
-        elif field == "Company":
-            clauses.append(f"the Company is {value}")
-        else:
-            clauses.append(f"the {field} is {value}")
-    if clauses:
-        blocks.append("The user has clarified that " + " and ".join(clauses) + ".")
-
-    pick_parts: list[str] = []
-    for field in optional_picklist_fields:
-        raw = str(field_values.get(field, "")).strip()
-        if raw:
-            pick_parts.append(
-                f"{field} must be {raw!r} — use Open Dropdown then Select Dropdown Option with that exact visible label"
-            )
-        else:
-            pick_parts.append(
-                f"{field}: use GlobalKeywords.Open Dropdown And Select First Option with field label {field!r} (picks a random visible option)"
-            )
-    if pick_parts:
-        blocks.append("Picklist handling: " + " ".join(pick_parts) + ".")
-
-    if not blocks:
-        out = original_prompt.rstrip()
-    else:
-        out = original_prompt.rstrip() + "\n\n" + " ".join(blocks)
-    if csv_llm_block and str(csv_llm_block).strip():
-        out = append_csv_data_to_prompt(out, str(csv_llm_block).strip())
-    return out
-
-
-def run_automation_pipeline(
-    final_prompt: str,
-    *,
-    sandbox_url: str,
-    username: str,
-    password: str,
-    headless: bool,
-    csv_bytes: bytes | None = None,
-) -> None:
-    """Refresh catalog, generate .robot via AI, execute Robot, persist result links."""
-    try:
-        with st.spinner("Refreshing keyword catalog from Page Objects…"):
-            rebuild_keyword_catalog()
-    except Exception as exc:  # noqa: BLE001
-        st.error(f"Could not refresh keyword catalog: {exc}")
-        return
-
-    try:
-        from ai_bridge import generate_test_from_prompt
-    except ImportError as exc:
-        st.error(f"Could not import ai_bridge: {exc}")
-        return
-
-    try:
-        with st.spinner("AI is architecting your test case…"):
-            out_path = generate_test_from_prompt(
-                final_prompt.strip(),
-                csv_bytes=csv_bytes,
-            )
-        if not GENERATED_SUITE.is_file():
-            st.error("Generated suite was not written to disk.")
-            return
-        st.info(f"Generated suite: `{out_path.relative_to(ROOT)}`")
-    except Exception as exc:  # noqa: BLE001
-        st.error(f"AI generation failed: {exc}")
-        return
-
-    if not headless:
-        st.warning(
-            "A browser window will open shortly. Please do not close it manually."
-        )
-
-    run_name = f"ui_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    try:
-        from run_test import build_robot_run
-
-        cmd, out_dir = build_robot_run(
-            sandbox_url.strip(),
-            username.strip(),
-            password.strip(),
-            "Tests/Generated/temp_test.robot",
-            run_name=run_name,
-            headless=headless,
-        )
-    except Exception as exc:  # noqa: BLE001
-        st.error(f"Could not prepare Robot run: {exc}")
-        return
-
-    st.subheader("Live Execution Log")
-    st.caption("Streaming output from Robot Framework.")
-    code, full_log = stream_robot_logs(cmd, ROOT)
-
-    if code == 0:
-        st.success("Test Passed!")
-    else:
-        st.error("Test Failed.")
-
-    report_html = out_dir / "report.html"
-    log_html = out_dir / "log.html"
-
-    report_path = report_html if report_html.is_file() else None
-    log_path = log_html if log_html.is_file() else None
-
-    st.session_state.last_run = {
-        "out_dir": str(out_dir.relative_to(ROOT)),
-        "report_path": str(report_html.resolve()) if report_path else None,
-        "log_path": str(log_html.resolve()) if log_path else None,
-        "passed": code == 0,
-    }
-
-    _render_report_log_actions(
-        report_path,
-        log_path,
-        str(out_dir.relative_to(ROOT)),
-        key_prefix="inline_run",
-        passed=None,
-    )
-
-    with st.expander("Full log (copy)"):
-        st.code(full_log or "(empty)", language="text")
-
-
 st.set_page_config(
-    page_title="Salesforce AI Automation Architect",
+    page_title="Test Intelligence Platform",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+import os
+
+from app_catalog import rebuild_keyword_catalog, render_capabilities_cheat_sheet
+from app_config import (
+    CLARIFY_SESSION_KEY,
+    _HAS_ORG_INSPECTOR,
+    _HAS_SMOKE,
+    _HAS_WORKSPACE,
+    _detect_smoke_fn,
+    _org_inspector_mod,
+    _pm,
+    _smoke_prompt_fn,
+)
+from app_csv import (
+    csv_upload_bytes,
+    render_csv_preview_scrollable,
+    sync_csv_session_cache,
+)
+from app_analytics import render_project_analytics_dashboard
+from app_pipeline import (
+    build_augmented_prompt,
+    field_input_label,
+    render_pending_robot_review_panel,
+    render_persisted_run_panel,
+    run_automation_pipeline,
+    run_existing_test,
+    run_project_entire_suite,
+    sync_sidebar_api_key,
 )
 
 # First load: build catalog once so the app starts with a current index.
@@ -445,71 +66,456 @@ if st.session_state.get("_catalog_init_error"):
     )
 
 
-def render_persisted_run_panel() -> None:
-    """Keep report/log actions available across Streamlit reruns."""
-    lr = st.session_state.get("last_run")
-    if not lr:
-        return
-    st.divider()
-    st.subheader("Latest test results")
-    st.caption(
-        "Artifacts stay here until you run again. Use the buttons below to open report/log in your browser."
-    )
-    rp = lr.get("report_path")
-    lp = lr.get("log_path")
-    report_path = Path(rp) if rp else None
-    log_path = Path(lp) if lp else None
-
-    _render_report_log_actions(
-        report_path if report_path and report_path.is_file() else None,
-        log_path if log_path and log_path.is_file() else None,
-        str(lr.get("out_dir", "")),
-        key_prefix="persisted_run",
-        passed=lr.get("passed"),
-    )
+def _init_sf_credential_session_keys() -> None:
+    """Ensure Streamlit widget keys for Salesforce credentials exist before first render."""
+    for k in ("sf_sandbox_url", "sf_username", "sf_password", "sf_security_token"):
+        if k not in st.session_state:
+            st.session_state[k] = ""
 
 
-def stream_robot_logs(cmd: list[str], cwd: Path) -> tuple[int, str]:
-    """Run robot, return (exit_code, full_log_text)."""
-    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    proc = subprocess.Popen(
-        cmd,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-        env=env,
-    )
-    lines: list[str] = []
-    log_box = st.empty()
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        lines.append(line)
-        log_box.code("".join(lines), language="text")
-    proc.wait()
-    return proc.returncode or 0, "".join(lines)
-
-
-def _sync_sidebar_api_key(env_key: str, state_suffix: str, sidebar_api_key: str) -> None:
+def _apply_project_credentials_to_session() -> None:
     """
-    Apply optional sidebar API key to os.environ, or clear a prior sidebar-only value
-    so .env / secrets can repopulate after the field is cleared (see hydrate_llm_env at end of sidebar).
+    When ``active_project`` changes, load that project's ``config.json`` into the
+    credential widget keys. Switching to ad-hoc does not clear typed credentials.
     """
-    state_key = f"_last_sidebar_{state_suffix}"
-    last = st.session_state.get(state_key, "")
-    cur = (sidebar_api_key or "").strip()
-    if cur:
-        os.environ[env_key] = cur
-        st.session_state[state_key] = cur
+    if not _HAS_WORKSPACE or _pm is None:
         return
-    if last and os.environ.get(env_key) == last:
-        del os.environ[env_key]
-    st.session_state[state_key] = ""
+    bound = st.session_state.get("_credentials_bound_project")
+    current = st.session_state.get("active_project") or ""
+    if bound == current:
+        return
+    if current:
+        cfg = _pm.read_project_config(current)
+        st.session_state["sf_sandbox_url"] = cfg.get("sandbox_url") or ""
+        st.session_state["sf_username"] = cfg.get("username") or ""
+        st.session_state["sf_password"] = cfg.get("password") or ""
+        st.session_state["sf_security_token"] = cfg.get("security_token") or ""
+    st.session_state["_credentials_bound_project"] = current
 
+
+# ---------------------------------------------------------------------------
+# Active Workspace header (project selector + credentials in main area)
+# ---------------------------------------------------------------------------
+
+def _render_workspace_header() -> tuple[str, str, str, str]:
+    """Top-of-page project + credentials panel.
+
+    Returns ``(active_proj, sandbox_url, username, password)``.
+    """
+    with st.container(border=True):
+        col_proj, col_creds = st.columns([1, 2], gap="large")
+
+        with col_proj:
+            st.markdown("**🗂️ Project**")
+            if _HAS_WORKSPACE and _pm is not None:
+                active_proj = st.session_state.get("active_project", "")
+                all_projs = _pm.list_projects()
+                opts = ["(none — ad-hoc)"] + all_projs + ["+ Create New Project"]
+                idx = 0
+                if active_proj in opts:
+                    idx = opts.index(active_proj)
+                proj_sel = st.selectbox(
+                    "Active Project",
+                    opts,
+                    index=idx,
+                    label_visibility="collapsed",
+                )
+                if proj_sel == "+ Create New Project":
+                    with st.form("new_proj_form"):
+                        new_name = st.text_input("Name (alphanumeric + underscores)")
+                        new_desc = st.text_input("Description (optional)")
+                        if st.form_submit_button("✅ Create Project"):
+                            try:
+                                _pm.create_project(new_name, new_desc)
+                                st.session_state["active_project"] = new_name
+                                st.rerun()
+                            except ValueError as e:
+                                st.error(str(e))
+                elif proj_sel == "(none — ad-hoc)":
+                    st.session_state["active_project"] = ""
+                else:
+                    st.session_state["active_project"] = proj_sel
+            else:
+                st.warning("Workspace module unavailable.")
+
+        _apply_project_credentials_to_session()
+
+        with col_creds:
+            st.markdown("**🔐 Salesforce Credentials**")
+            ca, cb = st.columns(2)
+            with ca:
+                st.text_input(
+                    "Sandbox URL",
+                    placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                    help="Login URL for your Salesforce sandbox.",
+                    key="sf_sandbox_url",
+                )
+            with cb:
+                st.text_input(
+                    "Username",
+                    placeholder="user@example.com",
+                    key="sf_username",
+                )
+            cc, cd = st.columns(2)
+            with cc:
+                st.text_input(
+                    "Password",
+                    type="password",
+                    placeholder="••••••••",
+                    key="sf_password",
+                )
+            with cd:
+                st.text_input(
+                    "Security Token",
+                    type="password",
+                    placeholder="Optional — leave blank if IP whitelisted",
+                    help="Required for API data seeding when your IP isn't in the org's trusted range.",
+                    key="sf_security_token",
+                )
+            _active = st.session_state.get("active_project") or ""
+            if _HAS_WORKSPACE and _pm is not None and _active:
+                if st.button("💾 Save Credentials to Project", key="save_creds_btn"):
+                    _pm.write_project_credentials(
+                        _active,
+                        st.session_state.get("sf_sandbox_url", ""),
+                        st.session_state.get("sf_username", ""),
+                        st.session_state.get("sf_password", ""),
+                        st.session_state.get("sf_security_token", ""),
+                    )
+                    st.toast(f"Credentials saved to **{_active}**.")
+
+    tok = st.session_state.get("sf_security_token", "").strip()
+    if tok:
+        os.environ["SF_SECURITY_TOKEN"] = tok
+    else:
+        os.environ.pop("SF_SECURITY_TOKEN", None)
+
+    return (
+        st.session_state.get("active_project", ""),
+        st.session_state.get("sf_sandbox_url", ""),
+        st.session_state.get("sf_username", ""),
+        st.session_state.get("sf_password", ""),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tab 1 — Test Builder
+# ---------------------------------------------------------------------------
+
+def _render_test_builder_tab(
+    sandbox_url: str,
+    username: str,
+    password: str,
+    headless: bool,
+    active_proj: str,
+) -> None:
+    """AI prompt, generation controls, and human-in-the-loop review editor."""
+    test_target_name = ""
+    if active_proj:
+        test_target_name = st.text_input(
+            "Test Case Name",
+            placeholder="e.g. B2B_Lead_Creation",
+            help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
+        )
+
+    def _update_prompt() -> None:
+        st.session_state["main_prompt_text"] = st.session_state.main_prompt_text_widget
+
+    prompt = st.text_area(
+        "Describe your test in plain English",
+        value=st.session_state.get("main_prompt_text", ""),
+        height=160,
+        placeholder='e.g. "Verify I can create an Account named Acme Corp and then delete it"',
+        help="Natural-language description of what the test should do.",
+        key="main_prompt_text_widget",
+        on_change=_update_prompt,
+    )
+
+    uploaded_csv = st.file_uploader(
+        "Upload Test Data (CSV)",
+        type=["csv"],
+        help="Optional. Each row is sent to the AI so it can generate FOR loops or repeated steps.",
+        key="pm_test_data_csv",
+    )
+    csv_llm_block = sync_csv_session_cache(uploaded_csv)
+    if csv_llm_block:
+        with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
+            raw_preview = csv_upload_bytes(uploaded_csv)
+            if raw_preview:
+                render_csv_preview_scrollable(raw_preview)
+            else:
+                st.markdown(
+                    csv_llm_block
+                    if len(csv_llm_block) <= 14000
+                    else csv_llm_block[:14000] + "\n\n…_(truncated in UI only)_"
+                )
+
+    with st.expander("💡 What can I ask for? (Available Capabilities)", expanded=False):
+        render_capabilities_cheat_sheet()
+
+    overwrite_ok = True
+    if active_proj and test_target_name and _pm is not None:
+        if _pm.test_exists_in_project(active_proj, test_target_name):
+            st.warning(f"⚠️ '{test_target_name}' already exists in project '{active_proj}'.")
+            if not st.checkbox("Yes, overwrite the existing test script"):
+                overwrite_ok = False
+
+    run_clicked = st.button(
+        "🚀 Generate & Run", type="primary", use_container_width=True,
+    )
+
+    if run_clicked:
+        try:
+            from ai_bridge import analyze_prompt_for_required_fields
+        except ImportError as exc:
+            st.error(f"Could not import ai_bridge: {exc}")
+            return
+        if not sandbox_url.strip() or not username.strip() or not password.strip():
+            st.error("Please fill in Sandbox URL, Username, and Password in the workspace header.")
+            return
+        if not prompt.strip():
+            st.error("Please enter a user prompt.")
+            return
+        if active_proj and test_target_name and not overwrite_ok:
+            st.error("Please confirm overwrite before running.")
+            return
+
+        is_smoke = False
+        final_prompt_txt = prompt.strip()
+
+        if _HAS_SMOKE and _detect_smoke_fn is not None and _smoke_prompt_fn is not None:
+            smoke_ctx = _detect_smoke_fn(final_prompt_txt)
+            if smoke_ctx:
+                is_smoke = True
+                sf_obj = smoke_ctx["object"]
+                app_n = st.session_state.get("smoke_app_name", "Sales")
+                field_context = ""
+                if _HAS_ORG_INSPECTOR and _org_inspector_mod is not None:
+                    try:
+                        with st.spinner(
+                            f"🔍 Live Org Inspector: Grabbing picklist values for {sf_obj}..."
+                        ):
+                            insp = _org_inspector_mod.OrgInspector.from_credentials(
+                                sandbox_url, username, password
+                            )
+                            field_context = insp.get_smoke_field_context(sf_obj)
+                            insp.close()
+                    except Exception as e:
+                        st.warning(f"Live Org Inspector ran into an issue (using fallback): {e}")
+
+                final_prompt_txt = _smoke_prompt_fn(sf_obj, app_n, field_context)
+                st.info(
+                    f"🔥 **Smoke lifecycle mode** — prompt replaced with the **{sf_obj}** lifecycle "
+                    "template. The optional **Lead clarification** form is skipped. "
+                    "Org Inspector may run briefly to load picklist values (falls back on error)."
+                )
+
+        pm_hint = analyze_prompt_for_required_fields(
+            final_prompt_txt,
+            csv_bytes=csv_upload_bytes(uploaded_csv),
+        )
+        if not is_smoke and pm_hint["should_show_lead_pm_form"]:
+            st.session_state[CLARIFY_SESSION_KEY] = {
+                "original_prompt": prompt.strip(),
+                "missing_fields": list(pm_hint["missing_lead_fields"]),
+                "optional_picklists": list(pm_hint["optional_picklist_fields"]),
+            }
+            st.warning(
+                "Lead flow: fill **required** fields below. **Picklist** rows are optional—leave blank "
+                "to generate tests that pick a **random visible** dropdown option (stable across orgs). "
+                "Then click **Submit & Run Automation**."
+            )
+        else:
+            st.session_state.pop(CLARIFY_SESSION_KEY, None)
+            try:
+                from ai_bridge import append_csv_data_to_prompt
+            except ImportError:
+
+                def append_csv_data_to_prompt(p: str, c: str) -> str:  # type: ignore[misc]
+                    p, c = (p or "").rstrip(), (c or "").strip()
+                    return p if not c else f"{p}\n\nThe user uploaded CSV test data:\n\n{c}"
+
+            final_prompt = append_csv_data_to_prompt(final_prompt_txt, csv_llm_block)
+            run_automation_pipeline(
+                final_prompt,
+                sandbox_url=sandbox_url,
+                username=username,
+                password=password,
+                headless=headless,
+                csv_bytes=csv_upload_bytes(uploaded_csv),
+                project_name=active_proj if active_proj else None,
+                test_name=test_target_name if test_target_name else None,
+                overwrite=overwrite_ok,
+            )
+
+    clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
+    if clarify_ctx:
+        with st.form("missing_salesforce_data"):
+            st.markdown("### ⚠️ Lead test — PM details")
+            st.caption(
+                "Required fields must be filled. Picklist fields are optional; leave blank to use "
+                "`Open Dropdown And Select First Option` (random visible option) in generated tests."
+            )
+            field_values: dict[str, str] = {}
+            for field in clarify_ctx["missing_fields"]:
+                field_values[field] = st.text_input(
+                    field_input_label(field),
+                    key=f"clarify_input_{field.replace(' ', '_')}",
+                )
+            for field in clarify_ctx.get("optional_picklists", []):
+                field_values[field] = st.text_input(
+                    field_input_label(field),
+                    key=f"clarify_picklist_{field.replace(' ', '_')}",
+                    help="Leave blank: random visible option in that dropdown. Or type the exact option label.",
+                )
+            submit_clarify = st.form_submit_button("Submit & Run Automation")
+
+        if submit_clarify:
+            if not sandbox_url.strip() or not username.strip() or not password.strip():
+                st.error("Please fill in credentials in the workspace header.")
+                return
+            missing = clarify_ctx["missing_fields"]
+            optional_pl = clarify_ctx.get("optional_picklists", [])
+            empty = [f for f in missing if not str(field_values.get(f, "")).strip()]
+            if empty:
+                st.error(
+                    "Please provide all required values: "
+                    + ", ".join(field_input_label(f) for f in empty)
+                )
+                return
+
+            csv_for_llm = str(st.session_state.get("csv_llm_block") or "")
+            augmented = build_augmented_prompt(
+                clarify_ctx["original_prompt"],
+                missing,
+                field_values,
+                optional_pl,
+                csv_llm_block=csv_for_llm,
+            )
+            st.session_state.pop(CLARIFY_SESSION_KEY, None)
+            run_automation_pipeline(
+                augmented,
+                sandbox_url=sandbox_url,
+                username=username,
+                password=password,
+                headless=headless,
+                csv_bytes=csv_upload_bytes(uploaded_csv),
+                project_name=active_proj if active_proj else None,
+                test_name=test_target_name if test_target_name else None,
+                overwrite=overwrite_ok,
+            )
+
+    render_pending_robot_review_panel(sandbox_url, username, password, headless)
+
+
+# ---------------------------------------------------------------------------
+# Tab 2 — Suite Execution
+# ---------------------------------------------------------------------------
+
+def _render_suite_execution_tab(
+    sandbox_url: str,
+    username: str,
+    password: str,
+    headless: bool,
+    active_proj: str,
+) -> None:
+    """Project suite runs, smoke shortcuts, and saved-test management."""
+
+    # ── Full-suite run ─────────────────────────────────────────────────────
+    if active_proj and _pm is not None:
+        r1, r2 = st.columns([3, 1])
+        with r1:
+            suite_clicked = st.button(
+                "▶️ Run Entire Project Suite",
+                type="primary",
+                use_container_width=True,
+                key="run_entire_project_suite_btn",
+            )
+        with r2:
+            pabot_parallel = st.checkbox(
+                "🚀 Parallel (Pabot)",
+                value=False,
+                key="pabot_parallel_project_suite",
+                help="pabot --testlevelsplit --processes 3",
+            )
+        if suite_clicked:
+            if not sandbox_url.strip() or not username.strip() or not password.strip():
+                st.error("Please fill in credentials in the workspace header.")
+            else:
+                run_project_entire_suite(
+                    active_proj,
+                    sandbox_url,
+                    username,
+                    password,
+                    headless,
+                    use_pabot=pabot_parallel,
+                )
+    else:
+        st.info("Select an **Active Project** in the workspace header to run a full test suite.")
+
+    # ── Quick Smoke shortcuts ──────────────────────────────────────────────
+    if _HAS_SMOKE:
+        st.divider()
+        st.markdown("**🔥 Quick Smoke Tests**")
+        st.caption(
+            "Populates the prompt in the **Test Builder** tab — switch there to review & run."
+        )
+        sc = st.columns([2, 1, 1, 1, 1])
+        with sc[0]:
+            st.text_input(
+                "Salesforce App",
+                placeholder="e.g. Sales",
+                key="smoke_app_name",
+                label_visibility="collapsed",
+            )
+        if sc[1].button("Lead", use_container_width=True, key="smoke_lead_btn"):
+            st.session_state["main_prompt_text"] = "Run full smoke test for Lead lifecycle"
+            st.rerun()
+        if sc[2].button("Account", use_container_width=True, key="smoke_account_btn"):
+            st.session_state["main_prompt_text"] = "Run full smoke test for Account lifecycle"
+            st.rerun()
+        if sc[3].button("Contact", use_container_width=True, key="smoke_contact_btn"):
+            st.session_state["main_prompt_text"] = "Run full smoke test for Contact lifecycle"
+            st.rerun()
+        if sc[4].button("Opportunity", use_container_width=True, key="smoke_opp_btn"):
+            st.session_state["main_prompt_text"] = "Run full smoke test for Opportunity lifecycle"
+            st.rerun()
+
+    # ── Project test list ──────────────────────────────────────────────────
+    if active_proj and _pm is not None:
+        st.divider()
+        with st.expander("📂 Project Tests", expanded=True):
+            saved_tests = _pm.list_project_tests(active_proj)
+            if not saved_tests:
+                st.info("No tests saved in this project yet.")
+            else:
+                for test in saved_tests:
+                    col_a, col_b, col_c = st.columns([3, 1, 1])
+                    col_a.write(
+                        f"📄 **{test['name']}.robot** \n"
+                        f"_(modified {test['modified'].strftime('%Y-%m-%d %H:%M')})_"
+                    )
+                    if col_b.button("▶ Re-run", key=f"run_{test['name']}"):
+                        if not sandbox_url.strip() or not username.strip() or not password.strip():
+                            st.error("Fill credentials in the workspace header first.")
+                        else:
+                            run_existing_test(test["path"], sandbox_url, username, password, headless)
+                    if col_c.button("👁 View", key=f"view_{test['name']}"):
+                        st.code(
+                            _pm.load_test_source(active_proj, test["name"]),
+                            language="robotframework",
+                        )
+
+    # ── Persisted last-run results ─────────────────────────────────────────
+    render_persisted_run_panel()
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def main_ui() -> None:
-    st.title("Salesforce AI Automation Architect")
+    st.title("Test Intelligence Platform")
     st.caption(
         "Describe a test in plain English. The AI generates Robot Framework code, "
         "then executes it against your sandbox."
@@ -521,25 +527,31 @@ def main_ui() -> None:
         hydrate_llm_env()
     except ImportError:
         pass
+
+    _init_sf_credential_session_keys()
+
     if "llm_provider_radio" not in st.session_state:
         p = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
         st.session_state["llm_provider_radio"] = "OpenAI" if p == "openai" else "Gemini"
 
+    if "smoke_app_name" not in st.session_state:
+        st.session_state["smoke_app_name"] = "Sales"
+
+    # ── Minimal sidebar: branding + execution mode + AI / LLM ──────────────
     with st.sidebar:
-        st.header("Salesforce credentials")
-        sandbox_url = st.text_input(
-            "Sandbox URL",
-            placeholder="https://yourorg--sandbox.sandbox.my.salesforce.com/",
-            help="Login URL for your Salesforce sandbox.",
-        )
-        username = st.text_input(
-            "Username",
-            placeholder="user@example.com",
-        )
-        password = st.text_input(
-            "Password",
-            type="password",
-            placeholder="••••••••",
+        st.markdown(
+            """
+<style>
+  .tip-brand-title { margin: 0 0 0.15rem 0; font-size: 1.35rem; font-weight: 700;
+    color: #0052CC; letter-spacing: -0.02em; }
+  .tip-brand-sub { margin: 0; font-size: 0.78rem; color: #42526E; font-weight: 500; }
+</style>
+<div>
+  <p class="tip-brand-title">🚀 AI QA Portal</p>
+  <p class="tip-brand-sub">Test Intelligence Platform</p>
+</div>
+            """,
+            unsafe_allow_html=True,
         )
         st.divider()
         execution_mode = st.radio(
@@ -585,153 +597,30 @@ def main_ui() -> None:
                 key="openai_sidebar_key",
             )
 
-        _sync_sidebar_api_key(
+        sync_sidebar_api_key(
             "GEMINI_API_KEY",
             "gemini",
             gemini_sidebar_key if llm_prov == "Gemini" else "",
         )
-        _sync_sidebar_api_key(
+        sync_sidebar_api_key(
             "OPENAI_API_KEY",
             "openai",
             openai_sidebar_key if llm_prov == "OpenAI" else "",
         )
-        try:
-            from ai_bridge import hydrate_llm_env
 
-            hydrate_llm_env()
-        except ImportError:
-            pass
+    # ── Active Workspace (project + credentials) ──────────────────────────
+    active_proj, sandbox_url, username, password = _render_workspace_header()
 
-
-    prompt = st.text_area(
-        "User prompt",
-        height=160,
-        placeholder='e.g. Verify I can create an Account named "Acme Corp"',
-        help="Natural language description of what the test should do.",
+    # ── Three-tab command center ──────────────────────────────────────────
+    tab_builder, tab_exec, tab_analytics = st.tabs(
+        ["🏗️ Test Builder", "🚀 Suite Execution", "📊 Analytics"]
     )
-
-    uploaded_csv = st.file_uploader(
-        "Upload Test Data (CSV)",
-        type=["csv"],
-        help="Optional. Each row is formatted and sent to the AI so it can generate FOR loops or repeated create steps.",
-        key="pm_test_data_csv",
-    )
-    csv_llm_block = _sync_csv_session_cache(uploaded_csv)
-    if csv_llm_block:
-        with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
-            preview = csv_llm_block if len(csv_llm_block) <= 14000 else csv_llm_block[:14000] + "\n\n…_(truncated in UI only)_"
-            st.markdown(preview)
-
-    with st.expander("💡 What can I ask for? (Available Capabilities)", expanded=False):
-        render_capabilities_cheat_sheet()
-
-    run_clicked = st.button("🚀 Run Automation", type="primary")
-
-    render_persisted_run_panel()
-
-    # --- Initial Run: either queue clarification or run immediately ---
-    if run_clicked:
-        try:
-            from ai_bridge import analyze_prompt_for_required_fields
-        except ImportError as exc:
-            st.error(f"Could not import ai_bridge: {exc}")
-            return
-        if not sandbox_url.strip() or not username.strip() or not password.strip():
-            st.error("Please fill in Sandbox URL, Username, and Password in the sidebar.")
-            return
-        if not prompt.strip():
-            st.error("Please enter a user prompt.")
-            return
-
-        pm_hint = analyze_prompt_for_required_fields(
-            prompt.strip(),
-            csv_bytes=_csv_upload_bytes(uploaded_csv),
-        )
-        if pm_hint["should_show_lead_pm_form"]:
-            st.session_state[CLARIFY_SESSION_KEY] = {
-                "original_prompt": prompt.strip(),
-                "missing_fields": list(pm_hint["missing_lead_fields"]),
-                "optional_picklists": list(pm_hint["optional_picklist_fields"]),
-            }
-            st.warning(
-                "Lead flow: fill **required** fields below. **Picklist** rows are optional—leave blank "
-                "to generate tests that pick a **random visible** dropdown option (stable across orgs). "
-                "Then click **Submit & Run Automation**."
-            )
-        else:
-            st.session_state.pop(CLARIFY_SESSION_KEY, None)
-            try:
-                from ai_bridge import append_csv_data_to_prompt
-            except ImportError:
-
-                def append_csv_data_to_prompt(p: str, c: str) -> str:  # type: ignore[misc]
-                    p, c = (p or "").rstrip(), (c or "").strip()
-                    return p if not c else f"{p}\n\nThe user uploaded CSV test data:\n\n{c}"
-
-            final_prompt = append_csv_data_to_prompt(prompt.strip(), csv_llm_block)
-            run_automation_pipeline(
-                final_prompt,
-                sandbox_url=sandbox_url,
-                username=username,
-                password=password,
-                headless=headless,
-                csv_bytes=_csv_upload_bytes(uploaded_csv),
-            )
-
-    # --- Interactive clarification (same run after state set, or later reruns) ---
-    clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
-    if clarify_ctx:
-        with st.form("missing_salesforce_data"):
-            st.markdown("### ⚠️ Lead test — PM details")
-            st.caption(
-                "Required fields must be filled. Picklist fields are optional; leave blank to use "
-                "`Open Dropdown And Select First Option` (random visible option) in generated tests."
-            )
-            field_values: dict[str, str] = {}
-            for field in clarify_ctx["missing_fields"]:
-                field_values[field] = st.text_input(
-                    _field_input_label(field),
-                    key=f"clarify_input_{field.replace(' ', '_')}",
-                )
-            for field in clarify_ctx.get("optional_picklists", []):
-                field_values[field] = st.text_input(
-                    _field_input_label(field),
-                    key=f"clarify_picklist_{field.replace(' ', '_')}",
-                    help="Leave blank: random visible option in that dropdown. Or type the exact option label.",
-                )
-            submit_clarify = st.form_submit_button("Submit & Run Automation")
-
-        if submit_clarify:
-            if not sandbox_url.strip() or not username.strip() or not password.strip():
-                st.error("Please fill in Sandbox URL, Username, and Password in the sidebar.")
-                return
-            missing = clarify_ctx["missing_fields"]
-            optional_pl = clarify_ctx.get("optional_picklists", [])
-            empty = [f for f in missing if not str(field_values.get(f, "")).strip()]
-            if empty:
-                st.error(
-                    "Please provide all required values: "
-                    + ", ".join(_field_input_label(f) for f in empty)
-                )
-                return
-
-            csv_for_llm = str(st.session_state.get("csv_llm_block") or "")
-            augmented = build_augmented_prompt(
-                clarify_ctx["original_prompt"],
-                missing,
-                field_values,
-                optional_pl,
-                csv_llm_block=csv_for_llm,
-            )
-            st.session_state.pop(CLARIFY_SESSION_KEY, None)
-            run_automation_pipeline(
-                augmented,
-                sandbox_url=sandbox_url,
-                username=username,
-                password=password,
-                headless=headless,
-                csv_bytes=_csv_upload_bytes(uploaded_csv),
-            )
+    with tab_builder:
+        _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
+    with tab_exec:
+        _render_suite_execution_tab(sandbox_url, username, password, headless, active_proj)
+    with tab_analytics:
+        render_project_analytics_dashboard(active_proj)
 
 
 main_ui()
