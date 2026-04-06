@@ -19,7 +19,7 @@ ${tabInAppLocator}=                                     xpath://one-app-nav-bar-
 ${activeTabLocator}=                                    xpath://lst-breadcrumbs//span[text()='<tab-name>'] | //lst-breadcrumbs//h1[text()='<tab-name>'] | //*[@class='slds-page-header__name-meta'][contains(text(), '<tab-name>')]
 
 # New Record — tiered locators: CSS title+role → LWC lightning-button → XPath fallback (§1.1)
-${newRecordTier1}=                                      css:a[title='New'][role='button']
+${newRecordTier1}=                                      css:a[title='New'][role='button'], button[name='New']
 ${newRecordTier2}=                                      xpath://lightning-button//a[@title='New']
 ${newRecord}=                                           xpath:(//a[@role='button' and (@title='New' or .//div[@title='New'])])[1] | (//a[contains(@class,'forceActionLink') and @title='New'])[1]
 # Record-type / picker layer that can sit above the list header and intercept New (Aura forceChangeRecordType)
@@ -40,6 +40,8 @@ ${dropdownOptionsDialogLocator}=                        xpath:(//div[contains(@c
 # Dropdown primary locators — shorter, tried first by Open Dropdown / Select Dropdown Option (§1.1)
 ${dropdownDialogAriaLabel}=                             xpath://*[contains(@class,'modal-container')]//*[self::button or self::input][@aria-label='<dropdown-field>']
 ${dropdownOptionByDataValue}=                           xpath://lightning-base-combobox-item[@data-value='<dropdown-value>']
+# Combobox option — CSS selector for lightning-base-combobox-item (§1.1: LWC tag + role)
+${comboboxOption}=                                      css:lightning-base-combobox-item[role='option']
 # Normal Input Field (exact label match)
 ${inputFieldDialogLocator}=                             xpath://*[contains(@class,'modal-container')]//label[.//text()[normalize-space()='<field-name>'] or normalize-space()='<field-name>']//following::*[(self::input or self::textarea)][1]
 # Custom / richly-labelled field fallback — uses contains() across label/span text; catches custom fields with nested spans, required asterisks, or non-standard SLDS markup
@@ -94,7 +96,7 @@ ${relatedRecordDropdownLocator}=                        xpath://article[@aria-la
 ${relatedRecordDropdownOptionLocator}=                  xpath://div[contains(@class, 'actionMenu') and (contains(@class, 'visible'))]//a[@title='<dropdown-option>']
 
 ${dialogLocator}=                                       xpath://*[contains(@class,'modal-container')]
-${successToastMessageOnRecordDetailsPageLocator}=       css:div[data-key='success'] a div
+${successToastMessageOnRecordDetailsPageLocator}=       css:div[data-key='success'] .toastMessage
 ${relatedRecordsViewAllLocator}=                        xpath://article[@aria-label='<record-type>']//span[@class='view-all-label']
 ${realtedRecordListViewTitleLocator}=                   xpath://h1[@title='<record-type>']
 ${tableCellLocator}=                                    xpath:(//a[starts-with(@href, '/lightning/r/') and contains(@href, '/view')][.//text()='<record-id>'])[<pos>]

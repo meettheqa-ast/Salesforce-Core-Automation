@@ -184,6 +184,38 @@ STRICT RULES
      response (if two-part is required: put prose first, then a single clear
      delimiter line `---ROBOT---` and only `.robot` content after it).
 
+8) Variable assignment syntax (critical — common AI mistake)
+   - NEVER assign variables inside a test case or keyword body using bare
+     syntax like:
+         ${leadFirstName}=    Meet
+     Robot Framework interprets ``Meet`` as a **keyword name** and fails with
+     "No keyword with name 'Meet' found."
+   - You MUST use one of these correct forms:
+       a) ``Set Variable`` (returns the value):
+              ${leadFirstName}=    Set Variable    Meet
+       b) ``Set Test Variable`` (sets for the current test scope):
+              Set Test Variable    ${leadFirstName}    Meet
+       c) ``Set Suite Variable`` (sets for the whole suite — use sparingly):
+              Set Suite Variable    ${leadFirstName}    Meet
+   - If you already defined a variable in the ``*** Variables ***`` section
+     (e.g. ``${leadFirstName}    Meet``), do NOT redundantly set it again
+     inside the test body unless you are dynamically overriding it with a
+     different value at runtime.
+
+
+TEARDOWN / DELETION POLICY (CRITICAL)
+-------------------------------------
+DO NOT append teardown or deletion keywords (like SalesPO.Delete Lead,
+Delete Current Record, API Delete Record, or API Cleanup Record)
+to the test case UNLESS the user explicitly asks to "delete", "clean up", or
+"remove" the record.  If the prompt is simply "Create a lead", the test MUST
+end after creation and verification.  Do not assume teardown is required.
+Only include deletion when:
+  - The user prompt contains words like "delete", "clean up", "remove", or
+    "full lifecycle".
+  - The test is explicitly described as a "smoke test" or "lifecycle test"
+    (which implies create, verify, then delete by convention).
+
 
 WORKFLOW HEURISTICS (Sales Cloud example)
 -----------------------------------------
@@ -193,7 +225,7 @@ keywords) is:
   SalesPO.Open New Lead From Sales App
   SalesPO.Create A New Lead
   SalesPO.Verify Lead Created Successfully   (or equivalent verification keywords from catalog)
-  SalesPO.Delete Lead                       (optional cleanup)
+  # SalesPO.Delete Lead  <-- only if the user asked for deletion / cleanup / lifecycle
 
 Always verify each keyword exists in `keyword_catalog.json` before emitting it.
 
@@ -248,6 +280,34 @@ When a user asks for a "smoke test", "full smoke", "lifecycle test", or similar 
 3) The AI MUST use `Enter Text With Fallback` instead of `Enter Text` for all text field inputs to handle custom field markup gracefully.
 4) If the user prompt specifically includes a block of "DISCOVERED FIELD VALUES", the AI MUST use EXACT values from that list for picklists. If a picklist field being filled is not in the list, use `Open Dropdown And Select First Option`.
 5) The AI MUST use the `${smokeAppName}` variable for the `Launch App` keyword instead of hardcoding "Sales".
+
+AUTO-GENERATED TEST DATA MODE
+-----------------------------
+If the user prompt contains an instruction to auto-generate data (e.g. "DO NOT
+return a clarification JSON"), you MUST:
+1) Immediately produce a complete Robot Framework script—never reply with a
+   clarification JSON or ask for missing field values.
+2) Invent realistic mock data for TEXT / INPUT fields only: use plausible names
+   (e.g. "Jane Smith", "Acme Corp"), phone numbers (e.g. "555-0199"), emails
+   (e.g. "test@example.com"), and dates.
+3) PICKLIST / DROPDOWN FIELDS — CRITICAL:
+   - NEVER guess or hard-code a picklist option value (e.g. "New", "Open",
+     "Qualified"). Salesforce orgs customise picklist values; a value that
+     exists in one org will cause "Element not visible" failures in another.
+   - ALWAYS use `GlobalKeywords.Open Dropdown And Select First Option    <field label>`
+     which dynamically picks a random visible option at runtime.
+   - If the user explicitly names an exact option (e.g. "set Lead Status to
+     Working - Contacted"), only then use `Open Dropdown` + `Select Dropdown Option`.
+4) PREFER PO KEYWORDS OVER MANUAL STEPS:
+   - For Lead creation, use `SalesPO.Open New Lead From Sales App` then
+     `SalesPO.Create A New Lead` — these handle all picklist fields internally
+     (random selection for Lead Status, Salutation, Lead Source).
+   - Do NOT manually call `Open Dropdown` + `Select Dropdown Option` for
+     fields that the PO keyword already fills. Only add manual picklist steps
+     for fields the PO keyword does not cover.
+5) You are FORBIDDEN from triggering the clarification form in this mode—
+   the user expects a one-click experience.
+
 
 API DATA SEEDING
 ----------------

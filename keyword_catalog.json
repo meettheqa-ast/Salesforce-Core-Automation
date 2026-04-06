@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-05T08:37:59.375336+00:00",
+  "generated_at": "2026-04-06T12:59:06.200383+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 153,
+  "keyword_count": 154,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -1015,9 +1015,9 @@
       "arguments": [
         "${dialogName}"
       ],
-      "documentation": "Clicks **New** then the dialog title row. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException). All timing uses spinner/overlay wait keywords instead of static ``Sleep``.",
+      "documentation": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
       "documentation_source": "author",
-      "natural_language_summary": "Clicks **New** then the dialog title row. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer (ElementClickInterceptedException). All timing uses spinner/overlay wait keywords instead of static ``Sleep``.",
+      "natural_language_summary": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
       "inferred_description": null,
       "tags": [
         "modal",
@@ -1122,9 +1122,9 @@
       "arguments": [
         "${dropdownFieldArg}"
       ],
-      "documentation": "Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.",
+      "documentation": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls the control into view (Selenium + JS centering), refuses **disabled** / **aria-disabled** controls, then JS-clicks to open the list.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens a picklist/combobox in the modal. Scrolls the control into view (Selenium + JS centering), refuses **disabled** or **aria-disabled** controls (typical dependent picklist), then JS-clicks to open the list.",
+      "natural_language_summary": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls the control into view (Selenium + JS centering), refuses **disabled** / **aria-disabled** controls, then JS-clicks to open the list.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1156,9 +1156,9 @@
         "${dropdownNameArg}",
         "${dropdownOptionArg}"
       ],
-      "documentation": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
+      "documentation": "Selects an option in the expanded dropdown. Tier 1: direct ``data-value`` CSS on ``lightning-base-combobox-item``. Tier 2: scoped XPath union (Classic + LWC). Tier 3: JS ``querySelectorAll`` by ``data-value`` or ``title`` attribute. If all three tiers fail, logs the value and falls back to ``Select Random Dropdown Option In Modal`` so the test can continue rather than hard-failing on an org-specific picklist value.",
       "documentation_source": "author",
-      "natural_language_summary": "Selects the option present in the expanded dropdown that was opened using the Open Dropdown keyword. It identifies the specified dropdown field and option, waits for the option to become visible, scrolls it into view, and clicks on it to make the selection.",
+      "natural_language_summary": "Selects an option in the expanded dropdown. Tier 1: direct ``data-value`` CSS on ``lightning-base-combobox-item``. Tier 2: scoped XPath union (Classic + LWC). Tier 3: JS ``querySelectorAll`` by ``data-value`` or ``title`` attribute. If all three tiers fail, logs the value and falls back to ``Select Random Dropdown Option In Modal`` so the test can continue rather than hard-failing on an org-specific picklist value.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1186,9 +1186,9 @@
     {
       "keyword_name": "Select Random Dropdown Option In Modal",
       "arguments": [],
-      "documentation": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.",
+      "documentation": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item``. Fast 2 s CSS wait; falls through to JS ``querySelectorAll`` immediately when the animation hasn't resolved, avoiding long Selenium waits.",
       "documentation_source": "author",
-      "natural_language_summary": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.",
+      "natural_language_summary": "After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item``. Fast 2 s CSS wait; falls through to JS ``querySelectorAll`` immediately when the animation hasn't resolved, avoiding long Selenium waits.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1200,9 +1200,9 @@
     {
       "keyword_name": "Select Random Valid Picklist Option",
       "arguments": [],
-      "documentation": "After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.",
+      "documentation": "After ``Open Dropdown``, scans combobox items using **CSS-first** locators (§1.1). Fast 2 s CSS wait; falls through to Selenium scopes + JS immediately when animation hasn't resolved. Keeps only options with **non-empty** ``data-value`` and text not equal to ``--None--``. Picks one at random.",
       "documentation_source": "author",
-      "natural_language_summary": "After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.",
+      "natural_language_summary": "After ``Open Dropdown``, scans combobox items using **CSS-first** locators (§1.1). Fast 2 s CSS wait; falls through to Selenium scopes + JS immediately when animation hasn't resolved. Keeps only options with **non-empty** ``data-value`` and text not equal to ``--None--``. Picks one at random.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1670,6 +1670,21 @@
         "records",
         "verification",
         "modal"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Resolve Tiered Locator",
+      "arguments": [
+        "@{locators}"
+      ],
+      "documentation": "Tries each locator in order and returns the first one where the element is present on the page within a short timeout. Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns. Use this to implement tiered locator strategies (§1.1) where CSS / ``aria-label`` locators are preferred but a heavier XPath fallback must remain available.",
+      "documentation_source": "author",
+      "natural_language_summary": "Tries each locator in order and returns the first one where the element is present on the page within a short timeout. Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns. Use this to implement tiered locator strategies (§1.1) where CSS / ``aria-label`` locators are preferred but a heavier XPath fallback must remain available.",
+      "inferred_description": null,
+      "tags": [
+        "utilities",
+        "locators"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },

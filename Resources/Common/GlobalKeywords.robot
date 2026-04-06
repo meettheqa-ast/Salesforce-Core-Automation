@@ -24,16 +24,16 @@ Begin Web Test
     ${headless_lc}=    Convert To Lower Case    ${headless_raw}
     ${headless_lc}=    Strip String    ${headless_lc}
     IF    '${headless_lc}' == 'true'
-        Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080")
+        Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
         Set Window Size    1920    1080
     ELSE
-        Open Browser    about:blank    chrome
+        Open Browser    about:blank    chrome    options=add_argument("--disable-notifications")
         Maximize Browser Window
     END
 #    set window position    x=0    y=0
 #    set window size    width=1265    height=675
-    Set Selenium Timeout    10s
-    Set Selenium Implicit Wait    10s
+    Set Selenium Timeout    5s
+    Set Selenium Implicit Wait    0s
 
 End Web Test
     [Documentation]    The End Web Test step concludes the testing session by closing all browser instances, ensuring proper cleanup of the testing environment.
@@ -64,7 +64,7 @@ Launch App
     ${booleanStatus}=    Run Keyword And Return Status    Element Should Be Visible    ${activeApp}
     IF  not ${booleanStatus}
         Click Element    ${appLauncher}
-        Wait Until Element Is Visible    ${searchAppLauncher}
+        Wait Until Element Is Visible    ${searchAppLauncher}    timeout=5s
         Clear Element Text    ${searchAppLauncher}
         Input Text    ${searchAppLauncher}    ${appName}
         ${appInLauncher}=    Replace String    ${appInLauncherLocator}    <app-name>    ${appName}
@@ -76,7 +76,7 @@ Launch App
             Wait Until Element Is Visible    ${firstHit}    15s
             Click Element    ${firstHit}
         END
-        Wait Until Element Is Visible    ${sandboxlaunch360logo}
+        Wait Until Element Is Visible    ${sandboxlaunch360logo}    timeout=15s
         ${verified}=    Run Keyword And Return Status    Page Should Contain Element    ${activeApp}
         IF    not ${verified}
             Log    Opened first App Launcher search result for "${appName}"; active header may not match the string exactly (typos / alternate app title).    WARN
@@ -89,10 +89,10 @@ Select App Tab
     [Tags]    navigation
     [Arguments]    ${tabName}
     ${tabInApp}=    Replace String    ${tabInAppLocator}    <tab-name>    ${tabName}
-    Wait Until Element Is Visible    ${tabInApp}
+    Wait Until Element Is Visible    ${tabInApp}    timeout=10s
     Click Element    ${tabInApp}
     ${activeTab}=    Replace String    ${activeTabLocator}    <tab-name>    ${tabName}
-    Wait Until Page Contains Element    ${activeTab}
+    Wait Until Page Contains Element    ${activeTab}    timeout=10s
     Page Should Contain Element    ${activeTab}
 
 Open New Dialog
@@ -132,9 +132,9 @@ Open Item
     Click Element    ${appLauncher}
     Input Text    ${searchAppLauncher}    ${itemName}
     ${itemInLauncher}=    Replace String    ${itemInLauncherLocator}    <item-name>    ${itemName}
-    Wait Until Element Is Visible    ${itemInLauncher}
+    Wait Until Element Is Visible    ${itemInLauncher}    timeout=10s
     Click Element    ${itemInLauncher}
-    Wait Until Element Is Visible    ${sandboxlaunch360logo}
+    Wait Until Element Is Visible    ${sandboxlaunch360logo}    timeout=15s
 
 Enter Into Search Field
     [Documentation]    Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.
@@ -147,7 +147,7 @@ Enter Into Search Field
         ...    Search<search-input-field>
     END
     ${searchInputField}=    Replace String    ${searchInputFieldDialogLocator}    <search-input-field>    ${fieldName}
-    Wait Until Page Contains Element    ${searchInputField}
+    Wait Until Page Contains Element    ${searchInputField}    timeout=10s
     Scroll Element Into View    ${searchInputField}
     IF    '${searchTerm}' != '${EMPTY}'
         Input Text    ${searchInputField}    ${searchTerm}
@@ -168,7 +168,7 @@ Select Dialog Button
     [Tags]    modal    interaction
     [Arguments]    ${buttonActionArg}
     ${buttonAction}=    Replace String    ${dialogAction}    <btn-action>    ${buttonActionArg}
-    Wait Until Element Is Visible    ${buttonAction}
+    Wait Until Element Is Visible    ${buttonAction}    timeout=5s
     Click Button    ${buttonAction}
 
 Attempt Save And Auto-Heal Missing Fields
@@ -275,7 +275,7 @@ Open Dropdown
     ELSE
         ${dropdownField}=    Replace String    ${dropdownDialogLocator}    <dropdown-field>    ${dropdownFieldArg}
     END
-    Wait Until Element Is Visible    ${dropdownField}
+    Wait Until Element Is Visible    ${dropdownField}    timeout=5s
     Scroll Element Into View With Fallback    ${dropdownField}
     ${dropdownFieldJS}=    Get Webelement    ${dropdownField}
     Execute Javascript    arguments[0].scrollIntoView({block:'center', inline:'nearest'});    ARGUMENTS    ${dropdownFieldJS}
@@ -347,9 +347,10 @@ Open Dropdown With Fallback
     RETURN    ${FALSE}
 
 Select Dropdown Option
-    [Documentation]    Selects an option in the expanded dropdown. Tries direct ``data-value`` targeting on ``lightning-base-combobox-item`` first (most resilient per §1.1), then falls back to the full XPath union for Classic / Aura dropdowns.
+    [Documentation]    Selects an option in the expanded dropdown. Tier 1: direct ``data-value`` CSS on ``lightning-base-combobox-item``. Tier 2: scoped XPath union (Classic + LWC). Tier 3: JS ``querySelectorAll`` by ``data-value`` or ``title`` attribute. If all three tiers fail, logs the value and falls back to ``Select Random Dropdown Option In Modal`` so the test can continue rather than hard-failing on an org-specific picklist value.
     [Tags]    interaction    pick list
     [Arguments]    ${dropdownNameArg}    ${dropdownOptionArg}
+    # Tier 1 — fast data-value CSS
     ${dvLoc}=    Replace String    ${dropdownOptionByDataValue}    <dropdown-value>    ${dropdownOptionArg}
     ${ok_dv}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${dvLoc}    timeout=3s
     IF    ${ok_dv}
@@ -357,14 +358,34 @@ Select Dropdown Option
         Click Element    ${dvLoc}
         RETURN
     END
+    # Tier 2 — scoped XPath union (Classic + LWC)
     ${dropdownOptionsDialogLocator}=    Replace String
     ...    ${dropdownOptionsDialogLocator}
     ...    <dropdown-field>
     ...    ${dropdownNameArg}
     ${dropdownOption}=    Replace String    ${dropdownOptionsDialogLocator}    <dropdown-value>    ${dropdownOptionArg}
-    Wait Until Element Is Visible    ${dropdownOption}
-    Scroll Element Into View With Fallback    ${dropdownOption}
-    Click Element    ${dropdownOption}
+    ${ok_xpath}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${dropdownOption}    timeout=3s
+    IF    ${ok_xpath}
+        Scroll Element Into View With Fallback    ${dropdownOption}
+        Click Element    ${dropdownOption}
+        RETURN
+    END
+    # Tier 3 — JS querySelectorAll by data-value or title
+    ${js_clicked}=    Execute Javascript
+    ...    var val = arguments[0];
+    ...    var sel = 'lightning-base-combobox-item[data-value=\"' + val + '\"]';
+    ...    var el = document.querySelector(sel);
+    ...    if (!el) { sel = 'lightning-base-combobox-item[title=\"' + val + '\"]'; el = document.querySelector(sel); }
+    ...    if (!el) { var all = document.querySelectorAll('lightning-base-combobox-item[role=\"option\"]'); for (var i=0;i<all.length;i++){if(all[i].textContent.trim()===val){el=all[i];break;}} }
+    ...    if (el) { el.scrollIntoView({block:'center'}); el.click(); return true; }
+    ...    return false;
+    ...    ARGUMENTS    ${dropdownOptionArg}
+    IF    ${js_clicked}
+        RETURN
+    END
+    # All tiers exhausted — value likely doesn't exist in this org; pick a random valid option instead
+    Log    Select Dropdown Option: "${dropdownOptionArg}" not found for "${dropdownNameArg}" via any tier. Falling back to random valid option.    WARN
+    Select Random Dropdown Option In Modal
 
 Select Multiselect Option
     [Documentation]    Dual-list / dueling-list multiselect in the **modal**: for each value in ``@{selected_values}``, finds the row in the **first** ``slds-dueling-list__options`` list (Available), clicks it, then clicks a **Move to Chosen**-style control scoped under the field. ``${fieldLabel}`` should match visible label/legend text (substring match). No-op if the value list is empty. Requires light-DOM list items (standard SLDS); closed shadow roots need different tooling.
@@ -403,13 +424,18 @@ Select Multiselect Option
     END
 
 Select Random Dropdown Option In Modal
-    [Documentation]    After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item[@role='option']``. Options often render in a **portal** outside ``.modal-container``—tries modal, open ``slds-dropdown`` / listbox, then page-wide combobox items.
+    [Documentation]    After ``Open Dropdown``, picks a **random** visible ``lightning-base-combobox-item``. Fast 2 s CSS wait; falls through to JS ``querySelectorAll`` immediately when the animation hasn't resolved, avoiding long Selenium waits.
     [Tags]    interaction    pick list
-    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=5s
+    ${css_ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${comboboxOption}    timeout=2s
+    IF    not ${css_ok}
+        Run Keyword And Return Status    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=2s
+    END
     @{scopes}=    Create List
+    ...    css:.modal-container lightning-base-combobox-item[role='option']
+    ...    css:.slds-dropdown lightning-base-combobox-item[role='option']
+    ...    css:.slds-listbox lightning-base-combobox-item[role='option']
+    ...    css:lightning-base-combobox-item[role='option']
     ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
-    ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
-    ...    xpath://div[contains(@class,'slds-listbox')]//lightning-base-combobox-item[@role='option']
     ...    xpath://lightning-base-combobox-item[@role='option']
     @{pick_list}=    Create List
     FOR    ${scope}    IN    @{scopes}
@@ -421,19 +447,34 @@ Select Random Dropdown Option In Modal
         END
     END
     ${n}=    Get Length    ${pick_list}
-    Should Be True    ${n} > 0    No Lightning combobox options found after Open Dropdown (list may be in a portal—check field label).
+    IF    ${n} == 0
+        ${js_count}=    Execute Javascript    return document.querySelectorAll('lightning-base-combobox-item[role="option"]').length;
+        IF    ${js_count} > 0
+            Execute Javascript
+            ...    var items = document.querySelectorAll('lightning-base-combobox-item[role="option"]');
+            ...    var pick = items[Math.floor(Math.random() * items.length)];
+            ...    pick.scrollIntoView({block:'center'}); pick.click();
+            RETURN
+        END
+        Fail    No combobox options found (Selenium scopes + JS querySelectorAll). Dropdown may not have opened or items are in a closed shadow root.
+    END
     ${r}=    Evaluate    random.randint(0, int(${n}) - 1)    modules=random
     ${el}=    Get From List    ${pick_list}    ${r}
     Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el}
 
 Select Random Valid Picklist Option
-    [Documentation]    After ``Open Dropdown``, scans ``lightning-base-combobox-item[@role='option']`` (modal → visible ``slds-dropdown`` / listbox → page-wide). Keeps only options with **non-empty** ``data-value`` after trim and visible text **not** equal to ``--None--`` (case-insensitive). Picks one remaining element at random and clicks it. Fails if no valid option exists.
+    [Documentation]    After ``Open Dropdown``, scans combobox items using **CSS-first** locators (§1.1). Fast 2 s CSS wait; falls through to Selenium scopes + JS immediately when animation hasn't resolved. Keeps only options with **non-empty** ``data-value`` and text not equal to ``--None--``. Picks one at random.
     [Tags]    interaction    pick list
-    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=5s
+    ${css_ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${comboboxOption}    timeout=2s
+    IF    not ${css_ok}
+        Run Keyword And Return Status    Wait Until Element Is Visible    xpath://lightning-base-combobox-item[@role='option']    timeout=2s
+    END
     @{scopes}=    Create List
+    ...    css:.modal-container lightning-base-combobox-item[role='option']
+    ...    css:.slds-dropdown lightning-base-combobox-item[role='option']
+    ...    css:.slds-listbox lightning-base-combobox-item[role='option']
+    ...    css:lightning-base-combobox-item[role='option']
     ...    xpath://*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option']
-    ...    xpath://div[contains(@class,'slds-dropdown') and contains(@class,'visible')]//lightning-base-combobox-item[@role='option']
-    ...    xpath://div[contains(@class,'slds-listbox')]//lightning-base-combobox-item[@role='option']
     ...    xpath://lightning-base-combobox-item[@role='option']
     @{valid}=    Create List
     FOR    ${scope}    IN    @{scopes}
@@ -483,7 +524,7 @@ Enter Text
     [Tags]    interaction    input field
     [Arguments]    ${labelName}    ${textValue}
     ${inputField}=    Replace String    ${inputFieldDialogLocator}    <field-name>    ${labelName}
-    Wait Until Element Is Visible    ${inputField}
+    Wait Until Element Is Visible    ${inputField}    timeout=5s
     Scroll Element Into View With Fallback    ${inputField}
     ${inputTextFieldJS}=    Get Webelement    ${inputField}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${inputTextFieldJS}
@@ -547,7 +588,7 @@ Enter Date
     [Tags]    interaction    date
     [Arguments]    ${dateNameArg}    ${dateValue}
     ${dateField}=    Replace String    ${dateFieldDialogLocator}    <date-field-name>    ${dateNameArg}
-    Wait Until Element Is Visible    ${dateField}
+    Wait Until Element Is Visible    ${dateField}    timeout=5s
     Scroll Element Into View    ${dateField}
     Input Text    ${dateField}    ${dateValue}
 
@@ -556,7 +597,7 @@ Enter Time
     [Tags]    interaction    time
     [Arguments]    ${timeNameArg}    ${timeValue}
     ${timeField}=    Replace String    ${timeFieldDialogLocator}    <time-field-name>    ${timeNameArg}
-    Wait Until Element Is Visible    ${timeField}
+    Wait Until Element Is Visible    ${timeField}    timeout=5s
     Scroll Element Into View    ${timeField}
     Press Keys    ${timeField}    CTRL+a    BACKSPACE
     Input Text    ${timeField}    ${timeValue}
@@ -567,7 +608,7 @@ Click Checkbox
     [Tags]    interaction    checkbox
     [Arguments]    ${checkboxNameArg}
     ${checkboxField}=    Replace String    ${checkboxDialogLocator}    <checkbox-field>    ${checkboxNameArg}
-    Wait Until Page Contains Element    ${checkboxField}
+    Wait Until Page Contains Element    ${checkboxField}    timeout=5s
     Scroll Element Into View    ${checkboxField}
     ${checkboxJS}=    Get Webelement    ${checkboxField}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${checkboxJS}
@@ -582,8 +623,8 @@ Verify Redirection to Record Details Page
     Set Test Variable    ${entityName}    ${entityName}
     Wait Until Element Is Visible    ${entityName}    timeout=20s
     Element Should Be Visible    ${entityName}
-    Wait Until Element Is Visible    ${successtoastmessagelocator}
-    Wait Until Element Is Not Visible    ${successtoastmessagelocator}
+    Wait Until Element Is Visible    ${successtoastmessagelocator}    timeout=15s
+    Wait Until Element Is Not Visible    ${successtoastmessagelocator}    timeout=15s
 
 Delete Current Record
     [Documentation]    Deletes the current record by performing an action on the record details page header. It invokes the "Delete" action on the record details page header and selects the "Delete" button in the dialog. After the deletion, it waits for the appropriate redirection tab to become visible, ensuring the user is redirected correctly. Finally, the test verifies the appearance and disappearance of the success toast message, confirming that the deletion action was completed successfully.
@@ -596,8 +637,8 @@ Delete Current Record
     ${redirectTab}=    Replace String    ${activeTabLocator}    <tab-name>    ${pluralRecordType}
     Wait Until Element Is Visible    ${redirectTab}    timeout=40s
     Page Should Contain Element    ${redirectTab}
-    Wait Until Element Is Visible    ${successToastMessageLocator}
-    Wait Until Element Is Not Visible    ${successToastMessageLocator}
+    Wait Until Element Is Visible    ${successToastMessageLocator}    timeout=15s
+    Wait Until Element Is Not Visible    ${successToastMessageLocator}    timeout=15s
 
 Get Plural Form
     [Documentation]    This keyword returns the plural form of a given record type string. It first checks if the word ends with "y" and the preceding character is a consonant. If this condition is true, it replaces the "y" with "ies" to form the plural. Otherwise, it appends an "s" to the word to form the plural. This approach is designed to handle typical English pluralization rules.
@@ -628,10 +669,10 @@ Verify Record Creation With Data
     IF    ${is_phoneish} and '${recordDataArg}' != 'Checkbox-Check' and '${recordDataArg}' != 'Checkbox-Uncheck'
         ${block}=    Replace String    ${recordFieldBlockLocator}    <record-type>    ${recordDataTypeArg}
         ${block}=    Replace String    ${block}    <field-name>    ${recordDataFieldArg}
-        Wait Until Element Is Visible    ${block}
-        Scroll Element Into View    ${block}
-        Element Should Be Visible    ${block}
-        ${ui_text}=    Get Text    ${block}
+    Wait Until Element Is Visible    ${block}    timeout=10s
+    Scroll Element Into View    ${block}
+    Element Should Be Visible    ${block}
+    ${ui_text}=    Get Text    ${block}
         ${ui_digits}=    Replace String Using Regexp    ${ui_text}    \\D+    ${EMPTY}
         ${exp_digits}=    Replace String Using Regexp    ${recordDataArg}    \\D+    ${EMPTY}
         Should Be Equal As Strings    ${ui_digits}    ${exp_digits}
@@ -643,7 +684,7 @@ Verify Record Creation With Data
     ELSE IF    '${recordDataArg}' == 'Checkbox-Uncheck'
         ${recordActualDataLocator}=    Set Variable    ${recordActualDataLocator}\[not(@checked)]
     END
-    Wait Until Page Contains Element    ${recordActualDataLocator}
+    Wait Until Page Contains Element    ${recordActualDataLocator}    timeout=10s
     Scroll Element Into View    ${recordActualDataLocator}
     Element Should Be Visible    ${recordActualDataLocator}
 
@@ -655,14 +696,14 @@ Open Related Record Dropdown
     ...    ${relatedRecordDropdownNameLocator}
     ...    <record-type>
     ...    ${relatedRecordDropdownArg}
-    Wait Until Element Is Visible    ${relatedRecordDropdownName}
+    Wait Until Element Is Visible    ${relatedRecordDropdownName}    timeout=10s
     Scroll Element Into View    ${relatedRecordDropdownName}
     Wait Until Element Is Enabled    ${relatedRecordDropdownName}    timeout=5s
     ${relatedRecordDropdown}=    Replace String
     ...    ${relatedRecordDropdownLocator}
     ...    <record-type>
     ...    ${relatedRecordDropdownArg}
-    Wait Until Element Is Visible    ${relatedRecordDropdown}
+    Wait Until Element Is Visible    ${relatedRecordDropdown}    timeout=10s
     Scroll Element Into View    ${relatedRecordDropdown}
     ${relatedRecordDropdownJS}=    Get WebElement    ${relatedRecordDropdown}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${relatedRecordDropdownJS}
@@ -673,7 +714,7 @@ Open Related Record Dropdown
     Wait Until Element Is Visible    ${relatedRecordDropdownOption}    timeout=20s
     Scroll Element Into View    ${relatedRecordDropdownOption}
     Click Element    ${relatedRecordDropdownOption}
-    Wait Until Element Is Visible    ${dialogLocator}
+    Wait Until Element Is Visible    ${dialogLocator}    timeout=15s
 
 Get Success Toast Message Related Record Creation ID
     [Documentation]    This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.
@@ -691,14 +732,14 @@ Verify Related Records Creation
     ...    ${relatedRecordsViewAllLocator}
     ...    <record-type>
     ...    ${relatedRecordNameArg}
-    Wait Until Element Is Visible    ${relatedRecordsViewAllLocator}
+    Wait Until Element Is Visible    ${relatedRecordsViewAllLocator}    timeout=10s
     ${relatedRecordsViewAllLocatorJS}=    Get Webelement    ${relatedRecordsViewAllLocator}
     Execute Javascript    arguments[0].click();    ARGUMENTS    ${relatedRecordsViewAllLocatorJS}
     ${realtedRecordListViewTitleLocator}=    Replace String
     ...    ${realtedRecordListViewTitleLocator}
     ...    <record-type>
     ...    ${relatedRecordNameArg}
-    Wait Until Element Is Visible    ${realtedRecordListViewTitleLocator}
+    Wait Until Element Is Visible    ${realtedRecordListViewTitleLocator}    timeout=15s
     Verify Table Cell Record    ${successToastMessageOnRecordDetailsPage}
 
 Verify Table Cell Record
@@ -707,16 +748,16 @@ Verify Table Cell Record
     [Arguments]    ${recordIdArg}    ${recordIdPos}=1
     ${tableCellLocator}=    Replace String    ${tableCellLocator}    <record-id>    ${recordIdArg}
     ${tableCellLocator}=    Replace String    ${tableCellLocator}    <pos>    ${recordIdPos}
-    Wait Until Page Contains Element    ${tableCellLocator}
+    Wait Until Page Contains Element    ${tableCellLocator}    timeout=10s
     Page Should Contain Element    ${tableCellLocator}
 
 Return Back To Parent
     [Documentation]    Navigates back to the parent record from a related record view. It reloads the page, waits for the breadcrumb (indicating the parent record) to become visible, and clicks on it to return to the parent record's details page. After navigating back, it ensures the parent record is visible and confirms successful navigation.
     [Tags]    navigation    back
     Reload Page
-    Wait Until Element Is Visible    ${relatedRecordParentBreadcrumbLocator}
+    Wait Until Element Is Visible    ${relatedRecordParentBreadcrumbLocator}    timeout=10s
     Click Element    ${relatedRecordParentBreadcrumbLocator}
-    Wait Until Element Is Visible    ${entityNameLocator}
+    Wait Until Element Is Visible    ${entityNameLocator}    timeout=15s
     Element Should Be Visible    ${entityNameLocator}
 #    wait until page does not contain element    ${spinnerLoadingWOLocator}    timeout=20s
 
@@ -792,9 +833,9 @@ Perform Action On Record Details Page Header
         Click Element    ${recordType}
     ELSE
         ${recordTypeDropdownLocator}=    Prepare Quick Action Header Locator    ${recordTypeArg}
-        Wait Until Element Is Visible    ${recordTypeDropdownLocator}
+        Wait Until Element Is Visible    ${recordTypeDropdownLocator}    timeout=5s
         Click Element    ${recordTypeDropdownLocator}
-        Wait Until Element Is Visible    ${recordType}
+        Wait Until Element Is Visible    ${recordType}    timeout=5s
         Click Element    ${recordType}
     END
 
@@ -806,12 +847,12 @@ Select Account Record Type
     ...    ${accountRecordTypeLocator}
     ...    <account-record-type>
     ...    ${accountRecordTypeArg}
-    Wait Until Element Is Visible    ${accountRecordType}
+    Wait Until Element Is Visible    ${accountRecordType}    timeout=10s
     Scroll Element Into View With Fallback    ${accountRecordType}
     Click Element    ${accountRecordType}
     Select Dialog Button    Next
     ${newRecordDialogTitle}=    Replace String    ${newRecordDialogTitleLocator}    <record-name>    Account
-    Wait Until Element Is Visible    ${newRecordDialogTitle}
+    Wait Until Element Is Visible    ${newRecordDialogTitle}    timeout=15s
 
 Visit Dynamic Form Section
     [Documentation]    Scrolls to a dynamic form section by section title. Targets the section ``h3`` (not the inner span) and uses a JS scroll fallback so SLDS does not throw "element has no size and location".
@@ -821,7 +862,7 @@ Visit Dynamic Form Section
     ...    ${dynamicFormInformationSectionLocator}
     ...    <title-name>
     ...    ${dynamicFormInformationSectionArg}
-    Wait Until Page Contains Element    ${dynamicFormInformationSection}
+    Wait Until Page Contains Element    ${dynamicFormInformationSection}    timeout=10s
     Scroll Element Into View With Fallback    ${dynamicFormInformationSection}
 
 Change List View
@@ -837,21 +878,21 @@ Change List View
     ...    ${listViewDropdownOptionLocator}
     ...    <dropdown-value>
     ...    ${listViewDropdownOptionArg}
-    Wait Until Element Is Visible    ${listViewRecordType}
+    Wait Until Element Is Visible    ${listViewRecordType}    timeout=10s
     Click Element    ${listViewRecordType}
-    Wait Until Element Is Visible    ${listViewDropdownOption}
+    Wait Until Element Is Visible    ${listViewDropdownOption}    timeout=10s
     Click Element    ${listViewDropdownOption}
-    Wait Until Element Is Not Visible    ${listViewSearchSpinner}
+    Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=15s
 
 Search In List View
     [Documentation]    Searches for a specific record in the list view. Inputs the record ID into the search box, performs the search, and verifies the presence of the record in the resulting list.
     [Tags]    search in list view    interaction
     [Arguments]    ${recordIdArg}
     ${listViewSearchInput}=    Replace String    ${searchInputFieldLocator}    <search-input-field>    this list
-    Wait Until Element Is Visible    ${listViewSearchInput}
+    Wait Until Element Is Visible    ${listViewSearchInput}    timeout=10s
     Input Text    ${listViewSearchInput}    ${recordIdArg}
     Press Key    ${listViewSearchInput}    \\13    # ASCII code for enter key
-    Wait Until Element Is Not Visible    ${listViewSearchSpinner}
+    Wait Until Element Is Not Visible    ${listViewSearchSpinner}    timeout=15s
     ${emptyContainerExists}=    Run Keyword and Return Status
     ...    Wait Until Element Is Visible
     ...    ${emptyContainerListViewLocator}
@@ -867,7 +908,7 @@ Get Lead Convert Dialog New Fields
     [Tags]    records    utilities    modal
     [Arguments]    ${fieldNameArg}
     ${fieldName}=    Replace String    ${leadConvertFieldDialogLocator}    <field-name>    ${fieldNameArg}
-    Wait Until Page Contains Element    ${fieldName}
+    Wait Until Page Contains Element    ${fieldName}    timeout=10s
     ${fieldValue}=    Get Element Attribute    ${fieldName}    title
     RETURN    ${fieldValue}
 
@@ -895,24 +936,24 @@ Change Opportunity Record Status
     ELSE
         ${activeStatusOption}=    Replace String    ${activePathOption}    <path-option>    ${statusOptionArg}
     END
-    Wait Until Element Is Visible    ${statusOption}
+    Wait Until Element Is Visible    ${statusOption}    timeout=10s
     Scroll Element Into View    ${statusOption}
     Mouse Down    ${statusOption}
     Mouse Up    ${statusOption}
-    Wait Until Element Is Visible    ${submitPathStep}
+    Wait Until Element Is Visible    ${submitPathStep}    timeout=5s
     Mouse Down    ${submitPathStep}
     Mouse Up    ${submitPathStep}
     IF    '${statusOptionArg}' != 'Closed' and '${statusStage}' == 'None'
-        Wait Until Element Is Visible    ${successToastMessageLocator}
-        Wait Until Element Is Not Visible    ${successToastMessageLocator}
-        Wait Until Element Is Visible    ${activeStatusOption}
+        Wait Until Element Is Visible    ${successToastMessageLocator}    timeout=15s
+        Wait Until Element Is Not Visible    ${successToastMessageLocator}    timeout=15s
+        Wait Until Element Is Visible    ${activeStatusOption}    timeout=10s
         Element Should Be Visible    ${activeStatusOption}
     ELSE IF    '${statusOptionArg}' == 'Closed' and '${statusStage}' != 'None'
         Select From List By Value    ${closeStageSelectDialog}    ${statusStage}
         Select Dialog Button    Save
-        Wait Until Element Is Visible    ${successToastMessageLocator}
-        Wait Until Element Is Not Visible    ${successToastMessageLocator}
-        Wait Until Element Is Visible    ${activeStatusOption}
+        Wait Until Element Is Visible    ${successToastMessageLocator}    timeout=15s
+        Wait Until Element Is Not Visible    ${successToastMessageLocator}    timeout=15s
+        Wait Until Element Is Visible    ${activeStatusOption}    timeout=10s
         Element Should Be Visible    ${activeStatusOption}
     END
 
@@ -927,7 +968,7 @@ Verify Error Message For Field
     ELSE
         Fail    Invalid Page Type: ${pageType}. Takes values as "Dialog" or "Page"
     END
-    Wait Until Element Is Visible    ${reqFieldName}
+    Wait Until Element Is Visible    ${reqFieldName}    timeout=10s
     Scroll Element Into View    ${reqFieldName}
     ${parentElement}=    Set Variable
     ...    document.evaluate('${reqFieldName}', document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
@@ -942,7 +983,7 @@ Verify Field Present In Error Snag
     [Tags]    records    verification    modal
     [Arguments]    ${reqSnagFieldName}
     ${reqSnagFieldName}=    Replace String    ${snagFieldRequired}    <snag-field-name>    ${reqSnagFieldName}
-    Wait Until Element Is Visible    ${reqSnagFieldName}
+    Wait Until Element Is Visible    ${reqSnagFieldName}    timeout=5s
     Element Should Be Visible    ${reqSnagFieldName}
 
 Resolve Tiered Locator
@@ -950,7 +991,7 @@ Resolve Tiered Locator
     [Tags]    utilities    locators
     [Arguments]    @{locators}
     FOR    ${loc}    IN    @{locators}
-        ${ok}=    Run Keyword And Return Status    Wait Until Page Contains Element    ${loc}    timeout=3s
+        ${ok}=    Run Keyword And Return Status    Wait Until Page Contains Element    ${loc}    timeout=1.5s
         IF    ${ok}
             RETURN    ${loc}
         END

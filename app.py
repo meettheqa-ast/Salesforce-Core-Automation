@@ -231,6 +231,19 @@ def _render_test_builder_tab(
         on_change=_update_prompt,
     )
 
+    def _clear_prompt() -> None:
+        st.session_state["main_prompt_text"] = ""
+        st.session_state.pop("main_prompt_text_widget", None)
+
+    st.button("🧹 Clear Prompt", key="clear_prompt_btn", on_click=_clear_prompt)
+
+    auto_gen = st.checkbox(
+        "🎲 Auto-generate missing test data (AI/Faker)",
+        value=True,
+        help="When checked, the AI invents realistic dummy data for any required fields "
+        "instead of asking you to fill in a clarification form.",
+    )
+
     uploaded_csv = st.file_uploader(
         "Upload Test Data (CSV)",
         type=["csv"],
@@ -314,7 +327,7 @@ def _render_test_builder_tab(
             final_prompt_txt,
             csv_bytes=csv_upload_bytes(uploaded_csv),
         )
-        if not is_smoke and pm_hint["should_show_lead_pm_form"]:
+        if not is_smoke and not auto_gen and pm_hint["should_show_lead_pm_form"]:
             st.session_state[CLARIFY_SESSION_KEY] = {
                 "original_prompt": prompt.strip(),
                 "missing_fields": list(pm_hint["missing_lead_fields"]),
@@ -346,6 +359,7 @@ def _render_test_builder_tab(
                 project_name=active_proj if active_proj else None,
                 test_name=test_target_name if test_target_name else None,
                 overwrite=overwrite_ok,
+                auto_generate_data=auto_gen,
             )
 
     clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)

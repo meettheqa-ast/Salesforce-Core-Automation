@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -23,16 +24,11 @@ from app_reporting import render_in_app_run_summary, render_run_summary_for_last
 
 
 def open_local_path(path: Path) -> None:
-    """Open a file with the OS default app (e.g. browser for HTML). file:// links from localhost often do nothing."""
+    """Open an HTML report/log in a new browser tab via a file:/// URI."""
     path = path.resolve()
     if not path.is_file():
         return
-    if os.name == "nt":
-        os.startfile(str(path))  # noqa: S606
-    elif sys.platform == "darwin":
-        subprocess.run(["open", str(path)], check=False)
-    else:
-        subprocess.run(["xdg-open", str(path)], check=False)
+    webbrowser.open_new_tab(f"file:///{path.as_posix()}")
 
 
 def render_report_log_actions(
@@ -312,6 +308,15 @@ def stream_robot_logs(cmd: list[str], cwd: Path) -> tuple[int, str]:
     return proc.returncode or 0, "".join(lines)
 
 
+_AUTO_GEN_INSTRUCTION = (
+    "\n\nCRITICAL: The user has requested auto-generated data. DO NOT return a "
+    "clarification JSON asking for missing fields. You MUST invent realistic dummy "
+    "data (e.g. 'Acme Corp', 'John Doe', '555-0199') for any required fields and "
+    "immediately generate the Robot Framework script. For picklist fields, use "
+    "GlobalKeywords.Open Dropdown And Select First Option with the field label."
+)
+
+
 def run_automation_pipeline(
     final_prompt: str,
     *,
@@ -323,6 +328,7 @@ def run_automation_pipeline(
     project_name: str | None = None,
     test_name: str | None = None,
     overwrite: bool = False,
+    auto_generate_data: bool = False,
 ) -> None:
     """Refresh catalog, generate .robot via AI, store draft in session for human review (no run yet)."""
     try:
@@ -338,10 +344,14 @@ def run_automation_pipeline(
         st.error(f"Could not import ai_bridge: {exc}")
         return
 
+    effective_prompt = final_prompt.strip()
+    if auto_generate_data:
+        effective_prompt += _AUTO_GEN_INSTRUCTION
+
     try:
         with st.spinner("AI is architecting your test case…"):
             out_path = generate_test_from_prompt(
-                final_prompt.strip(),
+                effective_prompt,
                 csv_bytes=csv_bytes,
             )
         if not GENERATED_SUITE.is_file():
@@ -511,7 +521,12 @@ def render_persisted_run_panel() -> None:
     if not lr:
         return
     st.divider()
-    st.subheader("Latest test results")
+    col_hdr, col_clear = st.columns([4, 1])
+    col_hdr.subheader("Latest test results")
+    if col_clear.button("🧹 Clear Run Results", key="clear_run_results_btn", type="secondary"):
+        st.session_state.pop("last_run", None)
+        st.session_state.pop("last_run_summary_rendered_for", None)
+        st.rerun()
     st.caption(
         "Artifacts stay here until you run again. Use the buttons below to open report/log in your browser."
     )
