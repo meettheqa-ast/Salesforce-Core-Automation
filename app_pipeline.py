@@ -256,13 +256,71 @@ def run_temp_generated_suite(
     return code
 
 
-def execute_pending_generated_run(
+def commit_pending_test() -> None:
+    """Save the pending script to the project and commit to Git. Does NOT execute."""
+    ctx = st.session_state.get(PENDING_GEN_CTX_KEY)
+    if not ctx:
+        return
+    code_text = st.session_state.get(PENDING_ROBOT_EDITOR_KEY, "")
+    if not str(code_text).strip():
+        st.error("Generated script is empty.")
+        return
+
+    project_name = ctx.get("project_name")
+    test_name = ctx.get("test_name")
+    overwrite = ctx.get("overwrite", True)
+    csv_bytes = ctx.get("csv_bytes")
+    user_story_id = ctx.get("user_story_id", "")
+
+    if not project_name or not test_name:
+        st.error("A project and test name are required to save. Set them above the prompt.")
+        return
+    if not _HAS_WORKSPACE or _pm is None:
+        st.error("Workspace module unavailable.")
+        return
+
+    try:
+        proj_robot, _ = _pm.save_test_to_project(
+            project_name,
+            test_name,
+            str(code_text),
+            csv_bytes,
+            overwrite=overwrite,
+        )
+        st.success(f"💾 Saved to **{project_name}** › `{proj_robot.name}`")
+    except FileExistsError:
+        st.error(
+            "That test already exists in the project. Enable **overwrite** when you click "
+            "**Generate & Run**, then regenerate before saving."
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Could not save to project: {exc}")
+        return
+
+    if user_story_id:
+        try:
+            from app_git import commit_test_to_branch
+
+            ok = commit_test_to_branch(
+                ROOT, str(proj_robot), user_story_id, test_name,
+            )
+            if ok:
+                st.toast(f"Committed to branch: feature/{user_story_id} 🌿")
+        except Exception:  # noqa: BLE001
+            pass
+
+    clear_pending_generation()
+    st.rerun()
+
+
+def debug_pending_test(
     sandbox_url: str,
     username: str,
     password: str,
     headless: bool,
 ) -> None:
-    """Persist edited script (project + temp), run temp suite, clear pending on success."""
+    """Run the draft script locally for debugging. Does NOT save to project or Git."""
     ctx = st.session_state.get(PENDING_GEN_CTX_KEY)
     if not ctx:
         return
@@ -274,49 +332,9 @@ def execute_pending_generated_run(
     GENERATED_SUITE.parent.mkdir(parents=True, exist_ok=True)
     GENERATED_SUITE.write_text(str(code_text), encoding="utf-8")
 
-    project_name = ctx.get("project_name")
-    test_name = ctx.get("test_name")
-    overwrite = ctx.get("overwrite", True)
-    csv_bytes = ctx.get("csv_bytes")
-
-    user_story_id = ctx.get("user_story_id", "")
-
-    if project_name and test_name and _HAS_WORKSPACE and _pm is not None:
-        try:
-            proj_robot, _ = _pm.save_test_to_project(
-                project_name,
-                test_name,
-                str(code_text),
-                csv_bytes,
-                overwrite=overwrite,
-            )
-            st.success(f"💾 Saved to **{project_name}** › `{proj_robot.name}`")
-
-            if user_story_id:
-                try:
-                    from app_git import commit_test_to_branch
-
-                    ok = commit_test_to_branch(
-                        ROOT, str(proj_robot), user_story_id, test_name,
-                    )
-                    if ok:
-                        st.toast(f"Committed to branch: feature/{user_story_id} 🌿")
-                except Exception:  # noqa: BLE001
-                    pass
-        except FileExistsError:
-            st.error(
-                "That test already exists in the project. Enable **overwrite** when you click "
-                "**Run Automation**, then regenerate before Save & Execute."
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            st.warning(f"Could not save to project: {exc}")
-
-    exit_code = run_temp_generated_suite(
-        sandbox_url, username, password, headless, key_prefix="pending_inline_run"
+    run_temp_generated_suite(
+        sandbox_url, username, password, headless, key_prefix="debug_inline_run"
     )
-    if exit_code == 0:
-        clear_pending_generation()
 
 
 def render_pending_robot_review_panel(
@@ -325,15 +343,15 @@ def render_pending_robot_review_panel(
     password: str,
     headless: bool,
 ) -> None:
-    """Show editor + Save & Execute / Discard when AI generation produced a pending script."""
+    """Show editor + Save & Commit / Debug Run / Discard when AI generation produced a pending script."""
     if not st.session_state.get(PENDING_GEN_CTX_KEY):
         return
 
     st.divider()
     st.subheader("Review generated Robot")
     st.caption(
-        "Edit the script if needed. **Save & Execute** writes to the project (or `temp_test.robot` "
-        "for ad-hoc) and runs Robot. **Discard** clears this draft without running."
+        "Edit the script if needed. **Save & Commit** persists to the project and Git branch. "
+        "**Debug Run** executes the draft locally without saving. **Discard** clears this draft."
     )
     st.text_area(
         "Generated `.robot`",
@@ -341,14 +359,17 @@ def render_pending_robot_review_panel(
         key=PENDING_ROBOT_EDITOR_KEY,
         help="Robot Framework syntax. Fix locators or variables before running.",
     )
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        if st.button("💾 Save & Execute", type="primary", key="pending_save_execute_btn"):
-            if not sandbox_url.strip() or not username.strip() or not password.strip():
-                st.error("Please fill in Sandbox URL, Username, and Password in the sidebar.")
-                return
-            execute_pending_generated_run(sandbox_url, username, password, headless)
+        if st.button("💾 Save & Commit", type="primary", key="pending_commit_btn"):
+            commit_pending_test()
     with c2:
+        if st.button("▶️ Debug Run (Local)", key="pending_debug_btn"):
+            if not sandbox_url.strip() or not username.strip() or not password.strip():
+                st.error("Please fill in Sandbox URL, Username, and Password.")
+                return
+            debug_pending_test(sandbox_url, username, password, headless)
+    with c3:
         if st.button("❌ Discard", key="pending_discard_btn"):
             clear_pending_generation()
             st.rerun()

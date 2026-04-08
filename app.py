@@ -769,7 +769,7 @@ def main_ui() -> None:
 
     # ── Three-tab command center ──────────────────────────────────────────
     tab_builder, tab_exec, tab_data, tab_analytics = st.tabs(
-        ["🏗️ Test Builder", "🚀 Suite Execution", "🧪 Data Templates", "📊 Analytics"]
+        ["🏗️ Test Architect", "🚀 Release Manager", "🧪 Data Templates", "📊 Analytics"]
     )
     with tab_builder:
         _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
