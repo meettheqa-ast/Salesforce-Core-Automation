@@ -50,10 +50,10 @@ Login To Sandbox
     Input Text    ${sandboxPassword}    ${instancePassword}
     Click Element    ${sandboxLoginButton}
     ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    30s
-    IF    not ${ok} and ${allow_mfa_manual_pause}
+    IF    not $ok and $allow_mfa_manual_pause
         Pause Execution    Complete MFA / OTP in the browser window, then click OK here to continue the test.
         Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
-    ELSE IF    not ${ok}
+    ELSE IF    not $ok
         Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Run in Watch mode so the app can pause for manual OTP. (2) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (3) Use a sandbox integration user exempt from MFA if policy allows. (4) For TOTP secrets, extend automation to submit the verification code—see your security team.
     END
 

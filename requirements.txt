@@ -19,8 +19,12 @@ setuptools==82.0.1
 # --- Salesforce API data seeding ---
 simple-salesforce==1.12.6
 
+# --- Notifications ---
+requests>=2.31.0
+
 # --- App & AI ---
 python-dotenv==1.2.2
 streamlit==1.56.0
 openai==2.30.0
 google-generativeai==0.8.6
+Pillow>=10.0.0

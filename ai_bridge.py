@@ -534,7 +534,11 @@ def extract_robot_code(response_text: str) -> str:
     return text
 
 
-def _call_openai(system_prompt: str, user_content: str) -> str:
+def _call_openai(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
     from openai import OpenAI
 
     hydrate_llm_env()
@@ -544,18 +548,40 @@ def _call_openai(system_prompt: str, user_content: str) -> str:
 
     client = OpenAI(api_key=api_key)
     model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+
+    if image_bytes:
+        import base64
+
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        user_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_content},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64}"},
+                },
+            ],
+        }
+    else:
+        user_message = {"role": "user", "content": user_content}
+
     completion = client.chat.completions.create(
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
+            user_message,
         ],
         temperature=0.2,
     )
     return completion.choices[0].message.content or ""
 
 
-def _call_gemini(system_prompt: str, user_content: str) -> str:
+def _call_gemini(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
     import google.generativeai as genai
 
     hydrate_llm_env()
@@ -566,15 +592,23 @@ def _call_gemini(system_prompt: str, user_content: str) -> str:
         )
 
     genai.configure(api_key=api_key)
-    # Free tier often has quota 0 for some models (e.g. gemini-2.0-flash); 2.5 Flash / 1.5 Flash usually work.
     model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     model = genai.GenerativeModel(
         model_name,
         system_instruction=system_prompt,
     )
+
+    if image_bytes:
+        from PIL import Image as _PILImage
+
+        img = _PILImage.open(io.BytesIO(image_bytes))
+        content_parts = [user_content, img]
+    else:
+        content_parts = user_content  # type: ignore[assignment]
+
     try:
         resp = model.generate_content(
-            user_content,
+            content_parts,
             generation_config={"temperature": 0.2},
         )
     except Exception as exc:  # noqa: BLE001 — surface 429 with actionable hint
@@ -605,6 +639,7 @@ def _call_gemini(system_prompt: str, user_content: str) -> str:
 def generate_test_from_prompt(
     user_input: str,
     csv_bytes: bytes | None = None,
+    image_bytes: bytes | None = None,
     output_path: Path | None = None,
 ) -> Path:
     """
@@ -614,6 +649,9 @@ def generate_test_from_prompt(
     If ``csv_bytes`` is set, writes ``uploaded_test_data.csv`` next to the suite and,
     when the generated source references ``@{LEADS_FROM_CSV}``, injects library + Suite Setup
     so the FOR loop receives real rows.
+
+    If ``image_bytes`` is set, the screenshot is sent alongside the text prompt so the
+    LLM can visually identify field names, buttons, and layout.
 
     Returns path to the written file.
     """
@@ -630,9 +668,9 @@ def generate_test_from_prompt(
 
     provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
     if provider == "openai":
-        raw = _call_openai(system_prompt, user_content)
+        raw = _call_openai(system_prompt, user_content, image_bytes=image_bytes)
     elif provider in ("gemini", "google"):
-        raw = _call_gemini(system_prompt, user_content)
+        raw = _call_gemini(system_prompt, user_content, image_bytes=image_bytes)
     else:
         raise ValueError(f"Unsupported LLM_PROVIDER: {provider!r}. Use 'openai' or 'gemini'.")
 

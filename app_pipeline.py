@@ -9,6 +9,7 @@ import webbrowser
 from datetime import datetime
 from pathlib import Path
 
+import requests
 import streamlit as st
 
 from app_catalog import rebuild_keyword_catalog
@@ -29,6 +30,59 @@ def open_local_path(path: Path) -> None:
     if not path.is_file():
         return
     webbrowser.open_new_tab(f"file:///{path.as_posix()}")
+
+
+def send_slack_notification(
+    webhook_url: str,
+    project_name: str,
+    total_tests: int,
+    passed: int,
+    failed: int,
+    elapsed_time: str,
+) -> bool:
+    """Post a suite run summary to a Slack Incoming Webhook.
+
+    Returns ``True`` if the message was accepted (HTTP 200), ``False`` otherwise.
+    Network or formatting errors are caught so they never crash the app.
+    """
+    pass_rate = f"{passed / total_tests * 100:.0f}" if total_tests else "N/A"
+    status_emoji = "✅" if failed == 0 else "⚠️" if failed < passed else "🔴"
+    payload = {
+        "blocks": [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "🧪 Salesforce Automation Run Complete",
+                    "emoji": True,
+                },
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Project:*\n{project_name}"},
+                    {"type": "mrkdwn", "text": f"*Status:*\n{status_emoji} {pass_rate}% pass rate"},
+                    {"type": "mrkdwn", "text": f"*Results:*\n✅ {passed} Passed  |  ❌ {failed} Failed"},
+                    {"type": "mrkdwn", "text": f"*Duration:*\n⏱️ {elapsed_time}"},
+                ],
+            },
+            {"type": "divider"},
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"Total tests: {total_tests}  •  Sent from *Test Intelligence Platform*",
+                    }
+                ],
+            },
+        ],
+    }
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        return resp.status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def render_report_log_actions(
@@ -325,6 +379,7 @@ def run_automation_pipeline(
     password: str,
     headless: bool,
     csv_bytes: bytes | None = None,
+    image_bytes: bytes | None = None,
     project_name: str | None = None,
     test_name: str | None = None,
     overwrite: bool = False,
@@ -349,10 +404,33 @@ def run_automation_pipeline(
         effective_prompt += _AUTO_GEN_INSTRUCTION
 
     try:
+        from app_schema import get_schema_context
+
+        sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
+        with st.spinner("🔍 Fetching org schema for field accuracy…"):
+            schema_ctx = get_schema_context(
+                effective_prompt, sandbox_url, username, password, sec_tok,
+            )
+        if schema_ctx:
+            effective_prompt += schema_ctx
+            st.caption("✅ Live org schema injected into AI context.")
+    except Exception:  # noqa: BLE001
+        pass
+
+    if image_bytes:
+        effective_prompt += (
+            "\n\nCRITICAL: I have attached a screenshot of the Salesforce UI. "
+            "Analyze this image to identify the exact field names, button labels, "
+            "and layout structure. Generate the Robot Framework test to interact "
+            "with the elements you see in this screenshot."
+        )
+
+    try:
         with st.spinner("AI is architecting your test case…"):
             out_path = generate_test_from_prompt(
                 effective_prompt,
                 csv_bytes=csv_bytes,
+                image_bytes=image_bytes,
             )
         if not GENERATED_SUITE.is_file():
             st.error("Generated suite was not written to disk.")
@@ -511,6 +589,33 @@ def run_project_entire_suite(
             mime="text/html",
             key="download_project_suite_report",
         )
+
+    # ── Slack notification ────────────────────────────────────────────────
+    slack_url = st.session_state.get("slack_webhook_url", "").strip()
+    if slack_url:
+        xml_path = out_dir / "output.xml"
+        total, n_pass, n_fail, elapsed = 0, 0, 0, "N/A"
+        if xml_path.is_file():
+            try:
+                from robot.api import ExecutionResult
+
+                result = ExecutionResult(str(xml_path))
+                stats = result.statistics.total.all
+                n_pass = stats.passed
+                n_fail = stats.failed
+                total = n_pass + n_fail
+                elapsed_ms = result.suite.elapsed_time.total_seconds()
+                elapsed = f"{elapsed_ms:.1f}s"
+            except Exception:  # noqa: BLE001
+                total = len(robot_files)
+                elapsed = "unknown"
+        ok = send_slack_notification(
+            slack_url, project_name, total, n_pass, n_fail, elapsed,
+        )
+        if ok:
+            st.toast("Slack notification sent!")
+        else:
+            st.warning("Could not deliver Slack notification — check the webhook URL.")
     with st.expander("Full log (copy)"):
         st.code(full_log or "(empty)", language="text")
 

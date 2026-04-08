@@ -27,6 +27,7 @@ DEFAULT_PROJECT_CONFIG: dict[str, str] = {
     "username": "",
     "password": "",
     "security_token": "",
+    "slack_webhook_url": "",
 }
 
 
@@ -137,6 +138,7 @@ def write_project_credentials(
     username: str,
     password: str,
     security_token: str = "",
+    slack_webhook_url: str = "",
 ) -> Path:
     """Overwrite ``config.json`` with credential fields (empty strings allowed)."""
     proj_dir = get_project_path(project_name)
@@ -145,6 +147,7 @@ def write_project_credentials(
         "username": (username or "").strip(),
         "password": password or "",
         "security_token": security_token or "",
+        "slack_webhook_url": (slack_webhook_url or "").strip(),
     }
     path = proj_dir / CONFIG_FILENAME
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

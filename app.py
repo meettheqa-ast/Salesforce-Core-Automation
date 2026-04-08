@@ -68,7 +68,7 @@ if st.session_state.get("_catalog_init_error"):
 
 def _init_sf_credential_session_keys() -> None:
     """Ensure Streamlit widget keys for Salesforce credentials exist before first render."""
-    for k in ("sf_sandbox_url", "sf_username", "sf_password", "sf_security_token"):
+    for k in ("sf_sandbox_url", "sf_username", "sf_password", "sf_security_token", "slack_webhook_url"):
         if k not in st.session_state:
             st.session_state[k] = ""
 
@@ -90,6 +90,7 @@ def _apply_project_credentials_to_session() -> None:
         st.session_state["sf_username"] = cfg.get("username") or ""
         st.session_state["sf_password"] = cfg.get("password") or ""
         st.session_state["sf_security_token"] = cfg.get("security_token") or ""
+        st.session_state["slack_webhook_url"] = cfg.get("slack_webhook_url") or ""
     st.session_state["_credentials_bound_project"] = current
 
 
@@ -171,17 +172,38 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 help="Required for API data seeding when your IP isn't in the org's trusted range.",
                 key="sf_security_token",
             )
+        st.text_input(
+            "Slack Webhook URL (Optional)",
+            placeholder="https://hooks.slack.com/services/T.../B.../...",
+            help="Incoming Webhook URL. Suite run summaries will be posted to this channel automatically.",
+            key="slack_webhook_url",
+        )
         _active = st.session_state.get("active_project") or ""
         if _HAS_WORKSPACE and _pm is not None and _active:
-            if st.button("💾 Save Credentials to Project", key="save_creds_btn"):
+            saved_cfg = _pm.read_project_config(_active)
+            has_unsaved = (
+                st.session_state.get("sf_sandbox_url", "") != (saved_cfg.get("sandbox_url") or "")
+                or st.session_state.get("sf_username", "") != (saved_cfg.get("username") or "")
+                or st.session_state.get("sf_password", "") != (saved_cfg.get("password") or "")
+                or st.session_state.get("sf_security_token", "") != (saved_cfg.get("security_token") or "")
+                or st.session_state.get("slack_webhook_url", "") != (saved_cfg.get("slack_webhook_url") or "")
+            )
+            if st.button(
+                "💾 Save Credentials to Project",
+                key="save_creds_btn",
+                disabled=not has_unsaved,
+                help="No changes to save." if not has_unsaved else "Save current credentials to this project.",
+            ):
                 _pm.write_project_credentials(
                     _active,
                     st.session_state.get("sf_sandbox_url", ""),
                     st.session_state.get("sf_username", ""),
                     st.session_state.get("sf_password", ""),
                     st.session_state.get("sf_security_token", ""),
+                    st.session_state.get("slack_webhook_url", ""),
                 )
                 st.toast(f"Credentials saved to **{_active}**.")
+                st.rerun()
 
     tok = st.session_state.get("sf_security_token", "").strip()
     if tok:
@@ -241,12 +263,21 @@ def _render_test_builder_tab(
         "instead of asking you to fill in a clarification form.",
     )
 
-    uploaded_csv = st.file_uploader(
-        "Upload Test Data (CSV)",
-        type=["csv"],
-        help="Optional. Each row is sent to the AI so it can generate FOR loops or repeated steps.",
-        key="pm_test_data_csv",
-    )
+    csv_col, img_col = st.columns(2)
+    with csv_col:
+        uploaded_csv = st.file_uploader(
+            "Upload Test Data (CSV)",
+            type=["csv"],
+            help="Optional. Each row is sent to the AI so it can generate FOR loops or repeated steps.",
+            key="pm_test_data_csv",
+        )
+    with img_col:
+        uploaded_image = st.file_uploader(
+            "📸 Upload UI Screenshot (Optional)",
+            type=["png", "jpg", "jpeg"],
+            help="Upload a screenshot of the Salesforce form/page. The AI will analyse the fields and buttons visible in the image.",
+            key="pm_ui_screenshot",
+        )
     csv_llm_block = sync_csv_session_cache(uploaded_csv)
     if csv_llm_block:
         with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
@@ -353,6 +384,7 @@ def _render_test_builder_tab(
                     return p if not c else f"{p}\n\nThe user uploaded CSV test data:\n\n{c}"
 
             final_prompt = append_csv_data_to_prompt(final_prompt_txt, csv_llm_block)
+            img_bytes = uploaded_image.getvalue() if uploaded_image else None
             run_automation_pipeline(
                 final_prompt,
                 sandbox_url=sandbox_url,
@@ -364,6 +396,7 @@ def _render_test_builder_tab(
                 test_name=test_target_name if test_target_name else None,
                 overwrite=overwrite_ok,
                 auto_generate_data=auto_gen,
+                image_bytes=img_bytes,
             )
 
     clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
@@ -411,6 +444,7 @@ def _render_test_builder_tab(
                 csv_llm_block=csv_for_llm,
             )
             st.session_state.pop(CLARIFY_SESSION_KEY, None)
+            img_bytes_cl = uploaded_image.getvalue() if uploaded_image else None
             run_automation_pipeline(
                 augmented,
                 sandbox_url=sandbox_url,
@@ -418,6 +452,7 @@ def _render_test_builder_tab(
                 password=password,
                 headless=headless,
                 csv_bytes=csv_upload_bytes(uploaded_csv),
+                image_bytes=img_bytes_cl,
                 project_name=active_proj if active_proj else None,
                 test_name=test_target_name if test_target_name else None,
                 overwrite=overwrite_ok,
