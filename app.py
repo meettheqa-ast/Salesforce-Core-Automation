@@ -256,6 +256,14 @@ def _render_test_builder_tab(
             help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
         )
 
+    user_story_id = st.text_input(
+        "🎫 User Story / Ticket ID (Optional)",
+        placeholder="e.g., US-1234",
+        help="Links the generated test to a requirement. "
+        "The tag is injected into the .robot [Tags] section and the file is committed to a feature branch.",
+        key="user_story_id_input",
+    )
+
     def _update_prompt() -> None:
         st.session_state["main_prompt_text"] = st.session_state.main_prompt_text_widget
 
@@ -414,6 +422,7 @@ def _render_test_builder_tab(
                 overwrite=overwrite_ok,
                 auto_generate_data=auto_gen,
                 image_bytes=img_bytes,
+                user_story_id=user_story_id.strip() if user_story_id else "",
             )
 
     clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
@@ -473,6 +482,7 @@ def _render_test_builder_tab(
                 project_name=active_proj if active_proj else None,
                 test_name=test_target_name if test_target_name else None,
                 overwrite=overwrite_ok,
+                user_story_id=user_story_id.strip() if user_story_id else "",
             )
 
     render_pending_robot_review_panel(sandbox_url, username, password, headless)

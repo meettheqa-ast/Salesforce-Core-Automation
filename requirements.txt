@@ -15,6 +15,7 @@ allure-robotframework==2.15.3
 
 # --- Build / tooling ---
 setuptools==82.0.1
+GitPython>=3.1.40
 
 # --- Salesforce API data seeding ---
 simple-salesforce==1.12.6

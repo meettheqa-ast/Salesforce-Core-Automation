@@ -279,6 +279,8 @@ def execute_pending_generated_run(
     overwrite = ctx.get("overwrite", True)
     csv_bytes = ctx.get("csv_bytes")
 
+    user_story_id = ctx.get("user_story_id", "")
+
     if project_name and test_name and _HAS_WORKSPACE and _pm is not None:
         try:
             proj_robot, _ = _pm.save_test_to_project(
@@ -289,6 +291,18 @@ def execute_pending_generated_run(
                 overwrite=overwrite,
             )
             st.success(f"💾 Saved to **{project_name}** › `{proj_robot.name}`")
+
+            if user_story_id:
+                try:
+                    from app_git import commit_test_to_branch
+
+                    ok = commit_test_to_branch(
+                        ROOT, str(proj_robot), user_story_id, test_name,
+                    )
+                    if ok:
+                        st.toast(f"Committed to branch: feature/{user_story_id} 🌿")
+                except Exception:  # noqa: BLE001
+                    pass
         except FileExistsError:
             st.error(
                 "That test already exists in the project. Enable **overwrite** when you click "
@@ -384,6 +398,7 @@ def run_automation_pipeline(
     test_name: str | None = None,
     overwrite: bool = False,
     auto_generate_data: bool = False,
+    user_story_id: str = "",
 ) -> None:
     """Refresh catalog, generate .robot via AI, store draft in session for human review (no run yet)."""
     try:
@@ -402,6 +417,12 @@ def run_automation_pipeline(
     effective_prompt = final_prompt.strip()
     if auto_generate_data:
         effective_prompt += _AUTO_GEN_INSTRUCTION
+
+    if user_story_id:
+        effective_prompt += (
+            f"\n\nCRITICAL: You MUST include the tag    {user_story_id}    "
+            "in the [Tags] section of every Robot Framework test case you generate."
+        )
 
     try:
         from app_schema import get_schema_context
@@ -447,6 +468,7 @@ def run_automation_pipeline(
         "test_name": test_name,
         "overwrite": overwrite,
         "csv_bytes": csv_bytes,
+        "user_story_id": user_story_id,
     }
     st.success(
         "Generation complete. Review the script below, then **💾 Save & Execute** or **❌ Discard**."
