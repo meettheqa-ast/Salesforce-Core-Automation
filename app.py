@@ -71,27 +71,31 @@ def _init_sf_credential_session_keys() -> None:
     for k in ("sf_sandbox_url", "sf_username", "sf_password", "sf_security_token", "slack_webhook_url"):
         if k not in st.session_state:
             st.session_state[k] = ""
+    if "active_environment" not in st.session_state:
+        st.session_state["active_environment"] = "Dev"
 
 
 def _apply_project_credentials_to_session() -> None:
-    """
-    When ``active_project`` changes, load that project's ``config.json`` into the
-    credential widget keys. Switching to ad-hoc does not clear typed credentials.
+    """Load credentials for the active project + environment into widget keys.
+
+    Re-applies whenever the project *or* environment selection changes.
+    Switching to ad-hoc does not clear typed credentials.
     """
     if not _HAS_WORKSPACE or _pm is None:
         return
-    bound = st.session_state.get("_credentials_bound_project")
     current = st.session_state.get("active_project") or ""
-    if bound == current:
+    env = st.session_state.get("active_environment") or "Dev"
+    bound_key = f"{current}::{env}"
+    if st.session_state.get("_credentials_bound_key") == bound_key:
         return
     if current:
-        cfg = _pm.read_project_config(current)
+        cfg = _pm.read_project_config(current, environment=env)
         st.session_state["sf_sandbox_url"] = cfg.get("sandbox_url") or ""
         st.session_state["sf_username"] = cfg.get("username") or ""
         st.session_state["sf_password"] = cfg.get("password") or ""
         st.session_state["sf_security_token"] = cfg.get("security_token") or ""
         st.session_state["slack_webhook_url"] = cfg.get("slack_webhook_url") or ""
-    st.session_state["_credentials_bound_project"] = current
+    st.session_state["_credentials_bound_key"] = bound_key
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +139,17 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 st.session_state["active_project"] = ""
             else:
                 st.session_state["active_project"] = proj_sel
+
+            from project_manager import ENVIRONMENTS as _ENVS
+
+            env_idx = _ENVS.index(st.session_state.get("active_environment", "Dev"))
+            env_sel = st.selectbox(
+                "Environment",
+                _ENVS,
+                index=env_idx,
+                key="env_selectbox",
+            )
+            st.session_state["active_environment"] = env_sel
         else:
             st.warning("Workspace module unavailable.")
 
@@ -179,8 +194,9 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             key="slack_webhook_url",
         )
         _active = st.session_state.get("active_project") or ""
+        _env = st.session_state.get("active_environment") or "Dev"
         if _HAS_WORKSPACE and _pm is not None and _active:
-            saved_cfg = _pm.read_project_config(_active)
+            saved_cfg = _pm.read_project_config(_active, environment=_env)
             has_unsaved = (
                 st.session_state.get("sf_sandbox_url", "") != (saved_cfg.get("sandbox_url") or "")
                 or st.session_state.get("sf_username", "") != (saved_cfg.get("username") or "")
@@ -189,10 +205,10 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 or st.session_state.get("slack_webhook_url", "") != (saved_cfg.get("slack_webhook_url") or "")
             )
             if st.button(
-                "💾 Save Credentials to Project",
+                f"💾 Save Credentials to {_env}",
                 key="save_creds_btn",
                 disabled=not has_unsaved,
-                help="No changes to save." if not has_unsaved else "Save current credentials to this project.",
+                help="No changes to save." if not has_unsaved else f"Save current credentials to {_active} → {_env}.",
             ):
                 _pm.write_project_credentials(
                     _active,
@@ -201,8 +217,9 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                     st.session_state.get("sf_password", ""),
                     st.session_state.get("sf_security_token", ""),
                     st.session_state.get("slack_webhook_url", ""),
+                    environment=_env,
                 )
-                st.toast(f"Credentials saved to **{_active}**.")
+                st.toast(f"Credentials saved to **{_active}** → **{_env}**.")
                 st.rerun()
 
     tok = st.session_state.get("sf_security_token", "").strip()

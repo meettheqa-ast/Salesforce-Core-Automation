@@ -4,7 +4,7 @@ Project Workspace Manager.
 Manages named project directories under Saved_Projects/ at the repo root.
 Each project has:
   project.json  — metadata (name, created_at, description)
-  config.json   — sandbox_url, username, password (local desktop use; empty strings allowed)
+  config.json   — multi-environment credentials (Dev, QA, UAT, Prod)
   Tests/        — generated .robot files
   Data/         — uploaded CSV test-data files
 
@@ -22,13 +22,18 @@ ROOT = Path(__file__).resolve().parent
 SAVED_PROJECTS_ROOT = ROOT / "Saved_Projects"
 
 CONFIG_FILENAME = "config.json"
-DEFAULT_PROJECT_CONFIG: dict[str, str] = {
-    "sandbox_url": "",
-    "username": "",
-    "password": "",
-    "security_token": "",
-    "slack_webhook_url": "",
-}
+ENVIRONMENTS: list[str] = ["Dev", "QA", "UAT", "Prod"]
+_ENV_CREDENTIAL_KEYS: list[str] = [
+    "sandbox_url", "username", "password", "security_token", "slack_webhook_url",
+]
+
+def _empty_env_block() -> dict[str, str]:
+    """Return a credential dict with all keys set to empty strings."""
+    return {k: "" for k in _ENV_CREDENTIAL_KEYS}
+
+def _default_environments_config() -> dict[str, dict[str, str]]:
+    """Return the full default ``{"environments": {...}}`` structure."""
+    return {"environments": {env: _empty_env_block() for env in ENVIRONMENTS}}
 
 
 # ---------------------------------------------------------------------------
@@ -109,27 +114,69 @@ def read_project_meta(name: str) -> dict:
     return json.loads((proj_dir / "project.json").read_text(encoding="utf-8"))
 
 
-def read_project_config(name: str) -> dict[str, str]:
-    """
-    Load ``config.json`` for a project. Missing file or bad JSON yields empty strings
-    and writes a fresh ``config.json`` when the file was missing.
+def read_project_config(name: str, environment: str = "Dev") -> dict[str, str]:
+    """Load credentials for *environment* from ``config.json``.
+
+    Backward-compatible: if the file is a flat (pre-multi-env) dict it is
+    automatically migrated into the ``Dev`` environment and re-written.
     """
     proj_dir = get_project_path(name)
     path = proj_dir / CONFIG_FILENAME
+
     if not path.is_file():
-        write_project_credentials(name, "", "", "")
-        return DEFAULT_PROJECT_CONFIG.copy()
+        _write_full_config(name, _default_environments_config())
+        return _empty_env_block()
+
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return DEFAULT_PROJECT_CONFIG.copy()
+        return _empty_env_block()
     if not isinstance(raw, dict):
-        return DEFAULT_PROJECT_CONFIG.copy()
-    out = DEFAULT_PROJECT_CONFIG.copy()
-    for key in out:
-        val = raw.get(key)
-        out[key] = "" if val is None else str(val).strip()
+        return _empty_env_block()
+
+    # ── Backward-compat: migrate flat config into "Dev" ───────────────
+    if "environments" not in raw:
+        legacy = _empty_env_block()
+        for k in _ENV_CREDENTIAL_KEYS:
+            val = raw.get(k)
+            legacy[k] = "" if val is None else str(val).strip()
+        full = _default_environments_config()
+        full["environments"]["Dev"] = legacy
+        _write_full_config(name, full)
+        raw = full
+
+    envs: dict = raw.get("environments") or {}
+    env_block = envs.get(environment) or _empty_env_block()
+    out = _empty_env_block()
+    for k in _ENV_CREDENTIAL_KEYS:
+        val = env_block.get(k)
+        out[k] = "" if val is None else str(val).strip()
     return out
+
+
+def read_all_environments(name: str) -> dict[str, dict[str, str]]:
+    """Return the full ``{env: {creds}}`` mapping for a project."""
+    proj_dir = get_project_path(name)
+    path = proj_dir / CONFIG_FILENAME
+    if not path.is_file():
+        return _default_environments_config()["environments"]
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return _default_environments_config()["environments"]
+    if not isinstance(raw, dict) or "environments" not in raw:
+        # trigger migration via read_project_config
+        read_project_config(name, "Dev")
+        return read_all_environments(name)
+    return raw.get("environments", _default_environments_config()["environments"])
+
+
+def _write_full_config(project_name: str, data: dict) -> Path:
+    """Low-level helper — write the entire config dict to ``config.json``."""
+    proj_dir = get_project_path(project_name)
+    path = proj_dir / CONFIG_FILENAME
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def write_project_credentials(
@@ -139,19 +186,32 @@ def write_project_credentials(
     password: str,
     security_token: str = "",
     slack_webhook_url: str = "",
+    environment: str = "Dev",
 ) -> Path:
-    """Overwrite ``config.json`` with credential fields (empty strings allowed)."""
+    """Write credentials for a single *environment* inside ``config.json``."""
     proj_dir = get_project_path(project_name)
-    data = {
+    path = proj_dir / CONFIG_FILENAME
+
+    # Load existing full config (or create default)
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            raw = _default_environments_config()
+        if not isinstance(raw, dict) or "environments" not in raw:
+            raw = _default_environments_config()
+    else:
+        raw = _default_environments_config()
+
+    env_block = {
         "sandbox_url": (sandbox_url or "").strip(),
         "username": (username or "").strip(),
         "password": password or "",
         "security_token": security_token or "",
         "slack_webhook_url": (slack_webhook_url or "").strip(),
     }
-    path = proj_dir / CONFIG_FILENAME
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
+    raw["environments"][environment] = env_block
+    return _write_full_config(project_name, raw)
 
 
 # ---------------------------------------------------------------------------
