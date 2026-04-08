@@ -18,11 +18,15 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import TypedDict
+
+_logger = logging.getLogger(__name__)
 
 try:
     from smoke_templates import detect_smoke_intent as _detect_smoke_intent
@@ -636,6 +640,35 @@ def _call_gemini(
     return out
 
 
+def format_robot_code(file_path: Path) -> bool:
+    """Run ``robotidy`` on *file_path* to enforce consistent formatting.
+
+    Returns ``True`` if formatting succeeded, ``False`` on any error (missing
+    tool, bad syntax, etc.).  Never raises.
+    """
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "robotidy", str(file_path)],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            _logger.info("robotidy formatted %s successfully.", file_path.name)
+            return True
+        _logger.warning(
+            "robotidy exited with code %s for %s: %s",
+            result.returncode, file_path.name,
+            (result.stderr or result.stdout or b"").decode(errors="replace")[:300],
+        )
+    except FileNotFoundError:
+        _logger.warning("robotidy is not installed — skipping formatting.")
+    except subprocess.TimeoutExpired:
+        _logger.warning("robotidy timed out on %s — skipping.", file_path.name)
+    except Exception:
+        _logger.warning("robotidy failed on %s.", file_path.name, exc_info=True)
+    return False
+
+
 def generate_test_from_prompt(
     user_input: str,
     csv_bytes: bytes | None = None,
@@ -690,11 +723,12 @@ def generate_test_from_prompt(
 
     final_source = robot_source.rstrip() + "\n"
     OUTPUT_PATH.write_text(final_source, encoding="utf-8")
+    format_robot_code(OUTPUT_PATH)
 
-    # Also save to project path when provided (project copy is canonical; temp is cache).
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(final_source, encoding="utf-8")
+        format_robot_code(output_path)
         return output_path
 
     return OUTPUT_PATH

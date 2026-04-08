@@ -497,7 +497,8 @@ def run_automation_pipeline(
         "user_story_id": user_story_id,
     }
     st.success(
-        "Generation complete. Review the script below, then **💾 Save & Execute** or **❌ Discard**."
+        "Generation complete. Code has been auto-formatted to strict standards. "
+        "Review the script below, then **💾 Save & Commit** or **❌ Discard**."
     )
 
 
