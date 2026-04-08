@@ -73,28 +73,34 @@ def _init_sf_credential_session_keys() -> None:
             st.session_state[k] = ""
     if "active_environment" not in st.session_state:
         st.session_state["active_environment"] = "Dev"
+    if "active_persona" not in st.session_state:
+        st.session_state["active_persona"] = "System Admin"
+    if "edit_creds_mode" not in st.session_state:
+        st.session_state["edit_creds_mode"] = False
 
 
 def _apply_project_credentials_to_session() -> None:
-    """Load credentials for the active project + environment into widget keys.
+    """Load credentials for the active project + environment + persona into widget keys.
 
-    Re-applies whenever the project *or* environment selection changes.
+    Re-applies whenever any of the three selectors change.
     Switching to ad-hoc does not clear typed credentials.
     """
     if not _HAS_WORKSPACE or _pm is None:
         return
     current = st.session_state.get("active_project") or ""
     env = st.session_state.get("active_environment") or "Dev"
-    bound_key = f"{current}::{env}"
+    persona = st.session_state.get("active_persona") or "System Admin"
+    bound_key = f"{current}::{env}::{persona}"
     if st.session_state.get("_credentials_bound_key") == bound_key:
         return
     if current:
-        cfg = _pm.read_project_config(current, environment=env)
+        cfg = _pm.read_project_config(current, environment=env, persona=persona)
         st.session_state["sf_sandbox_url"] = cfg.get("sandbox_url") or ""
         st.session_state["sf_username"] = cfg.get("username") or ""
         st.session_state["sf_password"] = cfg.get("password") or ""
         st.session_state["sf_security_token"] = cfg.get("security_token") or ""
         st.session_state["slack_webhook_url"] = cfg.get("slack_webhook_url") or ""
+        st.session_state["edit_creds_mode"] = False
     st.session_state["_credentials_bound_key"] = bound_key
 
 
@@ -103,12 +109,13 @@ def _apply_project_credentials_to_session() -> None:
 # ---------------------------------------------------------------------------
 
 def _render_workspace_header() -> tuple[str, str, str, str]:
-    """Top-of-page project + credentials panel.
+    """Top-of-page project + environment + persona selector and credentials panel.
 
     Returns ``(active_proj, sandbox_url, username, password)``.
     """
     col_proj, col_creds = st.columns([1, 2], gap="large")
 
+    # ── Column 1: Project / Environment / Persona selectors ───────────
     with col_proj:
         st.markdown("**🗂️ Project**")
         if _HAS_WORKSPACE and _pm is not None:
@@ -140,23 +147,62 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             else:
                 st.session_state["active_project"] = proj_sel
 
-            from project_manager import ENVIRONMENTS as _ENVS
+            # Environment + Persona selectors (only when a project is active)
+            _active = st.session_state.get("active_project") or ""
+            if _active:
+                env_list = _pm.list_environments(_active) or ["Dev"]
+                env_opts = env_list + ["+ Add Environment"]
+                cur_env = st.session_state.get("active_environment", "Dev")
+                env_idx = env_opts.index(cur_env) if cur_env in env_opts else 0
+                env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
 
-            env_idx = _ENVS.index(st.session_state.get("active_environment", "Dev"))
-            env_sel = st.selectbox(
-                "Environment",
-                _ENVS,
-                index=env_idx,
-                key="env_selectbox",
-            )
-            st.session_state["active_environment"] = env_sel
+                if env_sel == "+ Add Environment":
+                    new_env = st.text_input("New environment name", key="new_env_name_input")
+                    if st.button("➕ Create", key="create_env_btn") and new_env.strip():
+                        _pm.write_project_credentials(_active, "", "", "", environment=new_env.strip())
+                        st.session_state["active_environment"] = new_env.strip()
+                        st.rerun()
+                else:
+                    st.session_state["active_environment"] = env_sel
+
+                act_env = st.session_state.get("active_environment") or "Dev"
+                persona_list = _pm.list_personas(_active, act_env) or ["System Admin"]
+                persona_opts = persona_list + ["+ Add Persona"]
+                cur_per = st.session_state.get("active_persona", "System Admin")
+                per_idx = persona_opts.index(cur_per) if cur_per in persona_opts else 0
+                per_sel = st.selectbox("Test Persona", persona_opts, index=per_idx, key="persona_selectbox")
+
+                if per_sel == "+ Add Persona":
+                    new_per = st.text_input("New persona name", key="new_persona_name_input")
+                    if st.button("➕ Create", key="create_persona_btn") and new_per.strip():
+                        _pm.write_project_credentials(
+                            _active, "", "", "",
+                            environment=act_env, persona=new_per.strip(),
+                        )
+                        st.session_state["active_persona"] = new_per.strip()
+                        st.rerun()
+                else:
+                    st.session_state["active_persona"] = per_sel
         else:
             st.warning("Workspace module unavailable.")
 
     _apply_project_credentials_to_session()
 
+    # ── Column 2: Credentials ─────────────────────────────────────────
+    _active = st.session_state.get("active_project") or ""
+    _env = st.session_state.get("active_environment") or "Dev"
+    _persona = st.session_state.get("active_persona") or "System Admin"
+    editing = st.session_state.get("edit_creds_mode", False)
+    is_project_mode = bool(_active) and _HAS_WORKSPACE and _pm is not None
+
     with col_creds:
-        st.markdown("**🔐 Salesforce Credentials**")
+        if is_project_mode:
+            st.markdown(f"**🔐 Credentials — {_env} / {_persona}**")
+        else:
+            st.markdown("**🔐 Salesforce Credentials (Ad-Hoc)**")
+
+        readonly = is_project_mode and not editing
+
         ca, cb = st.columns(2)
         with ca:
             st.text_input(
@@ -164,12 +210,14 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
                 help="Login URL for your Salesforce sandbox.",
                 key="sf_sandbox_url",
+                disabled=readonly,
             )
         with cb:
             st.text_input(
                 "Username",
                 placeholder="user@example.com",
                 key="sf_username",
+                disabled=readonly,
             )
         cc, cd = st.columns(2)
         with cc:
@@ -178,6 +226,7 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 type="password",
                 placeholder="••••••••",
                 key="sf_password",
+                disabled=readonly,
             )
         with cd:
             st.text_input(
@@ -186,41 +235,45 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 placeholder="Optional — leave blank if IP whitelisted",
                 help="Required for API data seeding when your IP isn't in the org's trusted range.",
                 key="sf_security_token",
+                disabled=readonly,
             )
         st.text_input(
             "Slack Webhook URL (Optional)",
             placeholder="https://hooks.slack.com/services/T.../B.../...",
             help="Incoming Webhook URL. Suite run summaries will be posted to this channel automatically.",
             key="slack_webhook_url",
+            disabled=readonly,
         )
-        _active = st.session_state.get("active_project") or ""
-        _env = st.session_state.get("active_environment") or "Dev"
-        if _HAS_WORKSPACE and _pm is not None and _active:
-            saved_cfg = _pm.read_project_config(_active, environment=_env)
-            has_unsaved = (
-                st.session_state.get("sf_sandbox_url", "") != (saved_cfg.get("sandbox_url") or "")
-                or st.session_state.get("sf_username", "") != (saved_cfg.get("username") or "")
-                or st.session_state.get("sf_password", "") != (saved_cfg.get("password") or "")
-                or st.session_state.get("sf_security_token", "") != (saved_cfg.get("security_token") or "")
-                or st.session_state.get("slack_webhook_url", "") != (saved_cfg.get("slack_webhook_url") or "")
-            )
-            if st.button(
-                f"💾 Save Credentials to {_env}",
-                key="save_creds_btn",
-                disabled=not has_unsaved,
-                help="No changes to save." if not has_unsaved else f"Save current credentials to {_active} → {_env}.",
-            ):
-                _pm.write_project_credentials(
-                    _active,
-                    st.session_state.get("sf_sandbox_url", ""),
-                    st.session_state.get("sf_username", ""),
-                    st.session_state.get("sf_password", ""),
-                    st.session_state.get("sf_security_token", ""),
-                    st.session_state.get("slack_webhook_url", ""),
-                    environment=_env,
-                )
-                st.toast(f"Credentials saved to **{_active}** → **{_env}**.")
-                st.rerun()
+
+        # ── Action buttons ────────────────────────────────────────────
+        if is_project_mode:
+            if not editing:
+                if st.button("✏️ Edit Credentials", key="edit_creds_btn"):
+                    st.session_state["edit_creds_mode"] = True
+                    st.rerun()
+            else:
+                b_save, b_cancel = st.columns(2)
+                with b_save:
+                    if st.button("💾 Save Credentials", type="primary", key="save_creds_btn"):
+                        _pm.write_project_credentials(
+                            _active,
+                            st.session_state.get("sf_sandbox_url", ""),
+                            st.session_state.get("sf_username", ""),
+                            st.session_state.get("sf_password", ""),
+                            st.session_state.get("sf_security_token", ""),
+                            st.session_state.get("slack_webhook_url", ""),
+                            environment=_env,
+                            persona=_persona,
+                        )
+                        st.session_state["edit_creds_mode"] = False
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.toast(f"Credentials saved to **{_active}** → **{_env}** / **{_persona}**.")
+                        st.rerun()
+                with b_cancel:
+                    if st.button("❌ Cancel", key="cancel_creds_btn"):
+                        st.session_state["edit_creds_mode"] = False
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.rerun()
 
     tok = st.session_state.get("sf_security_token", "").strip()
     if tok:

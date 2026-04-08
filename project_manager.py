@@ -4,7 +4,7 @@ Project Workspace Manager.
 Manages named project directories under Saved_Projects/ at the repo root.
 Each project has:
   project.json  — metadata (name, created_at, description)
-  config.json   — multi-environment credentials (Dev, QA, UAT, Prod)
+  config.json   — multi-environment, multi-persona credentials
   Tests/        — generated .robot files
   Data/         — uploaded CSV test-data files
 
@@ -22,18 +22,33 @@ ROOT = Path(__file__).resolve().parent
 SAVED_PROJECTS_ROOT = ROOT / "Saved_Projects"
 
 CONFIG_FILENAME = "config.json"
-ENVIRONMENTS: list[str] = ["Dev", "QA", "UAT", "Prod"]
-_ENV_CREDENTIAL_KEYS: list[str] = [
+DEFAULT_ENVIRONMENTS: list[str] = ["Dev", "QA", "UAT", "Prod"]
+DEFAULT_PERSONA = "System Admin"
+_CREDENTIAL_KEYS: list[str] = [
     "sandbox_url", "username", "password", "security_token", "slack_webhook_url",
 ]
 
-def _empty_env_block() -> dict[str, str]:
-    """Return a credential dict with all keys set to empty strings."""
-    return {k: "" for k in _ENV_CREDENTIAL_KEYS}
 
-def _default_environments_config() -> dict[str, dict[str, str]]:
-    """Return the full default ``{"environments": {...}}`` structure."""
-    return {"environments": {env: _empty_env_block() for env in ENVIRONMENTS}}
+def _empty_cred_block() -> dict[str, str]:
+    """Return a credential dict with all keys set to empty strings."""
+    return {k: "" for k in _CREDENTIAL_KEYS}
+
+
+def _default_persona_block() -> dict[str, dict[str, str]]:
+    return {"personas": {DEFAULT_PERSONA: _empty_cred_block()}}
+
+
+def _default_full_config() -> dict:
+    """Return ``{"environments": {"Dev": {"personas": {"System Admin": {...}}}, ...}}``."""
+    return {
+        "environments": {
+            env: _default_persona_block() for env in DEFAULT_ENVIRONMENTS
+        }
+    }
+
+
+# Keep legacy alias so existing imports don't break.
+ENVIRONMENTS = DEFAULT_ENVIRONMENTS
 
 
 # ---------------------------------------------------------------------------
@@ -114,61 +129,84 @@ def read_project_meta(name: str) -> dict:
     return json.loads((proj_dir / "project.json").read_text(encoding="utf-8"))
 
 
-def read_project_config(name: str, environment: str = "Dev") -> dict[str, str]:
-    """Load credentials for *environment* from ``config.json``.
-
-    Backward-compatible: if the file is a flat (pre-multi-env) dict it is
-    automatically migrated into the ``Dev`` environment and re-written.
-    """
+def _load_raw_config(name: str) -> dict:
+    """Read and migrate ``config.json`` to the current schema, returning the full dict."""
     proj_dir = get_project_path(name)
     path = proj_dir / CONFIG_FILENAME
 
     if not path.is_file():
-        _write_full_config(name, _default_environments_config())
-        return _empty_env_block()
+        full = _default_full_config()
+        _write_full_config(name, full)
+        return full
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return _empty_env_block()
+        return _default_full_config()
     if not isinstance(raw, dict):
-        return _empty_env_block()
+        return _default_full_config()
 
-    # ── Backward-compat: migrate flat config into "Dev" ───────────────
+    migrated = False
+
+    # Migration 1: flat config (v1) → Dev / System Admin
     if "environments" not in raw:
-        legacy = _empty_env_block()
-        for k in _ENV_CREDENTIAL_KEYS:
+        legacy = _empty_cred_block()
+        for k in _CREDENTIAL_KEYS:
             val = raw.get(k)
             legacy[k] = "" if val is None else str(val).strip()
-        full = _default_environments_config()
-        full["environments"]["Dev"] = legacy
-        _write_full_config(name, full)
-        raw = full
+        raw = _default_full_config()
+        raw["environments"]["Dev"]["personas"][DEFAULT_PERSONA] = legacy
+        migrated = True
 
-    envs: dict = raw.get("environments") or {}
-    env_block = envs.get(environment) or _empty_env_block()
-    out = _empty_env_block()
-    for k in _ENV_CREDENTIAL_KEYS:
-        val = env_block.get(k)
+    # Migration 2: env-only config (v2, no "personas" sub-key) → wrap into personas
+    envs = raw.get("environments", {})
+    for env_name, env_val in list(envs.items()):
+        if isinstance(env_val, dict) and "personas" not in env_val:
+            creds = _empty_cred_block()
+            for k in _CREDENTIAL_KEYS:
+                v = env_val.get(k)
+                creds[k] = "" if v is None else str(v).strip()
+            envs[env_name] = {"personas": {DEFAULT_PERSONA: creds}}
+            migrated = True
+    raw["environments"] = envs
+
+    if migrated:
+        _write_full_config(name, raw)
+    return raw
+
+
+def read_project_config(
+    name: str,
+    environment: str = "Dev",
+    persona: str = DEFAULT_PERSONA,
+) -> dict[str, str]:
+    """Load credentials for *environment* / *persona* from ``config.json``.
+
+    Backward-compatible: flat (v1) and env-only (v2) configs are migrated
+    automatically on first read.
+    """
+    raw = _load_raw_config(name)
+    env_block = raw.get("environments", {}).get(environment, {})
+    personas = env_block.get("personas", {})
+    cred = personas.get(persona) or _empty_cred_block()
+    out = _empty_cred_block()
+    for k in _CREDENTIAL_KEYS:
+        val = cred.get(k)
         out[k] = "" if val is None else str(val).strip()
     return out
 
 
-def read_all_environments(name: str) -> dict[str, dict[str, str]]:
-    """Return the full ``{env: {creds}}`` mapping for a project."""
-    proj_dir = get_project_path(name)
-    path = proj_dir / CONFIG_FILENAME
-    if not path.is_file():
-        return _default_environments_config()["environments"]
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return _default_environments_config()["environments"]
-    if not isinstance(raw, dict) or "environments" not in raw:
-        # trigger migration via read_project_config
-        read_project_config(name, "Dev")
-        return read_all_environments(name)
-    return raw.get("environments", _default_environments_config()["environments"])
+def list_environments(name: str) -> list[str]:
+    """Return sorted environment names defined in the project config."""
+    raw = _load_raw_config(name)
+    return sorted(raw.get("environments", {}).keys())
+
+
+def list_personas(name: str, environment: str = "Dev") -> list[str]:
+    """Return sorted persona names for *environment*."""
+    raw = _load_raw_config(name)
+    env_block = raw.get("environments", {}).get(environment, {})
+    return sorted(env_block.get("personas", {}).keys())
 
 
 def _write_full_config(project_name: str, data: dict) -> Path:
@@ -187,30 +225,20 @@ def write_project_credentials(
     security_token: str = "",
     slack_webhook_url: str = "",
     environment: str = "Dev",
+    persona: str = DEFAULT_PERSONA,
 ) -> Path:
-    """Write credentials for a single *environment* inside ``config.json``."""
-    proj_dir = get_project_path(project_name)
-    path = proj_dir / CONFIG_FILENAME
-
-    # Load existing full config (or create default)
-    if path.is_file():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            raw = _default_environments_config()
-        if not isinstance(raw, dict) or "environments" not in raw:
-            raw = _default_environments_config()
-    else:
-        raw = _default_environments_config()
-
-    env_block = {
+    """Write credentials for a single *environment* / *persona*."""
+    raw = _load_raw_config(project_name)
+    envs = raw.setdefault("environments", {})
+    env_block = envs.setdefault(environment, {"personas": {}})
+    personas = env_block.setdefault("personas", {})
+    personas[persona] = {
         "sandbox_url": (sandbox_url or "").strip(),
         "username": (username or "").strip(),
         "password": password or "",
         "security_token": security_token or "",
         "slack_webhook_url": (slack_webhook_url or "").strip(),
     }
-    raw["environments"][environment] = env_block
     return _write_full_config(project_name, raw)
 
 
