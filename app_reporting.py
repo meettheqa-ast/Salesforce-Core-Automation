@@ -200,6 +200,79 @@ def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> 
                     )
 
 
+_TICKET_TAG = re.compile(r"^(US-|TC-|SFDC-|QA-)", re.IGNORECASE)
+
+
+def publish_results_to_zephyr(
+    output_xml_path: str | Path,
+    jira_url: str,
+    token: str,
+    project_key: str,
+    environment: str = "Dev",
+) -> int:
+    """Push per-test Pass/Fail verdicts to Zephyr Scale (or Jira comment fallback).
+
+    Matches tests whose Robot tags start with ``US-``, ``TC-``, ``SFDC-``, or
+    ``QA-`` and POSTs a result payload for each.  Returns the number of tests
+    successfully synced.  Never raises — logs warnings on failure.
+    """
+    import logging
+    import requests
+
+    logger = logging.getLogger(__name__)
+    output_xml_path = Path(output_xml_path)
+
+    try:
+        from robot.api import ExecutionResult
+    except ImportError:
+        logger.warning("robot.api not available — cannot publish to Zephyr.")
+        return 0
+
+    if not output_xml_path.is_file():
+        return 0
+
+    try:
+        result = ExecutionResult(str(output_xml_path))
+    except Exception:
+        logger.warning("Could not parse %s for Zephyr sync.", output_xml_path, exc_info=True)
+        return 0
+
+    base = jira_url.rstrip("/")
+    endpoint = f"{base}/rest/atm/1.0/testresult"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    synced = 0
+    for test in _walk_tests(result.suite):
+        tags = [str(t) for t in getattr(test, "tags", [])]
+        target_tags = [t for t in tags if _TICKET_TAG.match(t)]
+        if not target_tags:
+            continue
+        status = "PASS" if str(getattr(test, "status", "")).upper() == "PASS" else "FAIL"
+        for tag in target_tags:
+            payload = {
+                "projectKey": project_key,
+                "testCaseKey": tag,
+                "status": "Pass" if status == "PASS" else "Fail",
+                "environment": environment,
+                "comment": f"Automated result from Test Intelligence Platform — {test.name}",
+            }
+            try:
+                resp = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+                if resp.ok:
+                    synced += 1
+                else:
+                    logger.warning(
+                        "Zephyr POST for %s returned %s: %s",
+                        tag, resp.status_code, resp.text[:200],
+                    )
+            except Exception:
+                logger.warning("Zephyr POST failed for %s.", tag, exc_info=True)
+    return synced
+
+
 def render_run_summary_for_last_run(key_prefix: str = "persisted_summary") -> None:
     """Re-show summary for ``st.session_state['last_run']['out_dir']`` after navigation/rerun."""
     lr = st.session_state.get("last_run") or {}

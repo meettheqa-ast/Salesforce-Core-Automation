@@ -701,6 +701,29 @@ def run_project_entire_suite(
                 st.toast("Slack notification sent!")
             else:
                 st.warning("Could not deliver Slack notification — check the webhook URL.")
+
+        # ── Jira / Zephyr sync ────────────────────────────────────────
+        jira_url = st.session_state.get("jira_base_url", "").strip()
+        jira_token = st.session_state.get("jira_api_token", "").strip()
+        jira_key = st.session_state.get("jira_project_key", "").strip()
+        if jira_url and jira_token and jira_key:
+            xml_zephyr = out_dir / "output.xml"
+            if xml_zephyr.is_file():
+                try:
+                    from app_reporting import publish_results_to_zephyr
+
+                    act_env = st.session_state.get("active_environment", "Dev")
+                    with st.spinner("📊 Syncing results to Jira/Zephyr…"):
+                        sync_count = publish_results_to_zephyr(
+                            xml_zephyr, jira_url, jira_token, jira_key, act_env,
+                        )
+                    if sync_count:
+                        st.toast(f"Synced {sync_count} result(s) to Jira/Zephyr! 📊")
+                    else:
+                        st.caption("No tagged test cases (US-/TC-) found to sync to Jira.")
+                except Exception as exc:  # noqa: BLE001
+                    st.warning(f"Jira/Zephyr sync error: {exc}")
+
         with st.expander("Full log (copy)"):
             st.code(full_log or "(empty)", language="text")
     finally:

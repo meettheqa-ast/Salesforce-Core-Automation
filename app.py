@@ -101,6 +101,10 @@ def _apply_project_credentials_to_session() -> None:
         st.session_state["sf_password"] = cfg.get("password") or ""
         st.session_state["sf_security_token"] = cfg.get("security_token") or ""
         st.session_state["slack_webhook_url"] = cfg.get("slack_webhook_url") or ""
+        jira_cfg = _pm.read_jira_config(current)
+        st.session_state["jira_base_url"] = jira_cfg.get("jira_base_url") or ""
+        st.session_state["jira_api_token"] = jira_cfg.get("jira_api_token") or ""
+        st.session_state["jira_project_key"] = jira_cfg.get("jira_project_key") or ""
         st.session_state["edit_creds_mode"] = False
     st.session_state["_credentials_bound_key"] = bound_key
 
@@ -259,6 +263,32 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             disabled=readonly,
         )
 
+        if is_project_mode:
+            st.markdown("**📋 Jira / Zephyr Integration (Optional)**")
+            ja, jb = st.columns(2)
+            with ja:
+                st.text_input(
+                    "Jira Base URL",
+                    placeholder="https://yourorg.atlassian.net",
+                    key="jira_base_url",
+                    disabled=readonly,
+                )
+            with jb:
+                st.text_input(
+                    "Jira Project Key",
+                    placeholder="e.g. QA or SFDC",
+                    key="jira_project_key",
+                    disabled=readonly,
+                )
+            st.text_input(
+                "Jira API Token",
+                type="password",
+                placeholder="Atlassian API token or PAT",
+                help="Used to push Pass/Fail results to Zephyr Scale or Jira comments after suite runs.",
+                key="jira_api_token",
+                disabled=readonly,
+            )
+
         # ── Action buttons ────────────────────────────────────────────
         if is_project_mode:
             if not editing:
@@ -278,6 +308,12 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                             st.session_state.get("slack_webhook_url", ""),
                             environment=_env,
                             persona=_persona,
+                        )
+                        _pm.write_jira_config(
+                            _active,
+                            st.session_state.get("jira_base_url", ""),
+                            st.session_state.get("jira_api_token", ""),
+                            st.session_state.get("jira_project_key", ""),
                         )
                         st.session_state["edit_creds_mode"] = False
                         st.session_state.pop("_credentials_bound_key", None)

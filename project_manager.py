@@ -38,13 +38,22 @@ def _default_persona_block() -> dict[str, dict[str, str]]:
     return {"personas": {DEFAULT_PERSONA: _empty_cred_block()}}
 
 
+_JIRA_KEYS: list[str] = ["jira_base_url", "jira_api_token", "jira_project_key"]
+
+
+def _empty_jira_block() -> dict[str, str]:
+    return {k: "" for k in _JIRA_KEYS}
+
+
 def _default_full_config() -> dict:
-    """Return ``{"environments": {"Dev": {"personas": {"System Admin": {...}}}, ...}}``."""
-    return {
+    """Return ``{"environments": {...}, "jira_base_url": "", ...}``."""
+    cfg: dict = {
         "environments": {
             env: _default_persona_block() for env in DEFAULT_ENVIRONMENTS
-        }
+        },
     }
+    cfg.update(_empty_jira_block())
+    return cfg
 
 
 # Keep legacy alias so existing imports don't break.
@@ -170,6 +179,12 @@ def _load_raw_config(name: str) -> dict:
             migrated = True
     raw["environments"] = envs
 
+    # Ensure Jira keys exist (added after initial schema)
+    for jk in _JIRA_KEYS:
+        if jk not in raw:
+            raw[jk] = ""
+            migrated = True
+
     if migrated:
         _write_full_config(name, raw)
     return raw
@@ -215,6 +230,30 @@ def _write_full_config(project_name: str, data: dict) -> Path:
     path = proj_dir / CONFIG_FILENAME
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def read_jira_config(name: str) -> dict[str, str]:
+    """Return project-level Jira/Zephyr settings (not environment-scoped)."""
+    raw = _load_raw_config(name)
+    out = _empty_jira_block()
+    for k in _JIRA_KEYS:
+        val = raw.get(k)
+        out[k] = "" if val is None else str(val).strip()
+    return out
+
+
+def write_jira_config(
+    project_name: str,
+    jira_base_url: str = "",
+    jira_api_token: str = "",
+    jira_project_key: str = "",
+) -> Path:
+    """Persist Jira/Zephyr settings at the project root level."""
+    raw = _load_raw_config(project_name)
+    raw["jira_base_url"] = (jira_base_url or "").strip()
+    raw["jira_api_token"] = jira_api_token or ""
+    raw["jira_project_key"] = (jira_project_key or "").strip()
+    return _write_full_config(project_name, raw)
 
 
 def write_project_credentials(
