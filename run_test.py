@@ -63,6 +63,7 @@ def build_robot_run(
     pabot_processes: int = 3,
     include_tags: list[str] | None = None,
     exclude_tags: list[str] | None = None,
+    variables: dict[str, str] | None = None,
 ) -> tuple[list[str], Path]:
     """
     Write EnvData and return the robot command (argv list) and output directory.
@@ -144,6 +145,8 @@ def build_robot_run(
         cmd.extend(["-i", tag])
     for tag in (exclude_tags or []):
         cmd.extend(["-e", tag])
+    for k, v in (variables or {}).items():
+        cmd.extend(["-v", f"{k}:{v}"])
 
     if headless:
         cmd.extend(["-v", "headless:true"])
@@ -203,11 +206,29 @@ def parse_args() -> argparse.Namespace:
         help="Robot tag to exclude (-e). Repeat for multiple tags.",
     )
     p.add_argument(
+        "--variable",
+        action="append",
+        default=None,
+        help="Set Robot variable (-v name:value). Repeat for multiple variables.",
+    )
+    p.add_argument(
         "robot_args",
         nargs=argparse.REMAINDER,
         help="Extra args passed to robot after '--' e.g. -- --tag smoke",
     )
     return p.parse_args()
+
+
+def _parse_variable_args(raw: list[str] | None) -> dict[str, str] | None:
+    """Convert ``['name:value', ...]`` into ``{name: value}``."""
+    if not raw:
+        return None
+    out: dict[str, str] = {}
+    for entry in raw:
+        if ":" in entry:
+            k, v = entry.split(":", 1)
+            out[k.strip()] = v.strip()
+    return out or None
 
 
 def main() -> int:
@@ -225,6 +246,7 @@ def main() -> int:
             output_dir=args.output_dir,
             include_tags=args.include,
             exclude_tags=args.exclude,
+            variables=_parse_variable_args(args.variable),
         )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)

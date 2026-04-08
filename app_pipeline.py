@@ -540,6 +540,7 @@ def run_project_entire_suite(
     use_pabot: bool = False,
     include_tags: str = "",
     exclude_tags: str = "",
+    seed_data: bool = False,
 ) -> None:
     """Run Robot (or Pabot) against all suites in Saved_Projects/<project>/Tests/; output under project Results/."""
     if not _HAS_WORKSPACE or _pm is None:
@@ -557,6 +558,28 @@ def run_project_entire_suite(
         st.warning("A browser window will open shortly. Please do not close it manually.")
     run_ts = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     out_dir = _pm.get_project_path(project_name) / "Results" / run_ts
+    seeded_vars: dict[str, str] | None = None
+    if seed_data and _HAS_WORKSPACE and _pm is not None:
+        template_str = _pm.read_data_template(project_name)
+        if template_str.strip() not in ("", "[]"):
+            try:
+                from app_tdm import seed_salesforce_data
+
+                sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
+                with st.spinner("🌱 Seeding prerequisite data via API…"):
+                    seeded_vars = seed_salesforce_data(
+                        sandbox_url, username, password, sec_tok, template_str,
+                    )
+                if seeded_vars:
+                    summary = ", ".join(f"{k}={v[:15]}…" for k, v in seeded_vars.items())
+                    st.toast(f"Seeded: {summary}")
+                    st.success(f"🌱 Injected **{len(seeded_vars)}** variable(s): {summary}")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Data seeding failed: {exc}")
+                return
+        else:
+            st.warning("Seed checkbox is on but the data template is empty. Skipping.")
+
     try:
         from run_test import build_robot_run
 
@@ -573,6 +596,7 @@ def run_project_entire_suite(
             pabot_processes=3,
             include_tags=inc_list,
             exclude_tags=exc_list,
+            variables=seeded_vars,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")

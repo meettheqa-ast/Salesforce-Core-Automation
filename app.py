@@ -539,6 +539,13 @@ def _render_suite_execution_tab(
                         key="pabot_parallel_project_suite",
                         help="pabot --testlevelsplit --processes 3",
                     )
+                seed_data = st.checkbox(
+                    "🌱 Seed Data Template Before Run",
+                    value=False,
+                    key="seed_data_before_run",
+                    help="Creates prerequisite records via the API using the project's data template, "
+                    "then injects the IDs as Robot variables.",
+                )
                 if suite_clicked:
                     if not sandbox_url.strip() or not username.strip() or not password.strip():
                         st.error("Fill in credentials in the workspace header.")
@@ -552,6 +559,7 @@ def _render_suite_execution_tab(
                             use_pabot=pabot_parallel,
                             include_tags=include_tags.strip(),
                             exclude_tags=exclude_tags.strip(),
+                            seed_data=seed_data,
                         )
             else:
                 st.info("Select an **Active Project** to run a full suite.")
@@ -616,6 +624,45 @@ def _render_suite_execution_tab(
 
     # ── Persisted last-run results ─────────────────────────────────────────
     render_persisted_run_panel()
+
+
+# ---------------------------------------------------------------------------
+# Tab 3 — Data Templates
+# ---------------------------------------------------------------------------
+
+def _render_data_templates_tab(active_proj: str) -> None:
+    """JSON-based TDM template editor for the active project."""
+    if not active_proj or not _HAS_WORKSPACE or _pm is None:
+        st.info("Select an **Active Project** to manage data templates.")
+        return
+
+    from app_tdm import EXAMPLE_TEMPLATE
+
+    existing = _pm.read_data_template(active_proj)
+    display = existing if existing.strip() != "[]" else EXAMPLE_TEMPLATE
+
+    st.markdown(
+        "Define prerequisite Salesforce records as a JSON array. "
+        "Each entry needs `object`, `var_name`, and `fields`. "
+        "When **🌱 Seed Data Template Before Run** is checked in Suite Execution, "
+        "these records are created via the API and the resulting IDs are injected "
+        "as Robot variables."
+    )
+
+    template_text = st.text_area(
+        "JSON Template",
+        value=display,
+        height=300,
+        key="tdm_template_editor",
+        help='[{"object":"Account","var_name":"SeededAccountId","fields":{"Name":"Acme"}}]',
+    )
+
+    if st.button("💾 Save Data Template", key="save_tdm_btn"):
+        try:
+            _pm.write_data_template(active_proj, template_text.strip())
+            st.toast(f"Data template saved to **{active_proj}**.")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Invalid JSON: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -721,13 +768,15 @@ def main_ui() -> None:
         active_proj, sandbox_url, username, password = _render_workspace_header()
 
     # ── Three-tab command center ──────────────────────────────────────────
-    tab_builder, tab_exec, tab_analytics = st.tabs(
-        ["🏗️ Test Builder", "🚀 Suite Execution", "📊 Analytics"]
+    tab_builder, tab_exec, tab_data, tab_analytics = st.tabs(
+        ["🏗️ Test Builder", "🚀 Suite Execution", "🧪 Data Templates", "📊 Analytics"]
     )
     with tab_builder:
         _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
     with tab_exec:
         _render_suite_execution_tab(sandbox_url, username, password, headless, active_proj)
+    with tab_data:
+        _render_data_templates_tab(active_proj)
     with tab_analytics:
         render_project_analytics_dashboard(active_proj)
 

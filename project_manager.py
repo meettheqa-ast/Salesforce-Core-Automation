@@ -306,3 +306,33 @@ def delete_test_from_project(project_name: str, test_name: str) -> None:
         robot_path.unlink()
     if csv_path.is_file():
         csv_path.unlink()
+
+
+# ---------------------------------------------------------------------------
+# TDM — Test Data Management templates
+# ---------------------------------------------------------------------------
+
+DATA_TEMPLATE_FILENAME = "data_template.json"
+
+
+def read_data_template(project_name: str) -> str:
+    """Return the raw JSON string of the project's data template, or ``[]``."""
+    proj_dir = get_project_path(project_name)
+    path = proj_dir / DATA_TEMPLATE_FILENAME
+    if not path.is_file():
+        return "[]"
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+        json.loads(text)  # validate
+        return text
+    except (json.JSONDecodeError, OSError):
+        return "[]"
+
+
+def write_data_template(project_name: str, json_str: str) -> Path:
+    """Persist a TDM template JSON to the project directory."""
+    proj_dir = get_project_path(project_name)
+    json.loads(json_str)  # raises JSONDecodeError on invalid input
+    path = proj_dir / DATA_TEMPLATE_FILENAME
+    path.write_text(json_str, encoding="utf-8")
+    return path
