@@ -1,7 +1,7 @@
 *** Variables ***
-${sandboxUserName}=                                     xpath://input[@id="username"]
-${sandboxPassword}=                                     xpath://input[@id="password"]
-${sandboxLoginButton}=                                  xpath://input[@id="Login"]
+${sandboxUserName}=                                     id:username
+${sandboxPassword}=                                     id:password
+${sandboxLoginButton}=                                  id:Login
 ${sandboxLaunch360Logo}=                                xpath://div[@class='slds-global-header__item']//div[@class='slds-global-header__logo']
 
 # App Launcher

@@ -5,9 +5,9 @@ headless = true
 gatherUsageStats = false
 
 [theme]
-# Enterprise light theme — high contrast, internal SaaS feel
+# Enterprise light theme — WCAG AA contrast (≥4.5:1 on white for all text sizes)
 base = "light"
-primaryColor = "#0052CC"
+primaryColor = "#0047B3"
 backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F4F5F7"
 textColor = "#172B4D"

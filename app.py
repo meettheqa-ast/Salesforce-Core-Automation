@@ -102,87 +102,86 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
 
     Returns ``(active_proj, sandbox_url, username, password)``.
     """
-    with st.container(border=True):
-        col_proj, col_creds = st.columns([1, 2], gap="large")
+    col_proj, col_creds = st.columns([1, 2], gap="large")
 
-        with col_proj:
-            st.markdown("**🗂️ Project**")
-            if _HAS_WORKSPACE and _pm is not None:
-                active_proj = st.session_state.get("active_project", "")
-                all_projs = _pm.list_projects()
-                opts = ["(none — ad-hoc)"] + all_projs + ["+ Create New Project"]
-                idx = 0
-                if active_proj in opts:
-                    idx = opts.index(active_proj)
-                proj_sel = st.selectbox(
-                    "Active Project",
-                    opts,
-                    index=idx,
-                    label_visibility="collapsed",
-                )
-                if proj_sel == "+ Create New Project":
-                    with st.form("new_proj_form"):
-                        new_name = st.text_input("Name (alphanumeric + underscores)")
-                        new_desc = st.text_input("Description (optional)")
-                        if st.form_submit_button("✅ Create Project"):
-                            try:
-                                _pm.create_project(new_name, new_desc)
-                                st.session_state["active_project"] = new_name
-                                st.rerun()
-                            except ValueError as e:
-                                st.error(str(e))
-                elif proj_sel == "(none — ad-hoc)":
-                    st.session_state["active_project"] = ""
-                else:
-                    st.session_state["active_project"] = proj_sel
+    with col_proj:
+        st.markdown("**🗂️ Project**")
+        if _HAS_WORKSPACE and _pm is not None:
+            active_proj = st.session_state.get("active_project", "")
+            all_projs = _pm.list_projects()
+            opts = ["(none — ad-hoc)"] + all_projs + ["+ Create New Project"]
+            idx = 0
+            if active_proj in opts:
+                idx = opts.index(active_proj)
+            proj_sel = st.selectbox(
+                "Active Project",
+                opts,
+                index=idx,
+                label_visibility="collapsed",
+            )
+            if proj_sel == "+ Create New Project":
+                with st.form("new_proj_form"):
+                    new_name = st.text_input("Name (alphanumeric + underscores)")
+                    new_desc = st.text_input("Description (optional)")
+                    if st.form_submit_button("✅ Create Project"):
+                        try:
+                            _pm.create_project(new_name, new_desc)
+                            st.session_state["active_project"] = new_name
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(str(e))
+            elif proj_sel == "(none — ad-hoc)":
+                st.session_state["active_project"] = ""
             else:
-                st.warning("Workspace module unavailable.")
+                st.session_state["active_project"] = proj_sel
+        else:
+            st.warning("Workspace module unavailable.")
 
-        _apply_project_credentials_to_session()
+    _apply_project_credentials_to_session()
 
-        with col_creds:
-            st.markdown("**🔐 Salesforce Credentials**")
-            ca, cb = st.columns(2)
-            with ca:
-                st.text_input(
-                    "Sandbox URL",
-                    placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
-                    help="Login URL for your Salesforce sandbox.",
-                    key="sf_sandbox_url",
+    with col_creds:
+        st.markdown("**🔐 Salesforce Credentials**")
+        ca, cb = st.columns(2)
+        with ca:
+            st.text_input(
+                "Sandbox URL",
+                placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                help="Login URL for your Salesforce sandbox.",
+                key="sf_sandbox_url",
+            )
+        with cb:
+            st.text_input(
+                "Username",
+                placeholder="user@example.com",
+                key="sf_username",
+            )
+        cc, cd = st.columns(2)
+        with cc:
+            st.text_input(
+                "Password",
+                type="password",
+                placeholder="••••••••",
+                key="sf_password",
+            )
+        with cd:
+            st.text_input(
+                "Security Token",
+                type="password",
+                placeholder="Optional — leave blank if IP whitelisted",
+                help="Required for API data seeding when your IP isn't in the org's trusted range.",
+                key="sf_security_token",
+            )
+        _active = st.session_state.get("active_project") or ""
+        if _HAS_WORKSPACE and _pm is not None and _active:
+            if st.button("💾 Save Credentials to Project", key="save_creds_btn"):
+                _pm.write_project_credentials(
+                    _active,
+                    st.session_state.get("sf_sandbox_url", ""),
+                    st.session_state.get("sf_username", ""),
+                    st.session_state.get("sf_password", ""),
+                    st.session_state.get("sf_security_token", ""),
                 )
-            with cb:
-                st.text_input(
-                    "Username",
-                    placeholder="user@example.com",
-                    key="sf_username",
-                )
-            cc, cd = st.columns(2)
-            with cc:
-                st.text_input(
-                    "Password",
-                    type="password",
-                    placeholder="••••••••",
-                    key="sf_password",
-                )
-            with cd:
-                st.text_input(
-                    "Security Token",
-                    type="password",
-                    placeholder="Optional — leave blank if IP whitelisted",
-                    help="Required for API data seeding when your IP isn't in the org's trusted range.",
-                    key="sf_security_token",
-                )
-            _active = st.session_state.get("active_project") or ""
-            if _HAS_WORKSPACE and _pm is not None and _active:
-                if st.button("💾 Save Credentials to Project", key="save_creds_btn"):
-                    _pm.write_project_credentials(
-                        _active,
-                        st.session_state.get("sf_sandbox_url", ""),
-                        st.session_state.get("sf_username", ""),
-                        st.session_state.get("sf_password", ""),
-                        st.session_state.get("sf_security_token", ""),
-                    )
-                    st.toast(f"Credentials saved to **{_active}**.")
+                st.toast(f"Credentials saved to **{_active}**.")
 
     tok = st.session_state.get("sf_security_token", "").strip()
     if tok:
@@ -235,8 +234,6 @@ def _render_test_builder_tab(
         st.session_state["main_prompt_text"] = ""
         st.session_state.pop("main_prompt_text_widget", None)
 
-    st.button("🧹 Clear Prompt", key="clear_prompt_btn", on_click=_clear_prompt)
-
     auto_gen = st.checkbox(
         "🎲 Auto-generate missing test data (AI/Faker)",
         value=True,
@@ -273,9 +270,16 @@ def _render_test_builder_tab(
             if not st.checkbox("Yes, overwrite the existing test script"):
                 overwrite_ok = False
 
-    run_clicked = st.button(
-        "🚀 Generate & Run", type="primary", use_container_width=True,
-    )
+    btn_run_col, btn_clear_col = st.columns([3, 1])
+    with btn_run_col:
+        run_clicked = st.button(
+            "🚀 Generate & Run", type="primary", use_container_width=True,
+        )
+    with btn_clear_col:
+        st.button(
+            "🧹 Clear", key="clear_prompt_btn", on_click=_clear_prompt,
+            use_container_width=True,
+        )
 
     if run_clicked:
         try:
@@ -435,90 +439,101 @@ def _render_suite_execution_tab(
 ) -> None:
     """Project suite runs, smoke shortcuts, and saved-test management."""
 
-    # ── Full-suite run ─────────────────────────────────────────────────────
-    if active_proj and _pm is not None:
-        r1, r2 = st.columns([3, 1])
-        with r1:
-            suite_clicked = st.button(
-                "▶️ Run Entire Project Suite",
-                type="primary",
-                use_container_width=True,
-                key="run_entire_project_suite_btn",
-            )
-        with r2:
-            pabot_parallel = st.checkbox(
-                "🚀 Parallel (Pabot)",
-                value=False,
-                key="pabot_parallel_project_suite",
-                help="pabot --testlevelsplit --processes 3",
-            )
-        if suite_clicked:
-            if not sandbox_url.strip() or not username.strip() or not password.strip():
-                st.error("Please fill in credentials in the workspace header.")
-            else:
-                run_project_entire_suite(
-                    active_proj,
-                    sandbox_url,
-                    username,
-                    password,
-                    headless,
-                    use_pabot=pabot_parallel,
-                )
-    else:
-        st.info("Select an **Active Project** in the workspace header to run a full test suite.")
+    col_exec, col_tests = st.columns([1, 1.2], gap="large")
 
-    # ── Quick Smoke shortcuts ──────────────────────────────────────────────
-    if _HAS_SMOKE:
-        st.divider()
-        st.markdown("**🔥 Quick Smoke Tests**")
-        st.caption(
-            "Populates the prompt in the **Test Builder** tab — switch there to review & run."
-        )
-        sc = st.columns([2, 1, 1, 1, 1])
-        with sc[0]:
-            st.text_input(
-                "Salesforce App",
-                placeholder="e.g. Sales",
-                key="smoke_app_name",
-                label_visibility="collapsed",
-            )
-        if sc[1].button("Lead", use_container_width=True, key="smoke_lead_btn"):
-            st.session_state["main_prompt_text"] = "Run full smoke test for Lead lifecycle"
-            st.rerun()
-        if sc[2].button("Account", use_container_width=True, key="smoke_account_btn"):
-            st.session_state["main_prompt_text"] = "Run full smoke test for Account lifecycle"
-            st.rerun()
-        if sc[3].button("Contact", use_container_width=True, key="smoke_contact_btn"):
-            st.session_state["main_prompt_text"] = "Run full smoke test for Contact lifecycle"
-            st.rerun()
-        if sc[4].button("Opportunity", use_container_width=True, key="smoke_opp_btn"):
-            st.session_state["main_prompt_text"] = "Run full smoke test for Opportunity lifecycle"
-            st.rerun()
-
-    # ── Project test list ──────────────────────────────────────────────────
-    if active_proj and _pm is not None:
-        st.divider()
-        with st.expander("📂 Project Tests", expanded=True):
-            saved_tests = _pm.list_project_tests(active_proj)
-            if not saved_tests:
-                st.info("No tests saved in this project yet.")
-            else:
-                for test in saved_tests:
-                    col_a, col_b, col_c = st.columns([3, 1, 1])
-                    col_a.write(
-                        f"📄 **{test['name']}.robot** \n"
-                        f"_(modified {test['modified'].strftime('%Y-%m-%d %H:%M')})_"
+    # ── Column 1: Execution & Smoke ───────────────────────────────────────
+    with col_exec:
+        # Card: Run Suite
+        with st.container(border=True):
+            st.subheader("🚀 Run Suite")
+            if active_proj and _pm is not None:
+                r1, r2 = st.columns([3, 1])
+                with r1:
+                    suite_clicked = st.button(
+                        "▶️ Run Entire Project Suite",
+                        type="primary",
+                        use_container_width=True,
+                        key="run_entire_project_suite_btn",
                     )
-                    if col_b.button("▶ Re-run", key=f"run_{test['name']}"):
-                        if not sandbox_url.strip() or not username.strip() or not password.strip():
-                            st.error("Fill credentials in the workspace header first.")
-                        else:
-                            run_existing_test(test["path"], sandbox_url, username, password, headless)
-                    if col_c.button("👁 View", key=f"view_{test['name']}"):
-                        st.code(
-                            _pm.load_test_source(active_proj, test["name"]),
-                            language="robotframework",
+                with r2:
+                    pabot_parallel = st.checkbox(
+                        "Parallel",
+                        value=False,
+                        key="pabot_parallel_project_suite",
+                        help="pabot --testlevelsplit --processes 3",
+                    )
+                if suite_clicked:
+                    if not sandbox_url.strip() or not username.strip() or not password.strip():
+                        st.error("Fill in credentials in the workspace header.")
+                    else:
+                        run_project_entire_suite(
+                            active_proj,
+                            sandbox_url,
+                            username,
+                            password,
+                            headless,
+                            use_pabot=pabot_parallel,
                         )
+            else:
+                st.info("Select an **Active Project** to run a full suite.")
+
+        # Card: Quick Smoke Tests
+        if _HAS_SMOKE:
+            with st.container(border=True):
+                st.subheader("🔥 Quick Smoke Tests")
+                st.text_input(
+                    "Salesforce App",
+                    placeholder="e.g. Sales",
+                    key="smoke_app_name",
+                    label_visibility="collapsed",
+                )
+                st.caption("Sets the prompt in **Test Builder** — switch there to review & run.")
+                s1, s2 = st.columns(2)
+                if s1.button("Lead", use_container_width=True, key="smoke_lead_btn"):
+                    st.session_state["main_prompt_text"] = "Run full smoke test for Lead lifecycle"
+                    st.rerun()
+                if s2.button("Account", use_container_width=True, key="smoke_account_btn"):
+                    st.session_state["main_prompt_text"] = "Run full smoke test for Account lifecycle"
+                    st.rerun()
+                s3, s4 = st.columns(2)
+                if s3.button("Contact", use_container_width=True, key="smoke_contact_btn"):
+                    st.session_state["main_prompt_text"] = "Run full smoke test for Contact lifecycle"
+                    st.rerun()
+                if s4.button("Opportunity", use_container_width=True, key="smoke_opp_btn"):
+                    st.session_state["main_prompt_text"] = "Run full smoke test for Opportunity lifecycle"
+                    st.rerun()
+
+    # ── Column 2: Saved Tests Inventory ───────────────────────────────────
+    with col_tests:
+        with st.container(border=True):
+            hdr_col, refresh_col = st.columns([4, 1])
+            hdr_col.subheader("📂 Saved Project Tests")
+            if refresh_col.button("🔄", key="refresh_tests_btn", help="Refresh test list"):
+                st.rerun()
+
+            if active_proj and _pm is not None:
+                saved_tests = _pm.list_project_tests(active_proj)
+                if not saved_tests:
+                    st.info("No tests saved in this project yet.")
+                else:
+                    for test in saved_tests:
+                        col_a, col_b, col_c = st.columns([3, 1, 1])
+                        col_a.write(
+                            f"📄 **{test['name']}.robot**\n"
+                            f"_{test['modified'].strftime('%Y-%m-%d %H:%M')}_"
+                        )
+                        if col_b.button("▶ Run", key=f"run_{test['name']}"):
+                            if not sandbox_url.strip() or not username.strip() or not password.strip():
+                                st.error("Fill credentials first.")
+                            else:
+                                run_existing_test(test["path"], sandbox_url, username, password, headless)
+                        if col_c.button("👁 View", key=f"view_{test['name']}"):
+                            st.code(
+                                _pm.load_test_source(active_proj, test["name"]),
+                                language="robotframework",
+                            )
+            else:
+                st.info("Select a project to see saved tests.")
 
     # ── Persisted last-run results ─────────────────────────────────────────
     render_persisted_run_panel()
@@ -557,7 +572,7 @@ def main_ui() -> None:
             """
 <style>
   .tip-brand-title { margin: 0 0 0.15rem 0; font-size: 1.35rem; font-weight: 700;
-    color: #0052CC; letter-spacing: -0.02em; }
+    color: #0047B3; letter-spacing: -0.02em; }
   .tip-brand-sub { margin: 0; font-size: 0.78rem; color: #42526E; font-weight: 500; }
 </style>
 <div>
@@ -622,8 +637,9 @@ def main_ui() -> None:
             openai_sidebar_key if llm_prov == "OpenAI" else "",
         )
 
-    # ── Active Workspace (project + credentials) ──────────────────────────
-    active_proj, sandbox_url, username, password = _render_workspace_header()
+    # ── Active Workspace (project + credentials) — collapsible ──────────
+    with st.expander("⚙️ Workspace & Credentials", expanded=True):
+        active_proj, sandbox_url, username, password = _render_workspace_header()
 
     # ── Three-tab command center ──────────────────────────────────────────
     tab_builder, tab_exec, tab_analytics = st.tabs(

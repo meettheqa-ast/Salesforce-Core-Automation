@@ -45,6 +45,7 @@ Login To Sandbox
     [Tags]    login
     [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
     Go To    ${instanceURL}
+    Wait Until Element Is Visible    ${sandboxUserName}    timeout=15s
     Input Text    ${sandboxUserName}    ${instanceUsername}
     Input Text    ${sandboxPassword}    ${instancePassword}
     Click Element    ${sandboxLoginButton}
