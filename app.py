@@ -20,6 +20,7 @@ st.set_page_config(
 )
 
 import os
+from pathlib import Path
 
 from app_catalog import rebuild_keyword_catalog, render_capabilities_cheat_sheet
 from app_config import (
@@ -117,7 +118,20 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
 
     # ── Column 1: Project / Environment / Persona selectors ───────────
     with col_proj:
-        st.markdown("**🗂️ Project**")
+        _lbl_col, _sync_col = st.columns([3, 1])
+        _lbl_col.markdown("**🗂️ Project**")
+        if _sync_col.button("🔄 Sync", key="sync_workspace_btn", help="Pull latest from remote"):
+            try:
+                from app_git import sync_local_workspace
+
+                _repo_root = Path(__file__).resolve().parent
+                if sync_local_workspace(_repo_root):
+                    st.success("Workspace synced with remote! ☁️")
+                    st.rerun()
+                else:
+                    st.warning("Sync failed — check that a Git remote is configured and accessible.")
+            except Exception as _exc:  # noqa: BLE001
+                st.warning(f"Could not sync workspace: {_exc}")
         if _HAS_WORKSPACE and _pm is not None:
             active_proj = st.session_state.get("active_project", "")
             all_projs = _pm.list_projects()

@@ -300,13 +300,18 @@ def commit_pending_test() -> None:
 
     if user_story_id:
         try:
-            from app_git import commit_test_to_branch
+            from app_git import commit_test_to_branch, push_branch_to_remote
 
             ok = commit_test_to_branch(
                 ROOT, str(proj_robot), user_story_id, test_name,
             )
             if ok:
-                st.toast(f"Committed to branch: feature/{user_story_id} 🌿")
+                branch = f"feature/{user_story_id}"
+                pushed = push_branch_to_remote(ROOT, branch)
+                if pushed:
+                    st.toast(f"Committed and pushed to remote branch: {branch} ☁️")
+                else:
+                    st.toast(f"Committed to local branch: {branch} 🌿 (push skipped — no remote or auth issue)")
         except Exception:  # noqa: BLE001
             pass
 

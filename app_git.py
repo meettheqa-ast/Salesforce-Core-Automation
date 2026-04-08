@@ -65,3 +65,76 @@ def commit_test_to_branch(
 
     logger.info("Committed %s to branch %s.", rel, branch_name)
     return True
+
+
+def push_branch_to_remote(
+    repo_path: str | Path,
+    branch_name: str,
+    remote_name: str = "origin",
+) -> bool:
+    """Push *branch_name* to the named remote.
+
+    Returns ``True`` on success.  Logs a warning and returns ``False`` if the
+    remote is missing, credentials fail, or GitPython is unavailable.
+    """
+    try:
+        from git import Repo, InvalidGitRepositoryError
+    except ImportError:
+        logger.warning("GitPython is not installed — skipping push.")
+        return False
+
+    try:
+        repo = Repo(Path(repo_path).resolve())
+    except (InvalidGitRepositoryError, Exception):
+        logger.warning("No git repository at %s — skipping push.", repo_path, exc_info=True)
+        return False
+
+    if remote_name not in [r.name for r in repo.remotes]:
+        logger.warning("Remote '%s' not found — skipping push.", remote_name)
+        return False
+
+    try:
+        remote = repo.remotes[remote_name]
+        remote.push(branch_name)
+        logger.info("Pushed branch %s to %s.", branch_name, remote_name)
+        return True
+    except Exception:
+        logger.warning("Push failed for %s → %s.", branch_name, remote_name, exc_info=True)
+        return False
+
+
+def sync_local_workspace(
+    repo_path: str | Path,
+    target_branch: str = "main",
+    remote_name: str = "origin",
+) -> bool:
+    """Fetch from *remote_name*, checkout *target_branch*, and pull latest.
+
+    Returns ``True`` on success, ``False`` on any failure.
+    """
+    try:
+        from git import Repo, InvalidGitRepositoryError
+    except ImportError:
+        logger.warning("GitPython is not installed — skipping sync.")
+        return False
+
+    try:
+        repo = Repo(Path(repo_path).resolve())
+    except (InvalidGitRepositoryError, Exception):
+        logger.warning("No git repository at %s — skipping sync.", repo_path, exc_info=True)
+        return False
+
+    if remote_name not in [r.name for r in repo.remotes]:
+        logger.warning("Remote '%s' not found — skipping sync.", remote_name)
+        return False
+
+    try:
+        remote = repo.remotes[remote_name]
+        remote.fetch()
+        repo.git.checkout(target_branch)
+        remote.pull(target_branch)
+        logger.info("Synced workspace to %s/%s.", remote_name, target_branch)
+        return True
+    except Exception:
+        logger.warning("Sync failed for %s/%s.", remote_name, target_branch, exc_info=True)
+        return False
