@@ -538,6 +538,8 @@ def run_project_entire_suite(
     headless: bool,
     *,
     use_pabot: bool = False,
+    include_tags: str = "",
+    exclude_tags: str = "",
 ) -> None:
     """Run Robot (or Pabot) against all suites in Saved_Projects/<project>/Tests/; output under project Results/."""
     if not _HAS_WORKSPACE or _pm is None:
@@ -558,6 +560,8 @@ def run_project_entire_suite(
     try:
         from run_test import build_robot_run
 
+        inc_list = [t.strip() for t in include_tags.split(",") if t.strip()] if include_tags else None
+        exc_list = [t.strip() for t in exclude_tags.split(",") if t.strip()] if exclude_tags else None
         cmd, out_dir = build_robot_run(
             sandbox_url.strip(),
             username.strip(),
@@ -567,15 +571,22 @@ def run_project_entire_suite(
             headless=headless,
             use_pabot=use_pabot,
             pabot_processes=3,
+            include_tags=inc_list,
+            exclude_tags=exc_list,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
         return
     st.subheader(f"Project suite: `{project_name}`")
     runner = "Pabot (parallel)" if use_pabot else "Robot"
+    filter_info = ""
+    if inc_list:
+        filter_info += f"  •  **Include:** {', '.join(inc_list)}"
+    if exc_list:
+        filter_info += f"  •  **Exclude:** {', '.join(exc_list)}"
     st.caption(
         f"**{runner}** — **{len(robot_files)}** suite file(s) under `{tests_dir.relative_to(ROOT)}` → "
-        f"`{out_dir.relative_to(ROOT)}`"
+        f"`{out_dir.relative_to(ROOT)}`{filter_info}"
     )
     code, full_log = stream_robot_logs(cmd, ROOT)
     passed = code == 0

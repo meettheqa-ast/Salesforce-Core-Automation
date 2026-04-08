@@ -61,6 +61,8 @@ def build_robot_run(
     output_dir: Path | str | None = None,
     use_pabot: bool = False,
     pabot_processes: int = 3,
+    include_tags: list[str] | None = None,
+    exclude_tags: list[str] | None = None,
 ) -> tuple[list[str], Path]:
     """
     Write EnvData and return the robot command (argv list) and output directory.
@@ -138,10 +140,14 @@ def build_robot_run(
             "--report",
             "report.html",
         ]
+    for tag in (include_tags or []):
+        cmd.extend(["-i", tag])
+    for tag in (exclude_tags or []):
+        cmd.extend(["-e", tag])
+
     if headless:
         cmd.extend(["-v", "headless:true"])
     else:
-        # Visible browser: allow Login To Sandbox to pause for manual MFA/OTP after password step.
         cmd.extend(["-v", "MFA_PAUSE_FOR_MANUAL_COMPLETION:true"])
     cmd.append(str(test_target))
     cmd.extend(extra)
@@ -185,6 +191,18 @@ def parse_args() -> argparse.Namespace:
         help="Run Chrome headless via -v headless:true (Background mode).",
     )
     p.add_argument(
+        "--include",
+        action="append",
+        default=None,
+        help="Robot tag to include (-i). Repeat for multiple tags.",
+    )
+    p.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        help="Robot tag to exclude (-e). Repeat for multiple tags.",
+    )
+    p.add_argument(
         "robot_args",
         nargs=argparse.REMAINDER,
         help="Extra args passed to robot after '--' e.g. -- --tag smoke",
@@ -205,6 +223,8 @@ def main() -> int:
             robot_args=args.robot_args,
             headless=args.headless,
             output_dir=args.output_dir,
+            include_tags=args.include,
+            exclude_tags=args.exclude,
         )
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)

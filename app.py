@@ -509,10 +509,25 @@ def _render_suite_execution_tab(
         with st.container(border=True):
             st.subheader("🚀 Run Suite")
             if active_proj and _pm is not None:
+                tag_inc_col, tag_exc_col = st.columns(2)
+                with tag_inc_col:
+                    include_tags = st.text_input(
+                        "Include Tags",
+                        placeholder="e.g. smoke, US-1234",
+                        help="Comma-separated. Only tests matching these tags will run.",
+                        key="suite_include_tags",
+                    )
+                with tag_exc_col:
+                    exclude_tags = st.text_input(
+                        "Exclude Tags",
+                        placeholder="e.g. in-progress, unstable",
+                        help="Comma-separated. Tests matching these tags will be skipped.",
+                        key="suite_exclude_tags",
+                    )
                 r1, r2 = st.columns([3, 1])
                 with r1:
                     suite_clicked = st.button(
-                        "▶️ Run Entire Project Suite",
+                        "▶️ Execute Project Suite",
                         type="primary",
                         use_container_width=True,
                         key="run_entire_project_suite_btn",
@@ -535,6 +550,8 @@ def _render_suite_execution_tab(
                             password,
                             headless,
                             use_pabot=pabot_parallel,
+                            include_tags=include_tags.strip(),
+                            exclude_tags=exclude_tags.strip(),
                         )
             else:
                 st.info("Select an **Active Project** to run a full suite.")
