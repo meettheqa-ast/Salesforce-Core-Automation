@@ -580,6 +580,7 @@ def run_project_entire_suite(
     run_ts = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     out_dir = _pm.get_project_path(project_name) / "Results" / run_ts
     seeded_vars: dict[str, str] | None = None
+    teardown_list: list[dict[str, str]] = []
     if seed_data and _HAS_WORKSPACE and _pm is not None:
         template_str = _pm.read_data_template(project_name)
         if template_str.strip() not in ("", "[]"):
@@ -588,7 +589,7 @@ def run_project_entire_suite(
 
                 sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
                 with st.spinner("🌱 Seeding prerequisite data via API…"):
-                    seeded_vars = seed_salesforce_data(
+                    seeded_vars, teardown_list = seed_salesforce_data(
                         sandbox_url, username, password, sec_tok, template_str,
                     )
                 if seeded_vars:
@@ -622,80 +623,95 @@ def run_project_entire_suite(
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
         return
-    st.subheader(f"Project suite: `{project_name}`")
-    runner = "Pabot (parallel)" if use_pabot else "Robot"
-    filter_info = ""
-    if inc_list:
-        filter_info += f"  •  **Include:** {', '.join(inc_list)}"
-    if exc_list:
-        filter_info += f"  •  **Exclude:** {', '.join(exc_list)}"
-    st.caption(
-        f"**{runner}** — **{len(robot_files)}** suite file(s) under `{tests_dir.relative_to(ROOT)}` → "
-        f"`{out_dir.relative_to(ROOT)}`{filter_info}"
-    )
-    code, full_log = stream_robot_logs(cmd, ROOT)
-    passed = code == 0
-    if passed:
-        st.success(f"Project suite finished successfully (exit {code}).")
-    else:
-        st.error(
-            f"Project suite finished with failures (exit {code}). Review the report for details."
+    try:
+        st.subheader(f"Project suite: `{project_name}`")
+        runner = "Pabot (parallel)" if use_pabot else "Robot"
+        filter_info = ""
+        if inc_list:
+            filter_info += f"  •  **Include:** {', '.join(inc_list)}"
+        if exc_list:
+            filter_info += f"  •  **Exclude:** {', '.join(exc_list)}"
+        st.caption(
+            f"**{runner}** — **{len(robot_files)}** suite file(s) under `{tests_dir.relative_to(ROOT)}` → "
+            f"`{out_dir.relative_to(ROOT)}`{filter_info}"
         )
-    rp = out_dir / "report.html"
-    lp = out_dir / "log.html"
-    st.session_state.last_run = {
-        "out_dir": str(out_dir.relative_to(ROOT)),
-        "report_path": str(rp.resolve()) if rp.is_file() else None,
-        "log_path": str(lp.resolve()) if lp.is_file() else None,
-        "passed": passed,
-        "run_kind": "project_suite",
-    }
-    render_in_app_run_summary(out_dir, key_prefix="proj_suite_sum")
-    st.session_state["last_run_summary_rendered_for"] = str(out_dir.resolve())
-    render_report_log_actions(
-        rp if rp.is_file() else None,
-        lp if lp.is_file() else None,
-        str(out_dir.relative_to(ROOT)),
-        key_prefix="proj_suite",
-        passed=passed,
-    )
-    if rp.is_file():
-        st.download_button(
-            label="Download report.html",
-            data=rp.read_bytes(),
-            file_name=f"{project_name}_{run_ts}_report.html",
-            mime="text/html",
-            key="download_project_suite_report",
-        )
-
-    # ── Slack notification ────────────────────────────────────────────────
-    slack_url = st.session_state.get("slack_webhook_url", "").strip()
-    if slack_url:
-        xml_path = out_dir / "output.xml"
-        total, n_pass, n_fail, elapsed = 0, 0, 0, "N/A"
-        if xml_path.is_file():
-            try:
-                from robot.api import ExecutionResult
-
-                result = ExecutionResult(str(xml_path))
-                stats = result.statistics.total.all
-                n_pass = stats.passed
-                n_fail = stats.failed
-                total = n_pass + n_fail
-                elapsed_ms = result.suite.elapsed_time.total_seconds()
-                elapsed = f"{elapsed_ms:.1f}s"
-            except Exception:  # noqa: BLE001
-                total = len(robot_files)
-                elapsed = "unknown"
-        ok = send_slack_notification(
-            slack_url, project_name, total, n_pass, n_fail, elapsed,
-        )
-        if ok:
-            st.toast("Slack notification sent!")
+        code, full_log = stream_robot_logs(cmd, ROOT)
+        passed = code == 0
+        if passed:
+            st.success(f"Project suite finished successfully (exit {code}).")
         else:
-            st.warning("Could not deliver Slack notification — check the webhook URL.")
-    with st.expander("Full log (copy)"):
-        st.code(full_log or "(empty)", language="text")
+            st.error(
+                f"Project suite finished with failures (exit {code}). Review the report for details."
+            )
+        rp = out_dir / "report.html"
+        lp = out_dir / "log.html"
+        st.session_state.last_run = {
+            "out_dir": str(out_dir.relative_to(ROOT)),
+            "report_path": str(rp.resolve()) if rp.is_file() else None,
+            "log_path": str(lp.resolve()) if lp.is_file() else None,
+            "passed": passed,
+            "run_kind": "project_suite",
+        }
+        render_in_app_run_summary(out_dir, key_prefix="proj_suite_sum")
+        st.session_state["last_run_summary_rendered_for"] = str(out_dir.resolve())
+        render_report_log_actions(
+            rp if rp.is_file() else None,
+            lp if lp.is_file() else None,
+            str(out_dir.relative_to(ROOT)),
+            key_prefix="proj_suite",
+            passed=passed,
+        )
+        if rp.is_file():
+            st.download_button(
+                label="Download report.html",
+                data=rp.read_bytes(),
+                file_name=f"{project_name}_{run_ts}_report.html",
+                mime="text/html",
+                key="download_project_suite_report",
+            )
+
+        # ── Slack notification ────────────────────────────────────────
+        slack_url = st.session_state.get("slack_webhook_url", "").strip()
+        if slack_url:
+            xml_path = out_dir / "output.xml"
+            total, n_pass, n_fail, elapsed = 0, 0, 0, "N/A"
+            if xml_path.is_file():
+                try:
+                    from robot.api import ExecutionResult
+
+                    result = ExecutionResult(str(xml_path))
+                    stats = result.statistics.total.all
+                    n_pass = stats.passed
+                    n_fail = stats.failed
+                    total = n_pass + n_fail
+                    elapsed_ms = result.suite.elapsed_time.total_seconds()
+                    elapsed = f"{elapsed_ms:.1f}s"
+                except Exception:  # noqa: BLE001
+                    total = len(robot_files)
+                    elapsed = "unknown"
+            ok = send_slack_notification(
+                slack_url, project_name, total, n_pass, n_fail, elapsed,
+            )
+            if ok:
+                st.toast("Slack notification sent!")
+            else:
+                st.warning("Could not deliver Slack notification — check the webhook URL.")
+        with st.expander("Full log (copy)"):
+            st.code(full_log or "(empty)", language="text")
+    finally:
+        # ── Zero Data Footprint: delete seeded records ────────────────
+        if teardown_list:
+            try:
+                from app_tdm import teardown_salesforce_data
+
+                sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
+                with st.spinner("🧹 Cleaning up seeded data…"):
+                    deleted = teardown_salesforce_data(
+                        sandbox_url, username, password, sec_tok, teardown_list,
+                    )
+                st.toast(f"🧹 Cleaned up {deleted}/{len(teardown_list)} seeded record(s)!")
+            except Exception as exc:  # noqa: BLE001
+                st.warning(f"Data teardown encountered an error: {exc}")
 
 
 def render_persisted_run_panel() -> None:
