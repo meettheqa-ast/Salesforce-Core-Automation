@@ -190,6 +190,32 @@ def clear_pending_generation() -> None:
     st.session_state.pop(PENDING_ROBOT_EDITOR_KEY, None)
 
 
+def load_test_into_editor(project_name: str, test_name: str) -> bool:
+    """Load a saved .robot file into the pending editor state for editing.
+
+    Returns ``True`` if the test was loaded, ``False`` on any error.
+    Skips re-loading if the same test is already loaded (idempotent across reruns).
+    """
+    bound = f"{project_name}::{test_name}"
+    if st.session_state.get("_loaded_test_name") == bound:
+        return True
+    if not _HAS_WORKSPACE or _pm is None:
+        return False
+    try:
+        source = _pm.load_test_source(project_name, test_name)
+    except FileNotFoundError:
+        st.warning(f"Test `{test_name}` not found in project `{project_name}`.")
+        return False
+    st.session_state[PENDING_ROBOT_EDITOR_KEY] = source
+    st.session_state[PENDING_GEN_CTX_KEY] = {
+        "project_name": project_name,
+        "test_name": test_name,
+        "overwrite": True,
+    }
+    st.session_state["_loaded_test_name"] = bound
+    return True
+
+
 def run_temp_generated_suite(
     sandbox_url: str,
     username: str,
@@ -568,6 +594,7 @@ def run_project_entire_suite(
     include_tags: str = "",
     exclude_tags: str = "",
     seed_data: bool = False,
+    auto_retry: bool = True,
 ) -> None:
     """Run Robot (or Pabot) against all suites in Saved_Projects/<project>/Tests/; output under project Results/."""
     if not _HAS_WORKSPACE or _pm is None:
@@ -642,6 +669,45 @@ def run_project_entire_suite(
             f"`{out_dir.relative_to(ROOT)}`{filter_info}"
         )
         code, full_log = stream_robot_logs(cmd, ROOT)
+
+        # ── Auto-Retry flaky tests ────────────────────────────────────
+        if code != 0 and auto_retry:
+            st.info("🔁 Failures detected. Initiating Auto-Retry for flaky tests…")
+            retry_dir = out_dir / "retry"
+            retry_dir.mkdir(parents=True, exist_ok=True)
+            retry_cmd = [
+                sys.executable, "-m", "robot",
+                "--rerunfailed", str(out_dir / "output.xml"),
+                "--outputdir", str(retry_dir),
+            ]
+            if seeded_vars:
+                for k, v in seeded_vars.items():
+                    retry_cmd.extend(["-v", f"{k}:{v}"])
+            retry_cmd.append(str(tests_dir))
+            retry_code, retry_log = stream_robot_logs(retry_cmd, ROOT)
+            full_log += "\n\n--- RETRY RUN ---\n" + (retry_log or "")
+
+            retry_xml = retry_dir / "output.xml"
+            if retry_xml.is_file():
+                merge_cmd = [
+                    sys.executable, "-m", "robot.rebot",
+                    "--merge",
+                    "--outputdir", str(out_dir),
+                    "--output", "output.xml",
+                    "--log", "log.html",
+                    "--report", "report.html",
+                    str(out_dir / "output.xml"),
+                    str(retry_xml),
+                ]
+                merge_result = subprocess.run(merge_cmd, cwd=ROOT, capture_output=True)
+                if merge_result.returncode == 0:
+                    code = retry_code
+                    st.success("🔁 Auto-Retry complete — results merged.")
+                else:
+                    st.warning("Merge step failed; reporting original results.")
+            else:
+                st.warning("Retry produced no output.xml; reporting original results.")
+
         passed = code == 0
         if passed:
             st.success(f"Project suite finished successfully (exit {code}).")

@@ -19,6 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+import json
 import os
 from pathlib import Path
 
@@ -41,7 +42,9 @@ from app_csv import (
 from app_analytics import render_project_analytics_dashboard
 from app_pipeline import (
     build_augmented_prompt,
+    clear_pending_generation,
     field_input_label,
+    load_test_into_editor,
     render_pending_robot_review_panel,
     render_persisted_run_panel,
     run_automation_pipeline,
@@ -120,6 +123,8 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
     """
     col_proj, col_creds = st.columns([1, 2], gap="large")
 
+    _ENV_SUGGESTIONS = ["Dev", "QA", "UAT", "Prod", "Custom..."]
+
     # ── Column 1: Project / Environment / Persona selectors ───────────
     with col_proj:
         _lbl_col, _sync_col = st.columns([3, 1])
@@ -149,23 +154,70 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 index=idx,
                 label_visibility="collapsed",
             )
+
+            # ── Create New Project (reactive, no st.form) ─────────────
             if proj_sel == "+ Create New Project":
-                with st.form("new_proj_form"):
-                    new_name = st.text_input("Name (alphanumeric + underscores)")
-                    new_desc = st.text_input("Description (optional)")
-                    if st.form_submit_button("✅ Create Project"):
-                        try:
-                            _pm.create_project(new_name, new_desc)
-                            st.session_state["active_project"] = new_name
-                            st.rerun()
-                        except ValueError as e:
-                            st.error(str(e))
+                with st.container(border=True):
+                    st.caption("New Project Setup")
+                    new_name = st.text_input(
+                        "Project Name", placeholder="e.g. Regression_Suite_Q3",
+                        key="new_proj_name_input",
+                    )
+                    new_desc = st.text_input(
+                        "Description (optional)", key="new_proj_desc_input",
+                    )
+                    init_env_sel = st.selectbox(
+                        "Initial Environment", _ENV_SUGGESTIONS,
+                        key="new_proj_env_selectbox",
+                    )
+                    if init_env_sel == "Custom...":
+                        init_env_custom = st.text_input(
+                            "Custom environment name", key="new_proj_env_custom_input",
+                        )
+                    else:
+                        init_env_custom = ""
+                    resolved_env = init_env_custom.strip() if init_env_sel == "Custom..." else init_env_sel
+
+                    np_url = st.text_input(
+                        "Sandbox URL", placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                        key="new_proj_url_input",
+                    )
+                    np_c1, np_c2 = st.columns(2)
+                    with np_c1:
+                        np_user = st.text_input("Username", key="new_proj_user_input")
+                    with np_c2:
+                        np_pw = st.text_input("Password", type="password", key="new_proj_pw_input")
+
+                    if st.button("✅ Create Project & Environment", type="primary", key="create_proj_env_btn"):
+                        if not new_name.strip():
+                            st.error("Project name cannot be empty.")
+                        elif init_env_sel == "Custom..." and not resolved_env:
+                            st.error("Please enter a custom environment name.")
+                        else:
+                            try:
+                                _pm.create_project(new_name, new_desc)
+                                _pm.write_project_credentials(
+                                    new_name.strip(),
+                                    np_url.strip(),
+                                    np_user.strip(),
+                                    np_pw,
+                                    environment=resolved_env,
+                                    persona="System Admin",
+                                )
+                                st.session_state["active_project"] = new_name.strip()
+                                st.session_state["active_environment"] = resolved_env
+                                st.session_state["active_persona"] = "System Admin"
+                                st.session_state.pop("_credentials_bound_key", None)
+                                st.rerun()
+                            except ValueError as e:
+                                st.error(str(e))
+
             elif proj_sel == "(none — ad-hoc)":
                 st.session_state["active_project"] = ""
             else:
                 st.session_state["active_project"] = proj_sel
 
-            # Environment + Persona selectors (only when a project is active)
+            # ── Environment + Persona selectors (active project) ──────
             _active = st.session_state.get("active_project") or ""
             if _active:
                 env_list = _pm.list_environments(_active) or ["Dev"]
@@ -175,11 +227,49 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
 
                 if env_sel == "+ Add Environment":
-                    new_env = st.text_input("New environment name", key="new_env_name_input")
-                    if st.button("➕ Create", key="create_env_btn") and new_env.strip():
-                        _pm.write_project_credentials(_active, "", "", "", environment=new_env.strip())
-                        st.session_state["active_environment"] = new_env.strip()
-                        st.rerun()
+                    with st.container(border=True):
+                        st.caption("Add Environment")
+                        add_env_sel = st.selectbox(
+                            "Environment Name", _ENV_SUGGESTIONS,
+                            key="add_env_suggestion_selectbox",
+                        )
+                        if add_env_sel == "Custom...":
+                            add_env_custom = st.text_input(
+                                "Custom environment name", key="add_env_custom_input",
+                            )
+                        else:
+                            add_env_custom = ""
+                        resolved_add_env = add_env_custom.strip() if add_env_sel == "Custom..." else add_env_sel
+
+                        ae_url = st.text_input(
+                            "Sandbox URL", placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                            key="add_env_url_input",
+                        )
+                        ae_c1, ae_c2 = st.columns(2)
+                        with ae_c1:
+                            ae_user = st.text_input("Username", key="add_env_user_input")
+                        with ae_c2:
+                            ae_pw = st.text_input("Password", type="password", key="add_env_pw_input")
+
+                        if st.button("💾 Save New Environment", type="primary", key="save_new_env_btn"):
+                            if not resolved_add_env:
+                                st.error("Please enter an environment name.")
+                            elif resolved_add_env in env_list:
+                                st.error(f"Environment **{resolved_add_env}** already exists.")
+                            else:
+                                _pm.write_project_credentials(
+                                    _active,
+                                    ae_url.strip(),
+                                    ae_user.strip(),
+                                    ae_pw,
+                                    environment=resolved_add_env,
+                                    persona="System Admin",
+                                )
+                                st.session_state["active_environment"] = resolved_add_env
+                                st.session_state["active_persona"] = "System Admin"
+                                st.session_state.pop("_credentials_bound_key", None)
+                                st.toast(f"Environment **{resolved_add_env}** created!")
+                                st.rerun()
                 else:
                     st.session_state["active_environment"] = env_sel
 
@@ -352,9 +442,35 @@ def _render_test_builder_tab(
 ) -> None:
     """AI prompt, generation controls, and human-in-the-loop review editor."""
     test_target_name = ""
+
+    # ── Load existing test selector ───────────────────────────────────
+    if active_proj and _HAS_WORKSPACE and _pm is not None:
+        saved = _pm.list_project_tests(active_proj)
+        test_names = [t["name"] for t in saved]
+        load_opts = ["(Create New Test)"] + test_names
+        cur_load = st.session_state.get("load_existing_test_selector", "(Create New Test)")
+        load_idx = load_opts.index(cur_load) if cur_load in load_opts else 0
+
+        load_sel = st.selectbox(
+            "📂 Load Existing Test to Edit",
+            load_opts,
+            index=load_idx,
+            key="load_existing_test_selector",
+            help="Select a saved test to load it into the editor for editing, debugging, or committing changes.",
+        )
+
+        if load_sel != "(Create New Test)":
+            load_test_into_editor(active_proj, load_sel)
+            test_target_name = load_sel
+        else:
+            if st.session_state.get("_loaded_test_name"):
+                clear_pending_generation()
+                st.session_state.pop("_loaded_test_name", None)
+
     if active_proj:
         test_target_name = st.text_input(
             "Test Case Name",
+            value=test_target_name,
             placeholder="e.g. B2B_Lead_Creation",
             help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
         )
@@ -649,6 +765,13 @@ def _render_suite_execution_tab(
                     help="Creates prerequisite records via the API using the project's data template, "
                     "then injects the IDs as Robot variables.",
                 )
+                auto_retry = st.checkbox(
+                    "🔁 Auto-Retry Flaky Tests",
+                    value=True,
+                    key="auto_retry_flaky",
+                    help="Silently reruns any failed tests once and merges the results "
+                    "to prevent false positives before reporting to Slack or Jira.",
+                )
                 if suite_clicked:
                     if not sandbox_url.strip() or not username.strip() or not password.strip():
                         st.error("Fill in credentials in the workspace header.")
@@ -663,6 +786,7 @@ def _render_suite_execution_tab(
                             include_tags=include_tags.strip(),
                             exclude_tags=exclude_tags.strip(),
                             seed_data=seed_data,
+                            auto_retry=auto_retry,
                         )
             else:
                 st.info("Select an **Active Project** to run a full suite.")
@@ -717,11 +841,10 @@ def _render_suite_execution_tab(
                                 st.error("Fill credentials first.")
                             else:
                                 run_existing_test(test["path"], sandbox_url, username, password, headless)
-                        if col_c.button("👁 View", key=f"view_{test['name']}"):
-                            st.code(
-                                _pm.load_test_source(active_proj, test["name"]),
-                                language="robotframework",
-                            )
+                        if col_c.button("✏️ Edit", key=f"edit_{test['name']}"):
+                            load_test_into_editor(active_proj, test["name"])
+                            st.session_state["load_existing_test_selector"] = test["name"]
+                            st.toast("Test loaded! Switch to the 🏗️ Test Architect tab to edit. ✏️")
             else:
                 st.info("Select a project to see saved tests.")
 
@@ -734,38 +857,150 @@ def _render_suite_execution_tab(
 # ---------------------------------------------------------------------------
 
 def _render_data_templates_tab(active_proj: str) -> None:
-    """JSON-based TDM template editor for the active project."""
+    """Visual TDM template builder for the active project."""
     if not active_proj or not _HAS_WORKSPACE or _pm is None:
         st.info("Select an **Active Project** to manage data templates.")
         return
 
-    from app_tdm import EXAMPLE_TEMPLATE
-
-    existing = _pm.read_data_template(active_proj)
-    display = existing if existing.strip() != "[]" else EXAMPLE_TEMPLATE
-
     st.markdown(
-        "Define prerequisite Salesforce records as a JSON array. "
-        "Each entry needs `object`, `var_name`, and `fields`. "
-        "When **🌱 Seed Data Template Before Run** is checked in Suite Execution, "
+        "Define prerequisite Salesforce records to seed before a test run. "
+        "When **🌱 Seed Data Template Before Run** is checked in the Release Manager, "
         "these records are created via the API and the resulting IDs are injected "
         "as Robot variables."
     )
 
-    template_text = st.text_area(
-        "JSON Template",
-        value=display,
-        height=300,
-        key="tdm_template_editor",
-        help='[{"object":"Account","var_name":"SeededAccountId","fields":{"Name":"Acme"}}]',
-    )
-
-    if st.button("💾 Save Data Template", key="save_tdm_btn"):
+    # ── Hydrate session state from disk (once per project) ────────────
+    _tdm_bound_key = f"_tdm_bound_{active_proj}"
+    if st.session_state.get("_tdm_project_key") != _tdm_bound_key:
+        raw = _pm.read_data_template(active_proj)
         try:
-            _pm.write_data_template(active_proj, template_text.strip())
-            st.toast(f"Data template saved to **{active_proj}**.")
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Invalid JSON: {exc}")
+            records = json.loads(raw)
+            if not isinstance(records, list):
+                records = []
+        except (json.JSONDecodeError, TypeError):
+            records = []
+        st.session_state["tdm_records"] = records
+        st.session_state["_tdm_project_key"] = _tdm_bound_key
+
+    records: list[dict] = st.session_state.get("tdm_records", [])
+
+    # ── Visual record cards ───────────────────────────────────────────
+    indices_to_delete: list[int] = []
+    for i, rec in enumerate(records):
+        obj_name = rec.get("object", "")
+        var_name = rec.get("var_name", "")
+        fields: dict = rec.get("fields", {})
+        label = f"📦 {obj_name or '(Object)'} → {var_name or '(VarName)'}"
+
+        with st.expander(label, expanded=True):
+            oc, vc = st.columns(2)
+            with oc:
+                new_obj = st.text_input(
+                    "Salesforce Object",
+                    value=obj_name,
+                    placeholder="e.g. Account, Lead, Contact",
+                    key=f"tdm_obj_{i}",
+                )
+            with vc:
+                new_var = st.text_input(
+                    "Robot Variable Name",
+                    value=var_name,
+                    placeholder="e.g. SeededAccountId",
+                    key=f"tdm_var_{i}",
+                )
+            rec["object"] = new_obj
+            rec["var_name"] = new_var
+
+            # ── Field rows ────────────────────────────────────────────
+            st.caption("Fields")
+            field_keys = list(fields.keys())
+            field_indices_to_delete: list[str] = []
+
+            for fi, fk in enumerate(field_keys):
+                fv = fields[fk]
+                fc1, fc2, fc3 = st.columns([2, 2, 0.4])
+                with fc1:
+                    new_fk = st.text_input(
+                        "API Name",
+                        value=fk,
+                        key=f"tdm_fk_{i}_{fi}",
+                        label_visibility="collapsed",
+                        placeholder="Field API Name",
+                    )
+                with fc2:
+                    new_fv = st.text_input(
+                        "Value",
+                        value=str(fv),
+                        key=f"tdm_fv_{i}_{fi}",
+                        label_visibility="collapsed",
+                        placeholder="Value",
+                    )
+                with fc3:
+                    if st.button("🗑️", key=f"tdm_fdel_{i}_{fi}", help="Remove field"):
+                        field_indices_to_delete.append(fk)
+
+                if new_fk != fk:
+                    del fields[fk]
+                    if new_fk.strip():
+                        fields[new_fk] = new_fv
+                else:
+                    fields[fk] = new_fv
+
+            for dk in field_indices_to_delete:
+                fields.pop(dk, None)
+            rec["fields"] = fields
+
+            bc1, bc2 = st.columns([1, 1])
+            with bc1:
+                if st.button("➕ Add Field", key=f"tdm_addf_{i}"):
+                    placeholder_key = f"NewField{len(fields) + 1}"
+                    fields[placeholder_key] = ""
+                    rec["fields"] = fields
+                    st.rerun()
+            with bc2:
+                if st.button("🗑️ Delete Record", key=f"tdm_delrec_{i}", type="secondary"):
+                    indices_to_delete.append(i)
+
+    if indices_to_delete:
+        for idx in sorted(indices_to_delete, reverse=True):
+            records.pop(idx)
+        st.session_state["tdm_records"] = records
+        st.rerun()
+
+    # ── Global actions ────────────────────────────────────────────────
+    st.divider()
+    ga1, ga2 = st.columns(2)
+    with ga1:
+        if st.button("➕ Add New Record to Seed", use_container_width=True, key="tdm_add_rec_btn"):
+            records.append({"object": "", "var_name": "", "fields": {}})
+            st.session_state["tdm_records"] = records
+            st.rerun()
+    with ga2:
+        if st.button("💾 Save Data Template", type="primary", use_container_width=True, key="save_tdm_btn"):
+            clean: list[dict] = []
+            for rec in records:
+                obj = (rec.get("object") or "").strip()
+                var = (rec.get("var_name") or "").strip()
+                if not obj and not var:
+                    continue
+                cleaned_fields = {
+                    k.strip(): v
+                    for k, v in (rec.get("fields") or {}).items()
+                    if k.strip()
+                }
+                clean.append({"object": obj, "var_name": var, "fields": cleaned_fields})
+            try:
+                json_str = json.dumps(clean, indent=2, ensure_ascii=False)
+                _pm.write_data_template(active_proj, json_str)
+                st.session_state["tdm_records"] = clean
+                st.toast(f"Data template saved to **{active_proj}**.")
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Could not save template: {exc}")
+
+    # ── Raw JSON preview for advanced users ───────────────────────────
+    with st.expander("View Raw JSON"):
+        preview = json.dumps(records, indent=2, ensure_ascii=False)
+        st.code(preview, language="json")
 
 
 # ---------------------------------------------------------------------------

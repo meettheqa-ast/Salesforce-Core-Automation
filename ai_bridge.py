@@ -640,6 +640,31 @@ def _call_gemini(
     return out
 
 
+def analyze_test_failure(test_name: str, error_message: str) -> str:
+    """Ask the LLM for a plain-English root cause analysis of a failed test.
+
+    Returns a short explanation string.  Never raises — returns a fallback
+    message on any error so the calling code can always display *something*.
+    """
+    hydrate_llm_env()
+    prompt = (
+        f"You are an expert Salesforce QA Architect. A Robot Framework UI test "
+        f"named '{test_name}' just failed with this error:\n\n"
+        f"'{error_message}'\n\n"
+        "Briefly explain in 2-3 sentences what likely went wrong in Salesforce "
+        "(e.g., missing field, changed locator, validation rule, timing issue) "
+        "and suggest a fix. Do not output markdown code blocks, just plain text."
+    )
+    system = "You are a concise QA debugging assistant. Answer in plain text only."
+    try:
+        provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+        if provider == "openai":
+            return _call_openai(system, prompt).strip()
+        return _call_gemini(system, prompt).strip()
+    except Exception:  # noqa: BLE001
+        return "AI Analysis unavailable."
+
+
 def format_robot_code(file_path: Path) -> bool:
     """Run ``robotidy`` on *file_path* to enforce consistent formatting.
 

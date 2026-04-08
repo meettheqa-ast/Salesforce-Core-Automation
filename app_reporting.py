@@ -23,6 +23,7 @@ class TestCaseSummary:
     elapsed_ms: int
     message: str
     screenshot_paths: list[Path] = field(default_factory=list)
+    ai_analysis: str = ""
 
 
 def _walk_tests(suite):
@@ -76,6 +77,12 @@ def parse_test_cases_from_output_xml(output_xml: Path) -> list[TestCaseSummary]:
     except Exception:  # noqa: BLE001
         return []
 
+    _analyze = None
+    try:
+        from ai_bridge import analyze_test_failure as _analyze  # type: ignore[assignment]
+    except ImportError:
+        pass
+
     rows: list[TestCaseSummary] = []
     for test in _walk_tests(result.suite):
         status = str(getattr(test, "status", "") or "")
@@ -83,6 +90,11 @@ def parse_test_cases_from_output_xml(output_xml: Path) -> list[TestCaseSummary]:
         elapsed = int(getattr(test, "elapsedtime", 0) or 0)
         name = str(getattr(test, "name", "") or "Test")
         longname = str(getattr(test, "longname", "") or name)
+
+        ai_rca = ""
+        if status.upper() == "FAIL" and msg.strip() and _analyze is not None:
+            ai_rca = _analyze(name, msg)
+
         rows.append(
             TestCaseSummary(
                 name=name,
@@ -90,6 +102,7 @@ def parse_test_cases_from_output_xml(output_xml: Path) -> list[TestCaseSummary]:
                 status=status.upper(),
                 elapsed_ms=elapsed,
                 message=msg,
+                ai_analysis=ai_rca,
             )
         )
     return rows
@@ -190,6 +203,8 @@ def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> 
             else:
                 st.markdown("**What went wrong**")
                 st.info(clean_failure_message(tc.message))
+                if tc.ai_analysis and tc.ai_analysis != "AI Analysis unavailable.":
+                    st.info(f"🤖 **AI Root Cause Analysis:**\n{tc.ai_analysis}")
                 for j, img_path in enumerate(tc.screenshot_paths):
                     if img_path.is_file():
                         st.caption(f"Screenshot: `{img_path.name}`")
@@ -244,6 +259,12 @@ def publish_results_to_zephyr(
         "Content-Type": "application/json",
     }
 
+    _rca_fn = None
+    try:
+        from ai_bridge import analyze_test_failure as _rca_fn  # type: ignore[assignment]
+    except ImportError:
+        pass
+
     synced = 0
     for test in _walk_tests(result.suite):
         tags = [str(t) for t in getattr(test, "tags", [])]
@@ -251,13 +272,21 @@ def publish_results_to_zephyr(
         if not target_tags:
             continue
         status = "PASS" if str(getattr(test, "status", "")).upper() == "PASS" else "FAIL"
+        msg = str(getattr(test, "message", "") or "")
+
+        comment = f"Automated result from Test Intelligence Platform — {test.name}"
+        if status == "FAIL" and msg.strip() and _rca_fn is not None:
+            rca = _rca_fn(str(test.name), msg)
+            if rca and rca != "AI Analysis unavailable.":
+                comment += f"\n\nAI Root Cause Analysis:\n{rca}"
+
         for tag in target_tags:
             payload = {
                 "projectKey": project_key,
                 "testCaseKey": tag,
                 "status": "Pass" if status == "PASS" else "Fail",
                 "environment": environment,
-                "comment": f"Automated result from Test Intelligence Platform — {test.name}",
+                "comment": comment,
             }
             try:
                 resp = requests.post(endpoint, json=payload, headers=headers, timeout=15)
