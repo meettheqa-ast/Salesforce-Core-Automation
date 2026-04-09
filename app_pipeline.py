@@ -25,11 +25,14 @@ from app_reporting import render_in_app_run_summary, render_run_summary_for_last
 
 
 def open_local_path(path: Path) -> None:
-    """Open an HTML report/log in a new browser tab via a file:/// URI."""
+    """Open an HTML report/log in the default browser (Windows-safe)."""
     path = path.resolve()
     if not path.is_file():
         return
-    webbrowser.open_new_tab(f"file:///{path.as_posix()}")
+    if sys.platform == "win32":
+        os.startfile(path)  # noqa: S606 — Windows native open
+    else:
+        webbrowser.open_new_tab(f"file:///{path.as_posix()}")
 
 
 def send_slack_notification(
@@ -97,21 +100,35 @@ def render_report_log_actions(
     with col_a:
         if report_path and report_path.is_file():
             if st.button(
-                "Open Report",
+                "📄 Open Report",
                 key=f"{key_prefix}_report",
                 help="Opens report.html in your default browser.",
             ):
                 open_local_path(report_path)
+            st.download_button(
+                "⬇️ Download Report",
+                data=report_path.read_bytes(),
+                file_name="report.html",
+                mime="text/html",
+                key=f"{key_prefix}_dl_report",
+            )
         else:
             st.caption("report.html not found.")
     with col_b:
         if log_path and log_path.is_file():
             if st.button(
-                "Open Log",
+                "📄 Open Log",
                 key=f"{key_prefix}_log",
                 help="Opens log.html in your default browser.",
             ):
                 open_local_path(log_path)
+            st.download_button(
+                "⬇️ Download Log",
+                data=log_path.read_bytes(),
+                file_name="log.html",
+                mime="text/html",
+                key=f"{key_prefix}_dl_log",
+            )
         else:
             st.caption("log.html not found.")
     with col_c:
@@ -382,7 +399,7 @@ def render_pending_robot_review_panel(
     st.divider()
     st.subheader("Review generated Robot")
     st.caption(
-        "Edit the script if needed. **Save & Commit** persists to the project and Git branch. "
+        "Edit the script if needed. "
         "**Debug Run** executes the draft locally without saving. **Discard** clears this draft."
     )
     st.text_area(
@@ -391,17 +408,19 @@ def render_pending_robot_review_panel(
         key=PENDING_ROBOT_EDITOR_KEY,
         help="Robot Framework syntax. Fix locators or variables before running.",
     )
-    c1, c2, c3 = st.columns(3)
+    # DEMO: hidden to prevent errors during execution
+    # c1, c2, c3 = st.columns(3)
+    # with c1:
+    #     if st.button("💾 Save & Commit", type="primary", key="pending_commit_btn"):
+    #         commit_pending_test()
+    c1, c2 = st.columns(2)
     with c1:
-        if st.button("💾 Save & Commit", type="primary", key="pending_commit_btn"):
-            commit_pending_test()
-    with c2:
         if st.button("▶️ Debug Run (Local)", key="pending_debug_btn"):
             if not sandbox_url.strip() or not username.strip() or not password.strip():
                 st.error("Please fill in Sandbox URL, Username, and Password.")
                 return
             debug_pending_test(sandbox_url, username, password, headless)
-    with c3:
+    with c2:
         if st.button("❌ Discard", key="pending_discard_btn"):
             clear_pending_generation()
             st.rerun()
@@ -525,7 +544,7 @@ def run_automation_pipeline(
     }
     st.success(
         "Generation complete. Code has been auto-formatted to strict standards. "
-        "Review the script below, then **💾 Save & Commit** or **❌ Discard**."
+        "Review the script below, then **▶️ Debug Run** or **❌ Discard**."
     )
 
 

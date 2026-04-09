@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -46,12 +47,8 @@ def _empty_jira_block() -> dict[str, str]:
 
 
 def _default_full_config() -> dict:
-    """Return ``{"environments": {...}, "jira_base_url": "", ...}``."""
-    cfg: dict = {
-        "environments": {
-            env: _default_persona_block() for env in DEFAULT_ENVIRONMENTS
-        },
-    }
+    """Return ``{"environments": {}, "jira_base_url": "", ...}``."""
+    cfg: dict = {"environments": {}}
     cfg.update(_empty_jira_block())
     return cfg
 
@@ -93,6 +90,15 @@ def project_exists(name: str) -> bool:
     return (_project_dir(name) / "project.json").is_file()
 
 
+def delete_project(name: str) -> bool:
+    """Permanently remove a project directory. Returns True if deleted."""
+    proj_dir = _project_dir(name)
+    if not proj_dir.is_dir():
+        return False
+    shutil.rmtree(proj_dir, ignore_errors=True)
+    return not proj_dir.exists()
+
+
 def create_project(name: str, description: str = "") -> Path:
     """
     Create a new project at Saved_Projects/<slug>/ with Tests/ and Data/ subdirs.
@@ -119,7 +125,7 @@ def create_project(name: str, description: str = "") -> Path:
     (proj_dir / "project.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
     )
-    write_project_credentials(slug, "", "", "")
+    _write_full_config(slug, _default_full_config())
     return proj_dir
 
 
@@ -136,6 +142,35 @@ def get_project_path(name: str) -> Path:
 def read_project_meta(name: str) -> dict:
     proj_dir = get_project_path(name)
     return json.loads((proj_dir / "project.json").read_text(encoding="utf-8"))
+
+
+def update_project_meta(
+    project_name: str,
+    description: str | None = None,
+    **extra_meta: str,
+) -> dict:
+    """Update ``project.json`` metadata. Returns the updated dict.
+
+    Only *description* and explicit **extra_meta** keys are merged;
+    core keys (``name``, ``created_at``) are never overwritten by extras.
+    Raises ``FileNotFoundError`` if the project does not exist.
+    """
+    proj_dir = get_project_path(project_name)
+    meta_path = proj_dir / "project.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+
+    if description is not None:
+        meta["description"] = description.strip()
+
+    protected = {"name", "display_name", "created_at"}
+    for k, v in extra_meta.items():
+        if k not in protected:
+            meta[k] = v.strip() if isinstance(v, str) else v
+
+    meta_path.write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8",
+    )
+    return meta
 
 
 def _load_raw_config(name: str) -> dict:
@@ -211,10 +246,23 @@ def read_project_config(
     return out
 
 
+def _env_has_credentials(env_block: dict) -> bool:
+    """Return True if at least one persona in *env_block* has a non-empty credential."""
+    personas = env_block.get("personas", {})
+    for cred in personas.values():
+        if isinstance(cred, dict) and any(
+            cred.get(k, "").strip() for k in ("sandbox_url", "username", "password")
+        ):
+            return True
+    return False
+
+
 def list_environments(name: str) -> list[str]:
-    """Return sorted environment names defined in the project config."""
+    """Return sorted environment names that have at least one configured credential."""
     raw = _load_raw_config(name)
-    return sorted(raw.get("environments", {}).keys())
+    envs = raw.get("environments", {})
+    configured = [k for k, v in envs.items() if _env_has_credentials(v)]
+    return sorted(configured) if configured else sorted(envs.keys())
 
 
 def list_personas(name: str, environment: str = "Dev") -> list[str]:
@@ -230,6 +278,18 @@ def _write_full_config(project_name: str, data: dict) -> Path:
     path = proj_dir / CONFIG_FILENAME
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def delete_environment(project_name: str, environment: str) -> bool:
+    """Remove *environment* from the project config. Returns True if deleted."""
+    raw = _load_raw_config(project_name)
+    envs = raw.get("environments", {})
+    if environment not in envs:
+        return False
+    del envs[environment]
+    raw["environments"] = envs
+    _write_full_config(project_name, raw)
+    return True
 
 
 def read_jira_config(name: str) -> dict[str, str]:
@@ -267,16 +327,27 @@ def write_project_credentials(
     persona: str = DEFAULT_PERSONA,
 ) -> Path:
     """Write credentials for a single *environment* / *persona*."""
+    _PLACEHOLDER_STRINGS = {
+        "https://yourorg--sbx.sandbox.my.salesforce.com/",
+        "user@example.com",
+        "Optional — leave blank if IP whitelisted",
+        "https://hooks.slack.com/services/T.../B.../...",
+    }
+
+    def _clean(val: str | None) -> str:
+        v = (val or "").strip()
+        return "" if v in _PLACEHOLDER_STRINGS else v
+
     raw = _load_raw_config(project_name)
     envs = raw.setdefault("environments", {})
     env_block = envs.setdefault(environment, {"personas": {}})
     personas = env_block.setdefault("personas", {})
     personas[persona] = {
-        "sandbox_url": (sandbox_url or "").strip(),
-        "username": (username or "").strip(),
-        "password": password or "",
-        "security_token": security_token or "",
-        "slack_webhook_url": (slack_webhook_url or "").strip(),
+        "sandbox_url": _clean(sandbox_url),
+        "username": _clean(username),
+        "password": (password or "").strip(),
+        "security_token": _clean(security_token),
+        "slack_webhook_url": _clean(slack_webhook_url),
     }
     return _write_full_config(project_name, raw)
 

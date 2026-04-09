@@ -39,7 +39,7 @@ The project turns **natural-language test intents** into **Robot Framework** `.r
 
 1. **Workspace / Projects** (if `project_manager` loads): **Active Project** selectbox — `(none — ad-hoc)`, existing projects under **`Saved_Projects/`**, or **+ Create New Project**. Active project is stored in **`st.session_state["active_project"]`**.
 2. **Smoke Test App Name** (if `smoke_templates` loads): text field (default `Sales`) used as the **`Launch App`** argument in smoke templates — stored in **`st.session_state["smoke_app_name"]`**.
-3. **Salesforce credentials** — Sandbox URL, Username, Password.
+3. **Salesforce credentials** — Sandbox URL, Username, Password, Security Token. Displayed as read-only markdown in **view mode** (secrets shown as `••••••••`, empty values as *Not set*); editable `st.text_input` widgets in **edit mode** toggled by **✏️ Edit Credentials**. Placeholder text is never persisted (`write_project_credentials` strips known placeholder strings).
 4. **Execution mode** — **Background (Fast)** ⇒ headless Chrome; **Watch on Screen (Debug)** ⇒ visible browser + MFA pause variable.
 5. **AI (LLM)** — Provider radio (**Gemini** / **OpenAI**), optional session API keys via **`_sync_sidebar_api_key`**.
 
@@ -118,7 +118,7 @@ The project turns **natural-language test intents** into **Robot Framework** `.r
 
 | Module | Role |
 |--------|------|
-| **`project_manager.py`** | Creates **`Saved_Projects/<slug>/`** with `project.json`, **`Tests/`**, **`Data/`**; **`save_test_to_project`**, **`list_project_tests`**, **`load_test_source`**, etc. Pure Python (no Streamlit). |
+| **`project_manager.py`** | Full CRUD for project metadata and workspace management. Creates **`Saved_Projects/<slug>/`** with `project.json`, **`Tests/`**, **`Data/`**; **`create_project`**, **`delete_project`**, **`update_project_meta`** (description, owner, extra keys), **`save_test_to_project`**, **`list_project_tests`**, **`load_test_source`**, **`delete_environment`**, etc. Pure Python (no Streamlit). |
 | **`org_inspector.py`** | **`OrgInspector`**: headless Selenium login + in-browser **Describe** REST read for picklist-oriented **`get_smoke_field_context(object)`**. |
 | **`smoke_templates.py`** | **`detect_smoke_intent`**, **`get_smoke_prompt(sf_object, app_name, field_context)`** for full-lifecycle smoke prompts. |
 

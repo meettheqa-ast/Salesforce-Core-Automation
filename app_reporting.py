@@ -150,6 +150,31 @@ def _assign_screenshots(
         tc.screenshot_paths = paths
 
 
+def _get_suite_source(out_dir: Path) -> str:
+    """Read the .robot source file referenced by output.xml, if available."""
+    xml_path = out_dir / "output.xml"
+    try:
+        from robot.api import ExecutionResult
+
+        result = ExecutionResult(str(xml_path))
+        src = getattr(result.suite, "source", None)
+        if src:
+            src_path = Path(src)
+            if src_path.is_file():
+                return src_path.read_text(encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
+def _truncate_error(msg: str, max_len: int = 400) -> str:
+    """Truncate a failure message to save LLM tokens."""
+    if not msg:
+        return ""
+    s = msg.strip()
+    return s if len(s) <= max_len else s[:max_len] + " …(truncated)"
+
+
 def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> None:
     """
     Parse ``out_dir / output.xml`` and show one expander per test (pass/fail, time, message, images).
@@ -188,7 +213,9 @@ def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> 
         "Results are read from **output.xml** in this run folder. Open the HTML report below only if you need full Robot logs."
     )
 
-    for tc in tests:
+    _suite_source: str | None = None
+
+    for idx, tc in enumerate(tests):
         ok = tc.status == "PASS"
         sk = tc.status == "SKIP"
         label = f"[{'✅ PASS' if ok else '⏭️ SKIP' if sk else '❌ FAIL'}] {tc.longname}"
@@ -213,6 +240,17 @@ def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> 
                     st.caption(
                         "No **.png** screenshots were matched for this failure in the run folder."
                     )
+
+                if st.button("🔧 Fix with AI", key=f"{key_prefix}_fix_{idx}"):
+                    if _suite_source is None:
+                        _suite_source = _get_suite_source(out_dir)
+                    st.session_state["_repair_request"] = {
+                        "test_name": tc.name,
+                        "error": _truncate_error(tc.message),
+                        "robot_code": _suite_source,
+                    }
+                    st.session_state["active_tab_index"] = 0
+                    st.rerun()
 
 
 _TICKET_TAG = re.compile(r"^(US-|TC-|SFDC-|QA-)", re.IGNORECASE)

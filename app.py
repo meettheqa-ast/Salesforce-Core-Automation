@@ -26,6 +26,8 @@ from pathlib import Path
 from app_catalog import rebuild_keyword_catalog, render_capabilities_cheat_sheet
 from app_config import (
     CLARIFY_SESSION_KEY,
+    PENDING_GEN_CTX_KEY,
+    PENDING_ROBOT_EDITOR_KEY,
     _HAS_ORG_INSPECTOR,
     _HAS_SMOKE,
     _HAS_WORKSPACE,
@@ -99,17 +101,50 @@ def _apply_project_credentials_to_session() -> None:
         return
     if current:
         cfg = _pm.read_project_config(current, environment=env, persona=persona)
-        st.session_state["sf_sandbox_url"] = cfg.get("sandbox_url") or ""
-        st.session_state["sf_username"] = cfg.get("username") or ""
+        st.session_state["sf_sandbox_url"] = (cfg.get("sandbox_url") or "").strip()
+        st.session_state["sf_username"] = (cfg.get("username") or "").strip()
         st.session_state["sf_password"] = cfg.get("password") or ""
-        st.session_state["sf_security_token"] = cfg.get("security_token") or ""
-        st.session_state["slack_webhook_url"] = cfg.get("slack_webhook_url") or ""
+        st.session_state["sf_security_token"] = (cfg.get("security_token") or "").strip()
+        st.session_state["slack_webhook_url"] = (cfg.get("slack_webhook_url") or "").strip()
         jira_cfg = _pm.read_jira_config(current)
         st.session_state["jira_base_url"] = jira_cfg.get("jira_base_url") or ""
         st.session_state["jira_api_token"] = jira_cfg.get("jira_api_token") or ""
         st.session_state["jira_project_key"] = jira_cfg.get("jira_project_key") or ""
         st.session_state["edit_creds_mode"] = False
     st.session_state["_credentials_bound_key"] = bound_key
+
+
+# ---------------------------------------------------------------------------
+# Project Settings dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Project Settings")
+def _project_settings_dialog(project_name: str) -> None:
+    """Modal dialog for editing project metadata (project.json)."""
+    meta = _pm.read_project_meta(project_name)
+
+    st.caption(f"Project: **{meta.get('display_name', project_name)}**")
+    st.caption(f"Created: {meta.get('created_at', 'N/A')}")
+
+    new_desc = st.text_area(
+        "Project Description",
+        value=meta.get("description", ""),
+        height=120,
+        placeholder="e.g. End-to-end regression suite for the Pentair CPQ module",
+        key="proj_settings_desc",
+    )
+    new_owner = st.text_input(
+        "Business Unit / Owner",
+        value=meta.get("owner", ""),
+        placeholder="e.g. QA Engineering — Jane Doe",
+        key="proj_settings_owner",
+    )
+
+    if st.button("💾 Save Changes", type="primary", key="save_proj_settings_btn"):
+        _pm.update_project_meta(project_name, description=new_desc, owner=new_owner)
+        st.session_state.pop("_show_project_settings", None)
+        st.toast(f"Project settings updated for **{project_name}**.")
+        st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -150,12 +185,55 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             idx = 0
             if active_proj in opts:
                 idx = opts.index(active_proj)
-            proj_sel = st.selectbox(
-                "Active Project",
-                opts,
-                index=idx,
-                label_visibility="collapsed",
+
+            _proj_sel_col, _proj_cfg_col, _proj_del_col = st.columns(
+                [5, 1, 1], vertical_alignment="bottom",
             )
+            with _proj_sel_col:
+                proj_sel = st.selectbox(
+                    "Active Project",
+                    opts,
+                    index=idx,
+                    label_visibility="collapsed",
+                )
+            _is_real_project = proj_sel and proj_sel not in ("(none — ad-hoc)", "+ Create New Project")
+            with _proj_cfg_col:
+                if _is_real_project:
+                    if st.button("⚙️", key="proj_settings_btn", help="Project Settings"):
+                        st.session_state["_show_project_settings"] = proj_sel
+                        st.rerun()
+            with _proj_del_col:
+                if _is_real_project:
+                    _proj_confirming = st.session_state.get("_confirm_delete_project") == proj_sel
+                    if not _proj_confirming:
+                        if st.button("🗑️", key="delete_proj_btn", help=f"Delete project {proj_sel}"):
+                            st.session_state["_confirm_delete_project"] = proj_sel
+                            st.rerun()
+
+            _proj_confirming = st.session_state.get("_confirm_delete_project", "")
+            if _proj_confirming and _proj_confirming == proj_sel:
+                st.warning(
+                    f"Are you sure you want to delete project **{proj_sel}**? "
+                    "All tests, data templates, results, and credentials will be permanently lost."
+                )
+                _p_yes, _p_no = st.columns(2)
+                with _p_yes:
+                    if st.button("✅ Yes, Delete Project", type="primary", key="confirm_delete_proj_btn"):
+                        _pm.delete_project(proj_sel)
+                        st.session_state["active_project"] = ""
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.session_state.pop("_confirm_delete_project", None)
+                        st.toast(f"Project **{proj_sel}** deleted.")
+                        st.rerun()
+                with _p_no:
+                    if st.button("❌ Cancel", key="cancel_delete_proj_btn"):
+                        st.session_state.pop("_confirm_delete_project", None)
+                        st.rerun()
+
+            # ── Project Settings dialog trigger ──────────────────────
+            _settings_proj = st.session_state.get("_show_project_settings", "")
+            if _settings_proj and _settings_proj == proj_sel:
+                _project_settings_dialog(_settings_proj)
 
             # ── Create New Project (reactive, no st.form) ─────────────
             if proj_sel == "+ Create New Project":
@@ -217,7 +295,14 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             elif proj_sel == "(none — ad-hoc)":
                 st.session_state["active_project"] = ""
             else:
-                st.session_state["active_project"] = proj_sel
+                if st.session_state.get("active_project") != proj_sel:
+                    st.session_state["active_project"] = proj_sel
+                    st.session_state.pop("_credentials_bound_key", None)
+                    st.session_state["edit_creds_mode"] = False
+                    env_list_init = _pm.list_environments(proj_sel)
+                    if env_list_init:
+                        st.session_state["active_environment"] = env_list_init[0]
+                    st.session_state["active_persona"] = "System Admin"
 
             # ── Environment + Persona selectors (active project) ──────
             _active = st.session_state.get("active_project") or ""
@@ -226,7 +311,18 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 env_opts = env_list + ["+ Add Environment"]
                 cur_env = st.session_state.get("active_environment", "Dev")
                 env_idx = env_opts.index(cur_env) if cur_env in env_opts else 0
-                env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
+
+                _sel_col, _trash_col = st.columns([5, 1], vertical_alignment="bottom")
+                with _sel_col:
+                    env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
+                with _trash_col:
+                    _show_trash = env_sel and env_sel != "+ Add Environment"
+                    if _show_trash:
+                        _confirming = st.session_state.get("_confirm_delete_env") == env_sel
+                        if not _confirming:
+                            if st.button("🗑️", key="delete_env_btn", help=f"Delete {env_sel}"):
+                                st.session_state["_confirm_delete_env"] = env_sel
+                                st.rerun()
 
                 if env_sel == "+ Add Environment":
                     with st.container(border=True):
@@ -253,27 +349,63 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                         with ae_c2:
                             ae_pw = st.text_input("Password", type="password", key="add_env_pw_input")
 
-                        if st.button("💾 Save New Environment", type="primary", key="save_new_env_btn"):
-                            if not resolved_add_env:
-                                st.error("Please enter an environment name.")
-                            elif resolved_add_env in env_list:
-                                st.error(f"Environment **{resolved_add_env}** already exists.")
-                            else:
-                                _pm.write_project_credentials(
-                                    _active,
-                                    ae_url.strip(),
-                                    ae_user.strip(),
-                                    ae_pw,
-                                    environment=resolved_add_env,
-                                    persona="System Admin",
-                                )
-                                st.session_state["active_environment"] = resolved_add_env
-                                st.session_state["active_persona"] = "System Admin"
-                                st.session_state.pop("_credentials_bound_key", None)
-                                st.toast(f"Environment **{resolved_add_env}** created!")
+                        _btn_save, _btn_cancel = st.columns(2)
+                        with _btn_save:
+                            if st.button("💾 Save New Environment", type="primary", key="save_new_env_btn"):
+                                if not resolved_add_env:
+                                    st.error("Please enter an environment name.")
+                                elif resolved_add_env in env_list:
+                                    st.error(f"Environment **{resolved_add_env}** already exists.")
+                                else:
+                                    _pm.write_project_credentials(
+                                        _active,
+                                        ae_url.strip(),
+                                        ae_user.strip(),
+                                        ae_pw,
+                                        environment=resolved_add_env,
+                                        persona="System Admin",
+                                    )
+                                    st.session_state["active_environment"] = resolved_add_env
+                                    st.session_state["active_persona"] = "System Admin"
+                                    st.session_state.pop("_credentials_bound_key", None)
+                                    st.session_state.pop("env_selectbox", None)
+                                    st.toast(f"Environment **{resolved_add_env}** created!")
+                                    st.rerun()
+                        with _btn_cancel:
+                            if st.button("❌ Cancel", key="cancel_add_env_btn"):
+                                env_fallback = env_list[0] if env_list else "Dev"
+                                st.session_state["active_environment"] = env_fallback
+                                st.session_state.pop("env_selectbox", None)
                                 st.rerun()
                 else:
                     st.session_state["active_environment"] = env_sel
+
+                    _confirming = st.session_state.get("_confirm_delete_env") == env_sel
+                    if _confirming:
+                        st.warning(
+                            f"Are you sure you want to delete **{env_sel}**? "
+                            "All saved credentials for this environment will be lost."
+                        )
+                        _yes_col, _no_col = st.columns(2)
+                        with _yes_col:
+                            if st.button(
+                                "✅ Yes, Delete", type="primary",
+                                key="confirm_delete_env_btn",
+                            ):
+                                _pm.delete_environment(_active, env_sel)
+                                remaining = _pm.list_environments(_active)
+                                st.session_state["active_environment"] = (
+                                    remaining[0] if remaining else ""
+                                )
+                                st.session_state.pop("env_selectbox", None)
+                                st.session_state.pop("_credentials_bound_key", None)
+                                st.session_state.pop("_confirm_delete_env", None)
+                                st.toast(f"Environment **{env_sel}** deleted.")
+                                st.rerun()
+                        with _no_col:
+                            if st.button("❌ Cancel", key="cancel_delete_env_btn"):
+                                st.session_state.pop("_confirm_delete_env", None)
+                                st.rerun()
 
                 act_env = st.session_state.get("active_environment") or "Dev"
                 persona_list = _pm.list_personas(_active, act_env) or ["System Admin"]
@@ -305,6 +437,15 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
     editing = st.session_state.get("edit_creds_mode", False)
     is_project_mode = bool(_active) and _HAS_WORKSPACE and _pm is not None
 
+    def _display_field(label: str, value: str, is_secret: bool = False) -> None:
+        """Render a read-only credential field with clear visual styling."""
+        st.caption(label)
+        if value.strip():
+            display = "••••••••" if is_secret else f"`{value}`"
+            st.markdown(display)
+        else:
+            st.markdown("<span style='color:#999; font-style:italic'>Not set</span>", unsafe_allow_html=True)
+
     with col_creds:
         if is_project_mode:
             st.markdown(f"**🔐 Credentials — {_env} / {_persona}**")
@@ -313,75 +454,51 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
 
         readonly = is_project_mode and not editing
 
-        ca, cb = st.columns(2)
-        with ca:
-            st.text_input(
-                "Sandbox URL",
-                placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
-                help="Login URL for your Salesforce sandbox.",
-                key="sf_sandbox_url",
-                disabled=readonly,
-            )
-        with cb:
-            st.text_input(
-                "Username",
-                placeholder="user@example.com",
-                key="sf_username",
-                disabled=readonly,
-            )
-        cc, cd = st.columns(2)
-        with cc:
-            st.text_input(
-                "Password",
-                type="password",
-                placeholder="••••••••",
-                key="sf_password",
-                disabled=readonly,
-            )
-        with cd:
-            st.text_input(
-                "Security Token",
-                type="password",
-                placeholder="Optional — leave blank if IP whitelisted",
-                help="Required for API data seeding when your IP isn't in the org's trusted range.",
-                key="sf_security_token",
-                disabled=readonly,
-            )
-        # DEMO: Slack webhook hidden for clean demo
-        # st.text_input(
-        #     "Slack Webhook URL (Optional)",
-        #     placeholder="https://hooks.slack.com/services/T.../B.../...",
-        #     help="Incoming Webhook URL. Suite run summaries will be posted to this channel automatically.",
-        #     key="slack_webhook_url",
-        #     disabled=readonly,
-        # )
+        if readonly:
+            ca, cb = st.columns(2)
+            with ca:
+                _display_field("Sandbox URL", st.session_state.get("sf_sandbox_url", ""))
+            with cb:
+                _display_field("Username", st.session_state.get("sf_username", ""))
+            cc, cd = st.columns(2)
+            with cc:
+                _display_field("Password", st.session_state.get("sf_password", ""), is_secret=True)
+            with cd:
+                _display_field("Security Token", st.session_state.get("sf_security_token", ""), is_secret=True)
+        else:
+            ca, cb = st.columns(2)
+            with ca:
+                st.text_input(
+                    "Sandbox URL",
+                    placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                    help="Login URL for your Salesforce sandbox.",
+                    key="sf_sandbox_url",
+                )
+            with cb:
+                st.text_input(
+                    "Username",
+                    placeholder="user@example.com",
+                    key="sf_username",
+                )
+            cc, cd = st.columns(2)
+            with cc:
+                st.text_input(
+                    "Password",
+                    type="password",
+                    placeholder="••••••••",
+                    key="sf_password",
+                )
+            with cd:
+                st.text_input(
+                    "Security Token",
+                    type="password",
+                    placeholder="Optional — leave blank if IP whitelisted",
+                    help="Required for API data seeding when your IP isn't in the org's trusted range.",
+                    key="sf_security_token",
+                )
 
+        # DEMO: Slack webhook hidden for clean demo
         # DEMO: Jira/Zephyr integration hidden for clean demo
-        # if is_project_mode:
-        #     st.markdown("**📋 Jira / Zephyr Integration (Optional)**")
-        #     ja, jb = st.columns(2)
-        #     with ja:
-        #         st.text_input(
-        #             "Jira Base URL",
-        #             placeholder="https://yourorg.atlassian.net",
-        #             key="jira_base_url",
-        #             disabled=readonly,
-        #         )
-        #     with jb:
-        #         st.text_input(
-        #             "Jira Project Key",
-        #             placeholder="e.g. QA or SFDC",
-        #             key="jira_project_key",
-        #             disabled=readonly,
-        #         )
-        #     st.text_input(
-        #         "Jira API Token",
-        #         type="password",
-        #         placeholder="Atlassian API token or PAT",
-        #         help="Used to push Pass/Fail results to Zephyr Scale or Jira comments after suite runs.",
-        #         key="jira_api_token",
-        #         disabled=readonly,
-        #     )
 
         # ── Action buttons ────────────────────────────────────────────
         if is_project_mode:
@@ -447,29 +564,57 @@ def _render_test_builder_tab(
     """AI prompt, generation controls, and human-in-the-loop review editor."""
     test_target_name = ""
 
-    # ── Load existing test selector ───────────────────────────────────
-    if active_proj and _HAS_WORKSPACE and _pm is not None:
-        saved = _pm.list_project_tests(active_proj)
-        test_names = [t["name"] for t in saved]
-        load_opts = ["(Create New Test)"] + test_names
-        cur_load = st.session_state.get("load_existing_test_selector", "(Create New Test)")
-        load_idx = load_opts.index(cur_load) if cur_load in load_opts else 0
+    # ── Handle incoming repair request from "Fix with AI" ─────────────
+    _repair = st.session_state.pop("_repair_request", None)
+    if _repair:
+        robot_code = _repair.get("robot_code", "")
+        error_msg = _repair.get("error", "")
+        test_name = _repair.get("test_name", "Test")
 
-        load_sel = st.selectbox(
-            "📂 Load Existing Test to Edit",
-            load_opts,
-            index=load_idx,
-            key="load_existing_test_selector",
-            help="Select a saved test to load it into the editor for editing, debugging, or committing changes.",
+        if robot_code:
+            st.session_state[PENDING_ROBOT_EDITOR_KEY] = robot_code
+            st.session_state[PENDING_GEN_CTX_KEY] = {
+                "project_name": active_proj,
+                "test_name": "",
+                "overwrite": True,
+                "csv_bytes": None,
+                "user_story_id": "",
+            }
+
+        repair_prompt = (
+            f"The following test **{test_name}** failed with this error:\n\n"
+            f"```\n{error_msg}\n```\n\n"
+            "Please analyze the Robot Framework code and provide a self-healing fix. "
+            "Focus on fixing broken locators, missing waits, or incorrect keyword usage."
         )
+        st.session_state["main_prompt_text"] = repair_prompt
+        st.session_state.pop("main_prompt_text_widget", None)
 
-        if load_sel != "(Create New Test)":
-            load_test_into_editor(active_proj, load_sel)
-            test_target_name = load_sel
-        else:
-            if st.session_state.get("_loaded_test_name"):
-                clear_pending_generation()
-                st.session_state.pop("_loaded_test_name", None)
+        st.success(f"🔧 **Repair mode active** — loaded failing test **{test_name}** into the editor.")
+
+    # SIMPLIFIED: Load existing test selector hidden for clean flow
+    # if active_proj and _HAS_WORKSPACE and _pm is not None:
+    #     saved = _pm.list_project_tests(active_proj)
+    #     test_names = [t["name"] for t in saved]
+    #     load_opts = ["(Create New Test)"] + test_names
+    #     cur_load = st.session_state.get("load_existing_test_selector", "(Create New Test)")
+    #     load_idx = load_opts.index(cur_load) if cur_load in load_opts else 0
+    #
+    #     load_sel = st.selectbox(
+    #         "📂 Load Existing Test to Edit",
+    #         load_opts,
+    #         index=load_idx,
+    #         key="load_existing_test_selector",
+    #         help="Select a saved test to load it into the editor for editing, debugging, or committing changes.",
+    #     )
+    #
+    #     if load_sel != "(Create New Test)":
+    #         load_test_into_editor(active_proj, load_sel)
+    #         test_target_name = load_sel
+    #     else:
+    #         if st.session_state.get("_loaded_test_name"):
+    #             clear_pending_generation()
+    #             st.session_state.pop("_loaded_test_name", None)
 
     if active_proj:
         test_target_name = st.text_input(
@@ -514,33 +659,37 @@ def _render_test_builder_tab(
         "instead of asking you to fill in a clarification form.",
     )
 
-    csv_col, img_col = st.columns(2)
-    with csv_col:
-        uploaded_csv = st.file_uploader(
-            "Upload Test Data (CSV)",
-            type=["csv"],
-            help="Optional. Each row is sent to the AI so it can generate FOR loops or repeated steps.",
-            key="pm_test_data_csv",
-        )
-    with img_col:
-        uploaded_image = st.file_uploader(
-            "📸 Upload UI Screenshot (Optional)",
-            type=["png", "jpg", "jpeg"],
-            help="Upload a screenshot of the Salesforce form/page. The AI will analyse the fields and buttons visible in the image.",
-            key="pm_ui_screenshot",
-        )
-    csv_llm_block = sync_csv_session_cache(uploaded_csv)
-    if csv_llm_block:
-        with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
-            raw_preview = csv_upload_bytes(uploaded_csv)
-            if raw_preview:
-                render_csv_preview_scrollable(raw_preview)
-            else:
-                st.markdown(
-                    csv_llm_block
-                    if len(csv_llm_block) <= 14000
-                    else csv_llm_block[:14000] + "\n\n…_(truncated in UI only)_"
-                )
+    # SIMPLIFIED: CSV uploader, image uploader, and CSV preview hidden for clean flow
+    # csv_col, img_col = st.columns(2)
+    # with csv_col:
+    #     uploaded_csv = st.file_uploader(
+    #         "Upload Test Data (CSV)",
+    #         type=["csv"],
+    #         help="Optional. Each row is sent to the AI so it can generate FOR loops or repeated steps.",
+    #         key="pm_test_data_csv",
+    #     )
+    # with img_col:
+    #     uploaded_image = st.file_uploader(
+    #         "📸 Upload UI Screenshot (Optional)",
+    #         type=["png", "jpg", "jpeg"],
+    #         help="Upload a screenshot of the Salesforce form/page. The AI will analyse the fields and buttons visible in the image.",
+    #         key="pm_ui_screenshot",
+    #     )
+    # csv_llm_block = sync_csv_session_cache(uploaded_csv)
+    # if csv_llm_block:
+    #     with st.expander("Preview parsed CSV (sent to the AI)", expanded=False):
+    #         raw_preview = csv_upload_bytes(uploaded_csv)
+    #         if raw_preview:
+    #             render_csv_preview_scrollable(raw_preview)
+    #         else:
+    #             st.markdown(
+    #                 csv_llm_block
+    #                 if len(csv_llm_block) <= 14000
+    #                 else csv_llm_block[:14000] + "\n\n…_(truncated in UI only)_"
+    #             )
+    uploaded_csv = None
+    uploaded_image = None
+    csv_llm_block = ""
 
     with st.expander("💡 What can I ask for? (Available Capabilities)", expanded=False):
         render_capabilities_cheat_sheet()
@@ -1113,9 +1262,21 @@ def main_ui() -> None:
         active_proj, sandbox_url, username, password = _render_workspace_header()
 
     # ── Three-tab command center ──────────────────────────────────────────
-    tab_builder, tab_exec, tab_data, tab_analytics = st.tabs(
-        ["🏗️ Test Architect", "🚀 Release Manager", "🧪 Data Templates", "📊 Analytics"]
-    )
+    _TAB_NAMES = ["🏗️ Test Architect", "🚀 Release Manager", "🧪 Data Templates", "📊 Analytics"]
+    _switch_idx = st.session_state.pop("active_tab_index", None)
+
+    tab_builder, tab_exec, tab_data, tab_analytics = st.tabs(_TAB_NAMES)
+
+    if _switch_idx is not None and 0 <= _switch_idx < len(_TAB_NAMES):
+        target_label = _TAB_NAMES[_switch_idx]
+        st.markdown(
+            f"""<script>
+            const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            tabs.forEach(t => {{ if (t.textContent.includes("{target_label.split(' ', 1)[-1]}")) t.click(); }});
+            </script>""",
+            unsafe_allow_html=True,
+        )
+
     with tab_builder:
         _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
     with tab_exec:
