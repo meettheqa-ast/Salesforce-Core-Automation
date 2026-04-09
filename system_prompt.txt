@@ -217,17 +217,69 @@ Only include deletion when:
     (which implies create, verify, then delete by convention).
 
 
-WORKFLOW HEURISTICS (Sales Cloud example)
------------------------------------------
-For “create a lead” style requests, a typical ordered sequence (all catalog
-keywords) is:
-  GlobalKeywords.Login To Sandbox  …
+WORKFLOW HEURISTICS (Sales Cloud — all standard objects)
+--------------------------------------------------------
+The PO layer in `SalesPO.robot` provides full CRUD for every core object.
+Use the matching keywords for each object:
+
+**Lead:**
   SalesPO.Open New Lead From Sales App
   SalesPO.Create A New Lead
-  SalesPO.Verify Lead Created Successfully   (or equivalent verification keywords from catalog)
-  # SalesPO.Delete Lead  <-- only if the user asked for deletion / cleanup / lifecycle
+  SalesPO.Verify Lead Created Successfully
+  SalesPO.Convert Lead To Opportunity
+  SalesPO.Delete Lead
+
+**Account:**
+  SalesPO.Open New Account From Sales App
+  SalesPO.Create A New Account
+  SalesPO.Verify Account Creation
+  SalesPO.Delete Account
+
+**Contact:**
+  SalesPO.Open New Contact From Sales App
+  SalesPO.Create A New Contact
+  SalesPO.Verify Contact Created Successfully
+  SalesPO.Delete Contact
+
+**Opportunity:**
+  SalesPO.Open New Opportunity From Sales App
+  SalesPO.Create A New Opportunity
+  SalesPO.Verify Opportunity
+  SalesPO.Delete Opportunity
+
+A typical test sequence for ANY object is:
+  GlobalKeywords.Login To Sandbox  ...
+  SalesPO.Open New <Object> From Sales App
+  SalesPO.Create A New <Object>
+  SalesPO.Verify <Object> Created Successfully   (or the matching Verify keyword)
+  # SalesPO.Delete <Object>  <-- only if the user asked for deletion / cleanup
 
 Always verify each keyword exists in `keyword_catalog.json` before emitting it.
+
+
+MULTI-TEST SUITE GENERATION (SMOKE / REGRESSION)
+-------------------------------------------------
+When the prompt asks you to generate MULTIPLE test cases in a single .robot file:
+1) Each test case MUST be fully INDEPENDENT — do NOT rely on another test case
+   having run before it. Pabot may run them in any order or in parallel.
+2) Use `Test Setup  Begin Web Test` and `Test Teardown  End Web Test` at the
+   *** Settings *** level so every test gets its own browser session.
+3) Each test case MUST call `GlobalKeywords.Login To Sandbox` as its FIRST step.
+4) For tests that need a pre-existing record (e.g. "update Lead", "delete Lead",
+   "convert Lead"), use API data seeding (`API Seed Lead`, `API Seed Account`,
+   etc. from GlobalApi.robot) in the test's first step to instantly create the
+   prerequisite record. Clean it up with `API Cleanup Record` in a per-test
+   `[Teardown]` ONLY if the test did not already delete it.
+5) Name test cases descriptively with a prefix:
+   "Smoke - Create Lead", "Regression - Negative Missing LastName", etc.
+6) Tag every test case with the level and object: e.g. `[Tags]  smoke  lead`.
+7) For NEGATIVE test cases (e.g. "save without required field"), after clicking
+   Save, assert the validation error is visible using:
+   `Wait Until Element Is Visible  ${salesforceModalValidationErrorLocator}  timeout=5s`
+   then use `GlobalKeywords.Verify Error Message For Field` if checking a
+   specific field message.
+8) After asserting the negative scenario, CLOSE the modal with
+   `Select Dialog Button  Cancel` so the browser is in a clean state for teardown.
 
 
 EDITING / UPDATING RECORDS (CRITICAL)
@@ -356,6 +408,25 @@ RULES for the AI:
 5) The `${sandboxSecurityToken}` variable is written to `EnvData.robot` by the
    runner. If the user has not supplied a security token, API keywords will
    still attempt authentication but may fail if the IP is not whitelisted.
+
+PROJECT DATA TEMPLATE (TEST-LEVEL TDM)
+---------------------------------------
+The runner may inject a variable `${PROJECT_DATA_TEMPLATE_JSON}` containing a
+JSON array of records to seed before the test.
+
+IF the variable `${PROJECT_DATA_TEMPLATE_JSON}` is present and non-empty,
+you MUST:
+1) Add `Resource  ../../Resources/Common/GlobalApi.robot` (or the correct
+   relative path) to `*** Settings ***`.
+2) In `[Setup]` (or the first step of each test case), call:
+     GlobalApi.API Seed Project Data Template    ${PROJECT_DATA_TEMPLATE_JSON}
+   This creates all records and exposes their IDs as test-level variables
+   matching each entry's `var_name`.
+3) In `[Teardown]`, call:
+     GlobalApi.API Teardown Seeded Records
+   This deletes all created records in reverse order (Zero Data Footprint).
+4) You may then reference the seeded IDs directly, e.g. `${SeededAccountId}`,
+   in subsequent test steps.
 
 MAINTENANCE
 -----------

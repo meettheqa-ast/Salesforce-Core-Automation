@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-09T16:25:22.800890+00:00",
+  "generated_at": "2026-04-09T17:06:53.301627+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 154,
+  "keyword_count": 163,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -628,20 +628,20 @@
     {
       "keyword_name": "Create A New Opportunity",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Creates a new Opportunity using the current modal or form and saves when complete.",
-      "inferred_description": "Creates a new Opportunity using the current modal or form and saves when complete.",
+      "documentation": "Fills the New Opportunity modal. Picklist fields use org-safe fallback (tries the configured value first, falls back to first valid option).",
+      "documentation_source": "author",
+      "natural_language_summary": "Fills the New Opportunity modal. Picklist fields use org-safe fallback (tries the configured value first, falls back to first valid option).",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
     {
       "keyword_name": "Verify Opportunity",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Verifies that Opportunity.",
-      "inferred_description": "Verifies that Opportunity.",
+      "documentation": "Validates the Opportunity record was created with expected Name.",
+      "documentation_source": "author",
+      "natural_language_summary": "Validates the Opportunity record was created with expected Name.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -662,6 +662,16 @@
       "documentation_source": "inferred_only",
       "natural_language_summary": "Deletes or removes Lead in the Salesforce UI.",
       "inferred_description": "Deletes or removes Lead in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Open New Opportunity From Sales App",
+      "arguments": [],
+      "documentation": "Opens **Sales** → **Opportunities** → **New**.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens **Sales** → **Opportunities** → **New**.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -688,20 +698,30 @@
     {
       "keyword_name": "Create A New Account",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Creates a new Account using the current modal or form and saves when complete.",
-      "inferred_description": "Creates a new Account using the current modal or form and saves when complete.",
+      "documentation": "Fills the New Account modal. Picklist fields use org-safe fallback (tries the configured value first, falls back to first valid option).",
+      "documentation_source": "author",
+      "natural_language_summary": "Fills the New Account modal. Picklist fields use org-safe fallback (tries the configured value first, falls back to first valid option).",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Open New Account From Sales App",
+      "arguments": [],
+      "documentation": "Opens **Sales** → **Accounts** → **New**.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens **Sales** → **Accounts** → **New**.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
     {
       "keyword_name": "Verify Account Creation",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Verifies that Account Creation.",
-      "inferred_description": "Verifies that Account Creation.",
+      "documentation": "Validates key Account fields on the record details page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Validates key Account fields on the record details page.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -712,6 +732,46 @@
       "documentation_source": "inferred_only",
       "natural_language_summary": "Deletes or removes Account in the Salesforce UI.",
       "inferred_description": "Deletes or removes Account in the Salesforce UI.",
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Open New Contact From Sales App",
+      "arguments": [],
+      "documentation": "Opens **Sales** → **Contacts** → **New**.",
+      "documentation_source": "author",
+      "natural_language_summary": "Opens **Sales** → **Contacts** → **New**.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Create A New Contact",
+      "arguments": [],
+      "documentation": "Fills the New Contact modal. Links to an Account if ``${contactAccountName}`` is non-empty.",
+      "documentation_source": "author",
+      "natural_language_summary": "Fills the New Contact modal. Links to an Account if ``${contactAccountName}`` is non-empty.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Verify Contact Created Successfully",
+      "arguments": [],
+      "documentation": "Confirms Contact save and validates key fields on the record page.",
+      "documentation_source": "author",
+      "natural_language_summary": "Confirms Contact save and validates key fields on the record page.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/PO/Platform/SalesPO.robot"
+    },
+    {
+      "keyword_name": "Delete Contact",
+      "arguments": [],
+      "documentation": null,
+      "documentation_source": "inferred_only",
+      "natural_language_summary": "Deletes or removes Contact in the Salesforce UI.",
+      "inferred_description": "Deletes or removes Contact in the Salesforce UI.",
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -925,6 +985,24 @@
       "source_file": "Resources/Common/GlobalApi.robot"
     },
     {
+      "keyword_name": "API Seed Opportunity",
+      "arguments": [
+        "${Name}",
+        "${StageName}",
+        "${CloseDate}",
+        "&{extra_fields}"
+      ],
+      "documentation": "Create an Opportunity via the REST API and return its record ID. At minimum ``Name``, ``StageName``, and ``CloseDate`` are required.",
+      "documentation_source": "author",
+      "natural_language_summary": "Create an Opportunity via the REST API and return its record ID. At minimum ``Name``, ``StageName``, and ``CloseDate`` are required.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
       "keyword_name": "API Cleanup Record",
       "arguments": [
         "${object_name}",
@@ -938,6 +1016,37 @@
         "api",
         "data-seeding",
         "teardown"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
+      "keyword_name": "API Seed Project Data Template",
+      "arguments": [
+        "${template_json_string}"
+      ],
+      "documentation": "Parse a JSON template string, create each record via the API, and expose the resulting IDs as TEST-scoped variables. Also stores a teardown list in ``@{_TDM_TEARDOWN}`` for cleanup.",
+      "documentation_source": "author",
+      "natural_language_summary": "Parse a JSON template string, create each record via the API, and expose the resulting IDs as TEST-scoped variables. Also stores a teardown list in ``@{_TDM_TEARDOWN}`` for cleanup.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding",
+        "tdm"
+      ],
+      "source_file": "Resources/Common/GlobalApi.robot"
+    },
+    {
+      "keyword_name": "API Teardown Seeded Records",
+      "arguments": [],
+      "documentation": "Delete all records tracked in ``@{_TDM_TEARDOWN}`` (reverse order). Safe to call even if no records were seeded.",
+      "documentation_source": "author",
+      "natural_language_summary": "Delete all records tracked in ``@{_TDM_TEARDOWN}`` (reverse order). Safe to call even if no records were seeded.",
+      "inferred_description": null,
+      "tags": [
+        "api",
+        "data-seeding",
+        "teardown",
+        "tdm"
       ],
       "source_file": "Resources/Common/GlobalApi.robot"
     },

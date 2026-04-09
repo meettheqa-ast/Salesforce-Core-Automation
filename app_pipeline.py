@@ -205,6 +205,7 @@ def clear_pending_generation() -> None:
     """Remove human-in-the-loop draft script from session state."""
     st.session_state.pop(PENDING_GEN_CTX_KEY, None)
     st.session_state.pop(PENDING_ROBOT_EDITOR_KEY, None)
+    st.session_state.pop("_lint_errors", None)
 
 
 def load_test_into_editor(project_name: str, test_name: str) -> bool:
@@ -398,6 +399,16 @@ def render_pending_robot_review_panel(
 
     st.divider()
     st.subheader("Review generated Robot")
+
+    _lint = st.session_state.get("_lint_errors")
+    if _lint:
+        violations = "\n".join(f"- {e}" for e in _lint)
+        st.warning(
+            "⚠️ **This script violates enterprise automation rules:**\n\n"
+            f"{violations}\n\n"
+            "Consider asking the AI to refactor using GlobalKeywords wrappers."
+        )
+
     st.caption(
         "Edit the script if needed. "
         "**Debug Run** executes the draft locally without saving. **Discard** clears this draft."
@@ -487,6 +498,24 @@ def run_automation_pipeline(
         return
 
     effective_prompt = final_prompt.strip()
+
+    try:
+        from test_plans import build_expanded_prompt, detect_plan_intent
+
+        plan_match = detect_plan_intent(effective_prompt)
+        if plan_match:
+            level, sf_obj = plan_match
+            expanded = build_expanded_prompt(sf_obj, level)
+            if expanded:
+                effective_prompt = expanded
+                st.info(
+                    f"🧪 **{level.capitalize()} suite detected** for **{sf_obj}** — "
+                    f"generating multiple independent test cases."
+                )
+                auto_generate_data = True
+    except Exception:  # noqa: BLE001
+        pass
+
     if auto_generate_data:
         effective_prompt += _AUTO_GEN_INSTRUCTION
 
@@ -542,6 +571,15 @@ def run_automation_pipeline(
         "csv_bytes": csv_bytes,
         "user_story_id": user_story_id,
     }
+
+    try:
+        from ai_bridge import validate_generated_robot
+
+        lint_errors = validate_generated_robot(robot_code)
+        st.session_state["_lint_errors"] = lint_errors
+    except Exception:  # noqa: BLE001
+        st.session_state["_lint_errors"] = []
+
     st.success(
         "Generation complete. Code has been auto-formatted to strict standards. "
         "Review the script below, then **▶️ Debug Run** or **❌ Discard**."
@@ -632,26 +670,13 @@ def run_project_entire_suite(
         st.warning("A browser window will open shortly. Please do not close it manually.")
     run_ts = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     out_dir = _pm.get_project_path(project_name) / "Results" / run_ts
-    seeded_vars: dict[str, str] | None = None
-    teardown_list: list[dict[str, str]] = []
+    tdm_vars: dict[str, str] | None = None
     if seed_data and _HAS_WORKSPACE and _pm is not None:
         template_str = _pm.read_data_template(project_name)
         if template_str.strip() not in ("", "[]"):
-            try:
-                from app_tdm import seed_salesforce_data
-
-                sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
-                with st.spinner("🌱 Seeding prerequisite data via API…"):
-                    seeded_vars, teardown_list = seed_salesforce_data(
-                        sandbox_url, username, password, sec_tok, template_str,
-                    )
-                if seeded_vars:
-                    summary = ", ".join(f"{k}={v[:15]}…" for k, v in seeded_vars.items())
-                    st.toast(f"Seeded: {summary}")
-                    st.success(f"🌱 Injected **{len(seeded_vars)}** variable(s): {summary}")
-            except Exception as exc:  # noqa: BLE001
-                st.error(f"Data seeding failed: {exc}")
-                return
+            escaped = template_str.replace("\n", " ").replace("\r", "")
+            tdm_vars = {"PROJECT_DATA_TEMPLATE_JSON": escaped}
+            st.info("🌱 Data template will be seeded inside each test via `API Seed Project Data Template`.")
         else:
             st.warning("Seed checkbox is on but the data template is empty. Skipping.")
 
@@ -671,7 +696,7 @@ def run_project_entire_suite(
             pabot_processes=3,
             include_tags=inc_list,
             exclude_tags=exc_list,
-            variables=seeded_vars,
+            variables=tdm_vars,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
@@ -814,19 +839,7 @@ def run_project_entire_suite(
         with st.expander("Full log (copy)"):
             st.code(full_log or "(empty)", language="text")
     finally:
-        # ── Zero Data Footprint: delete seeded records ────────────────
-        if teardown_list:
-            try:
-                from app_tdm import teardown_salesforce_data
-
-                sec_tok = os.environ.get("SF_SECURITY_TOKEN", "")
-                with st.spinner("🧹 Cleaning up seeded data…"):
-                    deleted = teardown_salesforce_data(
-                        sandbox_url, username, password, sec_tok, teardown_list,
-                    )
-                st.toast(f"🧹 Cleaned up {deleted}/{len(teardown_list)} seeded record(s)!")
-            except Exception as exc:  # noqa: BLE001
-                st.warning(f"Data teardown encountered an error: {exc}")
+        pass
 
 
 def render_persisted_run_panel() -> None:

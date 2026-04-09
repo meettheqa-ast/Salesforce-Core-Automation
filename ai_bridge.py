@@ -640,6 +640,46 @@ def _call_gemini(
     return out
 
 
+_FORBIDDEN_SLEEP = re.compile(r"^\s+Sleep\s", re.MULTILINE)
+_FORBIDDEN_RAW_KW = re.compile(
+    r"^\s+(Click Element|Input Text|Wait Until Element Is Visible|Click Button|Input Password)\s",
+    re.MULTILINE,
+)
+_HAS_BEGIN_WEB_TEST = re.compile(r"Begin Web Test", re.IGNORECASE)
+_HAS_LOGIN = re.compile(r"Login To Sandbox", re.IGNORECASE)
+
+
+def validate_generated_robot(robot_source: str) -> list[str]:
+    """Check generated Robot code against Salesforce automation rules.
+
+    Returns a list of violation strings (empty if clean).
+    """
+    errors: list[str] = []
+
+    sleep_matches = _FORBIDDEN_SLEEP.findall(robot_source)
+    if sleep_matches:
+        errors.append(
+            f"**Sleep** keyword used {len(sleep_matches)}x — "
+            "forbidden per rule 2.1. Use dynamic waits instead."
+        )
+
+    raw_kw = _FORBIDDEN_RAW_KW.findall(robot_source)
+    if raw_kw:
+        unique = sorted(set(k.strip() for k in raw_kw))
+        errors.append(
+            f"Raw SeleniumLibrary keyword(s) detected: {', '.join(unique)} — "
+            "use GlobalKeywords wrappers instead (rule 1.1)."
+        )
+
+    if _HAS_BEGIN_WEB_TEST.search(robot_source) and not _HAS_LOGIN.search(robot_source):
+        errors.append(
+            "**Login To Sandbox** is missing after **Begin Web Test** — "
+            "tests must authenticate before interacting with Salesforce."
+        )
+
+    return errors
+
+
 def analyze_test_failure(test_name: str, error_message: str) -> str:
     """Ask the LLM for a plain-English root cause analysis of a failed test.
 

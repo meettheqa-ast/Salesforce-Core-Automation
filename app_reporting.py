@@ -249,7 +249,6 @@ def render_in_app_run_summary(out_dir: Path, *, key_prefix: str = "summary") -> 
                         "error": _truncate_error(tc.message),
                         "robot_code": _suite_source,
                     }
-                    st.session_state["active_tab_index"] = 0
                     st.rerun()
 
 

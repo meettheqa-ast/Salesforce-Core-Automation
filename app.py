@@ -186,54 +186,12 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             if active_proj in opts:
                 idx = opts.index(active_proj)
 
-            _proj_sel_col, _proj_cfg_col, _proj_del_col = st.columns(
-                [5, 1, 1], vertical_alignment="bottom",
+            proj_sel = st.selectbox(
+                "Active Project",
+                opts,
+                index=idx,
+                label_visibility="collapsed",
             )
-            with _proj_sel_col:
-                proj_sel = st.selectbox(
-                    "Active Project",
-                    opts,
-                    index=idx,
-                    label_visibility="collapsed",
-                )
-            _is_real_project = proj_sel and proj_sel not in ("(none — ad-hoc)", "+ Create New Project")
-            with _proj_cfg_col:
-                if _is_real_project:
-                    if st.button("⚙️", key="proj_settings_btn", help="Project Settings"):
-                        st.session_state["_show_project_settings"] = proj_sel
-                        st.rerun()
-            with _proj_del_col:
-                if _is_real_project:
-                    _proj_confirming = st.session_state.get("_confirm_delete_project") == proj_sel
-                    if not _proj_confirming:
-                        if st.button("🗑️", key="delete_proj_btn", help=f"Delete project {proj_sel}"):
-                            st.session_state["_confirm_delete_project"] = proj_sel
-                            st.rerun()
-
-            _proj_confirming = st.session_state.get("_confirm_delete_project", "")
-            if _proj_confirming and _proj_confirming == proj_sel:
-                st.warning(
-                    f"Are you sure you want to delete project **{proj_sel}**? "
-                    "All tests, data templates, results, and credentials will be permanently lost."
-                )
-                _p_yes, _p_no = st.columns(2)
-                with _p_yes:
-                    if st.button("✅ Yes, Delete Project", type="primary", key="confirm_delete_proj_btn"):
-                        _pm.delete_project(proj_sel)
-                        st.session_state["active_project"] = ""
-                        st.session_state.pop("_credentials_bound_key", None)
-                        st.session_state.pop("_confirm_delete_project", None)
-                        st.toast(f"Project **{proj_sel}** deleted.")
-                        st.rerun()
-                with _p_no:
-                    if st.button("❌ Cancel", key="cancel_delete_proj_btn"):
-                        st.session_state.pop("_confirm_delete_project", None)
-                        st.rerun()
-
-            # ── Project Settings dialog trigger ──────────────────────
-            _settings_proj = st.session_state.get("_show_project_settings", "")
-            if _settings_proj and _settings_proj == proj_sel:
-                _project_settings_dialog(_settings_proj)
 
             # ── Create New Project (reactive, no st.form) ─────────────
             if proj_sel == "+ Create New Project":
@@ -312,17 +270,7 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 cur_env = st.session_state.get("active_environment", "Dev")
                 env_idx = env_opts.index(cur_env) if cur_env in env_opts else 0
 
-                _sel_col, _trash_col = st.columns([5, 1], vertical_alignment="bottom")
-                with _sel_col:
-                    env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
-                with _trash_col:
-                    _show_trash = env_sel and env_sel != "+ Add Environment"
-                    if _show_trash:
-                        _confirming = st.session_state.get("_confirm_delete_env") == env_sel
-                        if not _confirming:
-                            if st.button("🗑️", key="delete_env_btn", help=f"Delete {env_sel}"):
-                                st.session_state["_confirm_delete_env"] = env_sel
-                                st.rerun()
+                env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="env_selectbox")
 
                 if env_sel == "+ Add Environment":
                     with st.container(border=True):
@@ -380,33 +328,6 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 else:
                     st.session_state["active_environment"] = env_sel
 
-                    _confirming = st.session_state.get("_confirm_delete_env") == env_sel
-                    if _confirming:
-                        st.warning(
-                            f"Are you sure you want to delete **{env_sel}**? "
-                            "All saved credentials for this environment will be lost."
-                        )
-                        _yes_col, _no_col = st.columns(2)
-                        with _yes_col:
-                            if st.button(
-                                "✅ Yes, Delete", type="primary",
-                                key="confirm_delete_env_btn",
-                            ):
-                                _pm.delete_environment(_active, env_sel)
-                                remaining = _pm.list_environments(_active)
-                                st.session_state["active_environment"] = (
-                                    remaining[0] if remaining else ""
-                                )
-                                st.session_state.pop("env_selectbox", None)
-                                st.session_state.pop("_credentials_bound_key", None)
-                                st.session_state.pop("_confirm_delete_env", None)
-                                st.toast(f"Environment **{env_sel}** deleted.")
-                                st.rerun()
-                        with _no_col:
-                            if st.button("❌ Cancel", key="cancel_delete_env_btn"):
-                                st.session_state.pop("_confirm_delete_env", None)
-                                st.rerun()
-
                 act_env = st.session_state.get("active_environment") or "Dev"
                 persona_list = _pm.list_personas(_active, act_env) or ["System Admin"]
                 persona_opts = persona_list + ["+ Add Persona"]
@@ -437,15 +358,6 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
     editing = st.session_state.get("edit_creds_mode", False)
     is_project_mode = bool(_active) and _HAS_WORKSPACE and _pm is not None
 
-    def _display_field(label: str, value: str, is_secret: bool = False) -> None:
-        """Render a read-only credential field with clear visual styling."""
-        st.caption(label)
-        if value.strip():
-            display = "••••••••" if is_secret else f"`{value}`"
-            st.markdown(display)
-        else:
-            st.markdown("<span style='color:#999; font-style:italic'>Not set</span>", unsafe_allow_html=True)
-
     with col_creds:
         if is_project_mode:
             st.markdown(f"**🔐 Credentials — {_env} / {_persona}**")
@@ -455,47 +367,51 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
         readonly = is_project_mode and not editing
 
         if readonly:
-            ca, cb = st.columns(2)
-            with ca:
-                _display_field("Sandbox URL", st.session_state.get("sf_sandbox_url", ""))
-            with cb:
-                _display_field("Username", st.session_state.get("sf_username", ""))
-            cc, cd = st.columns(2)
-            with cc:
-                _display_field("Password", st.session_state.get("sf_password", ""), is_secret=True)
-            with cd:
-                _display_field("Security Token", st.session_state.get("sf_security_token", ""), is_secret=True)
-        else:
-            ca, cb = st.columns(2)
-            with ca:
-                st.text_input(
-                    "Sandbox URL",
-                    placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
-                    help="Login URL for your Salesforce sandbox.",
-                    key="sf_sandbox_url",
-                )
-            with cb:
-                st.text_input(
-                    "Username",
-                    placeholder="user@example.com",
-                    key="sf_username",
-                )
-            cc, cd = st.columns(2)
-            with cc:
-                st.text_input(
-                    "Password",
-                    type="password",
-                    placeholder="••••••••",
-                    key="sf_password",
-                )
-            with cd:
-                st.text_input(
-                    "Security Token",
-                    type="password",
-                    placeholder="Optional — leave blank if IP whitelisted",
-                    help="Required for API data seeding when your IP isn't in the org's trusted range.",
-                    key="sf_security_token",
-                )
+            st.markdown(
+                "<style>"
+                "div[data-testid='stTextInput'] input:disabled {"
+                "  color: #1a1a2e !important;"
+                "  -webkit-text-fill-color: #1a1a2e !important;"
+                "  opacity: 1 !important;"
+                "}"
+                "</style>",
+                unsafe_allow_html=True,
+            )
+
+        ca, cb = st.columns(2)
+        with ca:
+            st.text_input(
+                "Sandbox URL",
+                placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                help="Login URL for your Salesforce sandbox.",
+                key="sf_sandbox_url",
+                disabled=readonly,
+            )
+        with cb:
+            st.text_input(
+                "Username",
+                placeholder="user@example.com",
+                key="sf_username",
+                disabled=readonly,
+            )
+        cc, cd = st.columns(2)
+        with cc:
+            st.text_input(
+                "Password",
+                type="password",
+                placeholder="••••••••",
+                key="sf_password",
+                disabled=readonly,
+            )
+        with cd:
+            st.text_input(
+                "Security Token",
+                type="password",
+                placeholder="Optional — leave blank if IP whitelisted",
+                help="Required for API data seeding when your IP isn't in the org's trusted range.",
+                key="sf_security_token",
+                disabled=readonly,
+            )
 
         # DEMO: Slack webhook hidden for clean demo
         # DEMO: Jira/Zephyr integration hidden for clean demo
@@ -658,6 +574,27 @@ def _render_test_builder_tab(
         help="When checked, the AI invents realistic dummy data for any required fields "
         "instead of asking you to fill in a clarification form.",
     )
+
+    # ── Quick-action: Smoke & Regression buttons ─────────────────────
+    st.caption("**Quick Actions** — auto-populate the prompt for standard test suites:")
+    _obj_col, _smoke_col, _regr_col = st.columns([2, 1, 1])
+    with _obj_col:
+        _qa_object = st.selectbox(
+            "Salesforce Object",
+            ["Lead", "Account", "Contact", "Opportunity"],
+            key="quick_action_object",
+            label_visibility="collapsed",
+        )
+    with _smoke_col:
+        if st.button("🔥 Smoke Test", key="quick_smoke_btn", use_container_width=True):
+            st.session_state["main_prompt_text"] = f"Run a smoke test for {_qa_object}s"
+            st.session_state.pop("main_prompt_text_widget", None)
+            st.rerun()
+    with _regr_col:
+        if st.button("🧪 Regression Test", key="quick_regression_btn", use_container_width=True):
+            st.session_state["main_prompt_text"] = f"Run a regression test for {_qa_object}s"
+            st.session_state.pop("main_prompt_text_widget", None)
+            st.rerun()
 
     # SIMPLIFIED: CSV uploader, image uploader, and CSV preview hidden for clean flow
     # csv_col, img_col = st.columns(2)
@@ -1261,30 +1198,8 @@ def main_ui() -> None:
     with st.expander("⚙️ Workspace & Credentials", expanded=True):
         active_proj, sandbox_url, username, password = _render_workspace_header()
 
-    # ── Three-tab command center ──────────────────────────────────────────
-    _TAB_NAMES = ["🏗️ Test Architect", "🚀 Release Manager", "🧪 Data Templates", "📊 Analytics"]
-    _switch_idx = st.session_state.pop("active_tab_index", None)
-
-    tab_builder, tab_exec, tab_data, tab_analytics = st.tabs(_TAB_NAMES)
-
-    if _switch_idx is not None and 0 <= _switch_idx < len(_TAB_NAMES):
-        target_label = _TAB_NAMES[_switch_idx]
-        st.markdown(
-            f"""<script>
-            const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-            tabs.forEach(t => {{ if (t.textContent.includes("{target_label.split(' ', 1)[-1]}")) t.click(); }});
-            </script>""",
-            unsafe_allow_html=True,
-        )
-
-    with tab_builder:
-        _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
-    with tab_exec:
-        _render_suite_execution_tab(sandbox_url, username, password, headless, active_proj)
-    with tab_data:
-        _render_data_templates_tab(active_proj)
-    with tab_analytics:
-        render_project_analytics_dashboard(active_proj)
+    # ── Single-page Test Architect ────────────────────────────────────────
+    _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
 
 
 main_ui()

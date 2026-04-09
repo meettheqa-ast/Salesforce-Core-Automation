@@ -36,8 +36,53 @@ API Seed Contact
     ${id}=    API Create Record    Contact    LastName=${LastName}    &{extra_fields}
     RETURN    ${id}
 
+API Seed Opportunity
+    [Documentation]    Create an Opportunity via the REST API and return its record ID.
+    ...                At minimum ``Name``, ``StageName``, and ``CloseDate`` are required.
+    [Tags]    api    data-seeding
+    [Arguments]    ${Name}    ${StageName}    ${CloseDate}    &{extra_fields}
+    ${id}=    API Create Record    Opportunity    Name=${Name}    StageName=${StageName}    CloseDate=${CloseDate}    &{extra_fields}
+    RETURN    ${id}
+
 API Cleanup Record
     [Documentation]    Delete a record by SObject name and ID. Wrapper around ``API Delete Record``.
     [Tags]    api    data-seeding    teardown
     [Arguments]    ${object_name}    ${record_id}
     API Delete Record    ${object_name}    ${record_id}
+
+API Seed Project Data Template
+    [Documentation]    Parse a JSON template string, create each record via the API,
+    ...                and expose the resulting IDs as TEST-scoped variables.
+    ...                Also stores a teardown list in ``@{_TDM_TEARDOWN}`` for cleanup.
+    [Tags]    api    data-seeding    tdm
+    [Arguments]    ${template_json_string}
+    ${items}=    Evaluate    json.loads(r'''${template_json_string}''')    json
+    @{teardown}=    Create List
+    FOR    ${item}    IN    @{items}
+        ${obj}=    Set Variable    ${item}[object]
+        ${var}=    Set Variable    ${item}[var_name]
+        ${fields}=    Set Variable    ${item}[fields]
+        ${id}=    API Create Record    ${obj}    &{fields}
+        Set Test Variable    ${${var}}    ${id}
+        ${entry}=    Create Dictionary    object=${obj}    id=${id}
+        Append To List    ${teardown}    ${entry}
+    END
+    Set Test Variable    @{_TDM_TEARDOWN}    @{teardown}
+    Log    Seeded ${items.__len__()} record(s) from project data template.    INFO
+    RETURN    @{teardown}
+
+API Teardown Seeded Records
+    [Documentation]    Delete all records tracked in ``@{_TDM_TEARDOWN}`` (reverse order).
+    ...                Safe to call even if no records were seeded.
+    [Tags]    api    data-seeding    teardown    tdm
+    ${exists}=    Run Keyword And Return Status    Variable Should Exist    @{_TDM_TEARDOWN}
+    IF    not $exists    RETURN
+    ${reversed}=    Evaluate    list(reversed(${{_TDM_TEARDOWN}}))
+    FOR    ${entry}    IN    @{reversed}
+        TRY
+            API Delete Record    ${entry}[object]    ${entry}[id]
+            Log    Deleted ${entry}[object] ${entry}[id]    INFO
+        EXCEPT    AS    ${err}
+            Log    Teardown failed for ${entry}[object] ${entry}[id]: ${err}    WARN
+        END
+    END

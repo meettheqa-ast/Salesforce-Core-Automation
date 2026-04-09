@@ -18,20 +18,20 @@ ${leadTitle}=                               Test Lead
 ${leadEmail}=                               ${{FakerLibrary.FakerLibrary().email()}}
 ${leadSourceOption}=                        Advertisement
 
-# Convert lead to opportunity test data
-${leadConvertedStatusOption}=               Qualified
+# Convert lead to opportunity test data (empty = use first valid option in org)
+${leadConvertedStatusOption}=               ${EMPTY}
 
 # Opportunity Test Data
 ${opportunityAccountName}=                  SUN CITY PLANT
-${opportunityName}=                         ${opportunityAccountName}-Opportunity-${{FakerLibrary.FakerLibrary().password(length=10, special_chars=False, digits=True, upper_case=False, lower_case=False)}}
+${opportunityName}=                         ${opportunityAccountName}-Opp-${{FakerLibrary.FakerLibrary().password(length=8, special_chars=False, digits=True, upper_case=False, lower_case=False)}}
 ${opportunityForecastCategoryOption}=       Pipeline
 ${opportunityNextStep}=                     Test Step
 ${opportunityAmount}=                       100
-${opportunityCloseDate}=                    12/05/2024
+${opportunityCloseDate}=                    ${{(__import__('datetime').date.today() + __import__('datetime').timedelta(days=30)).strftime('%m/%d/%Y')}}
 ${opportunityStageOption}=                  Proposal
 ${opportunityType}=                         New Business
 ${opportunityLeadSource}=                   Customer Event
-${opportunityDescription}=                  Test Description
+${opportunityDescription}=                  Auto-generated test opportunity
 
 # App display name as it appears in the Salesforce app launcher (e.g. Mark Anthony Group)
 ${salesAutomationAppName}=                  Sales
