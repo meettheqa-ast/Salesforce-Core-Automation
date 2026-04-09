@@ -127,20 +127,22 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
 
     # ── Column 1: Project / Environment / Persona selectors ───────────
     with col_proj:
-        _lbl_col, _sync_col = st.columns([3, 1])
-        _lbl_col.markdown("**🗂️ Project**")
-        if _sync_col.button("🔄 Sync", key="sync_workspace_btn", help="Pull latest from remote"):
-            try:
-                from app_git import sync_local_workspace
-
-                _repo_root = Path(__file__).resolve().parent
-                if sync_local_workspace(_repo_root):
-                    st.success("Workspace synced with remote! ☁️")
-                    st.rerun()
-                else:
-                    st.warning("Sync failed — check that a Git remote is configured and accessible.")
-            except Exception as _exc:  # noqa: BLE001
-                st.warning(f"Could not sync workspace: {_exc}")
+        # DEMO: Git Sync button hidden for clean demo
+        # _lbl_col, _sync_col = st.columns([3, 1])
+        # _lbl_col.markdown("**🗂️ Project**")
+        # if _sync_col.button("🔄 Sync", key="sync_workspace_btn", help="Pull latest from remote"):
+        #     try:
+        #         from app_git import sync_local_workspace
+        #
+        #         _repo_root = Path(__file__).resolve().parent
+        #         if sync_local_workspace(_repo_root):
+        #             st.success("Workspace synced with remote! ☁️")
+        #             st.rerun()
+        #         else:
+        #             st.warning("Sync failed — check that a Git remote is configured and accessible.")
+        #     except Exception as _exc:  # noqa: BLE001
+        #         st.warning(f"Could not sync workspace: {_exc}")
+        st.markdown("**🗂️ Project**")
         if _HAS_WORKSPACE and _pm is not None:
             active_proj = st.session_state.get("active_project", "")
             all_projs = _pm.list_projects()
@@ -345,39 +347,41 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 key="sf_security_token",
                 disabled=readonly,
             )
-        st.text_input(
-            "Slack Webhook URL (Optional)",
-            placeholder="https://hooks.slack.com/services/T.../B.../...",
-            help="Incoming Webhook URL. Suite run summaries will be posted to this channel automatically.",
-            key="slack_webhook_url",
-            disabled=readonly,
-        )
+        # DEMO: Slack webhook hidden for clean demo
+        # st.text_input(
+        #     "Slack Webhook URL (Optional)",
+        #     placeholder="https://hooks.slack.com/services/T.../B.../...",
+        #     help="Incoming Webhook URL. Suite run summaries will be posted to this channel automatically.",
+        #     key="slack_webhook_url",
+        #     disabled=readonly,
+        # )
 
-        if is_project_mode:
-            st.markdown("**📋 Jira / Zephyr Integration (Optional)**")
-            ja, jb = st.columns(2)
-            with ja:
-                st.text_input(
-                    "Jira Base URL",
-                    placeholder="https://yourorg.atlassian.net",
-                    key="jira_base_url",
-                    disabled=readonly,
-                )
-            with jb:
-                st.text_input(
-                    "Jira Project Key",
-                    placeholder="e.g. QA or SFDC",
-                    key="jira_project_key",
-                    disabled=readonly,
-                )
-            st.text_input(
-                "Jira API Token",
-                type="password",
-                placeholder="Atlassian API token or PAT",
-                help="Used to push Pass/Fail results to Zephyr Scale or Jira comments after suite runs.",
-                key="jira_api_token",
-                disabled=readonly,
-            )
+        # DEMO: Jira/Zephyr integration hidden for clean demo
+        # if is_project_mode:
+        #     st.markdown("**📋 Jira / Zephyr Integration (Optional)**")
+        #     ja, jb = st.columns(2)
+        #     with ja:
+        #         st.text_input(
+        #             "Jira Base URL",
+        #             placeholder="https://yourorg.atlassian.net",
+        #             key="jira_base_url",
+        #             disabled=readonly,
+        #         )
+        #     with jb:
+        #         st.text_input(
+        #             "Jira Project Key",
+        #             placeholder="e.g. QA or SFDC",
+        #             key="jira_project_key",
+        #             disabled=readonly,
+        #         )
+        #     st.text_input(
+        #         "Jira API Token",
+        #         type="password",
+        #         placeholder="Atlassian API token or PAT",
+        #         help="Used to push Pass/Fail results to Zephyr Scale or Jira comments after suite runs.",
+        #         key="jira_api_token",
+        #         disabled=readonly,
+        #     )
 
         # ── Action buttons ────────────────────────────────────────────
         if is_project_mode:
@@ -475,13 +479,15 @@ def _render_test_builder_tab(
             help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
         )
 
-    user_story_id = st.text_input(
-        "🎫 User Story / Ticket ID (Optional)",
-        placeholder="e.g., US-1234",
-        help="Links the generated test to a requirement. "
-        "The tag is injected into the .robot [Tags] section and the file is committed to a feature branch.",
-        key="user_story_id_input",
-    )
+    # DEMO: User Story / Git integration hidden for clean demo
+    # user_story_id = st.text_input(
+    #     "🎫 User Story / Ticket ID (Optional)",
+    #     placeholder="e.g., US-1234",
+    #     help="Links the generated test to a requirement. "
+    #     "The tag is injected into the .robot [Tags] section and the file is committed to a feature branch.",
+    #     key="user_story_id_input",
+    # )
+    user_story_id = ""
 
     def _update_prompt() -> None:
         st.session_state["main_prompt_text"] = st.session_state.main_prompt_text_widget

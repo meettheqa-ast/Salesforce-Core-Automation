@@ -324,22 +324,23 @@ def commit_pending_test() -> None:
         st.warning(f"Could not save to project: {exc}")
         return
 
-    if user_story_id:
-        try:
-            from app_git import commit_test_to_branch, push_branch_to_remote
-
-            ok = commit_test_to_branch(
-                ROOT, str(proj_robot), user_story_id, test_name,
-            )
-            if ok:
-                branch = f"feature/{user_story_id}"
-                pushed = push_branch_to_remote(ROOT, branch)
-                if pushed:
-                    st.toast(f"Committed and pushed to remote branch: {branch} ☁️")
-                else:
-                    st.toast(f"Committed to local branch: {branch} 🌿 (push skipped — no remote or auth issue)")
-        except Exception:  # noqa: BLE001
-            pass
+    # DEMO: Git commit/push hidden for clean demo
+    # if user_story_id:
+    #     try:
+    #         from app_git import commit_test_to_branch, push_branch_to_remote
+    #
+    #         ok = commit_test_to_branch(
+    #             ROOT, str(proj_robot), user_story_id, test_name,
+    #         )
+    #         if ok:
+    #             branch = f"feature/{user_story_id}"
+    #             pushed = push_branch_to_remote(ROOT, branch)
+    #             if pushed:
+    #                 st.toast(f"Committed and pushed to remote branch: {branch} ☁️")
+    #             else:
+    #                 st.toast(f"Committed to local branch: {branch} 🌿 (push skipped — no remote or auth issue)")
+    #     except Exception:  # noqa: BLE001
+    #         pass
 
     clear_pending_generation()
     st.rerun()
@@ -742,54 +743,54 @@ def run_project_entire_suite(
                 key="download_project_suite_report",
             )
 
-        # ── Slack notification ────────────────────────────────────────
-        slack_url = st.session_state.get("slack_webhook_url", "").strip()
-        if slack_url:
-            xml_path = out_dir / "output.xml"
-            total, n_pass, n_fail, elapsed = 0, 0, 0, "N/A"
-            if xml_path.is_file():
-                try:
-                    from robot.api import ExecutionResult
+        # DEMO: Slack notification hidden for clean demo
+        # slack_url = st.session_state.get("slack_webhook_url", "").strip()
+        # if slack_url:
+        #     xml_path = out_dir / "output.xml"
+        #     total, n_pass, n_fail, elapsed = 0, 0, 0, "N/A"
+        #     if xml_path.is_file():
+        #         try:
+        #             from robot.api import ExecutionResult
+        #
+        #             result = ExecutionResult(str(xml_path))
+        #             stats = result.statistics.total.all
+        #             n_pass = stats.passed
+        #             n_fail = stats.failed
+        #             total = n_pass + n_fail
+        #             elapsed_ms = result.suite.elapsed_time.total_seconds()
+        #             elapsed = f"{elapsed_ms:.1f}s"
+        #         except Exception:  # noqa: BLE001
+        #             total = len(robot_files)
+        #             elapsed = "unknown"
+        #     ok = send_slack_notification(
+        #         slack_url, project_name, total, n_pass, n_fail, elapsed,
+        #     )
+        #     if ok:
+        #         st.toast("Slack notification sent!")
+        #     else:
+        #         st.warning("Could not deliver Slack notification — check the webhook URL.")
 
-                    result = ExecutionResult(str(xml_path))
-                    stats = result.statistics.total.all
-                    n_pass = stats.passed
-                    n_fail = stats.failed
-                    total = n_pass + n_fail
-                    elapsed_ms = result.suite.elapsed_time.total_seconds()
-                    elapsed = f"{elapsed_ms:.1f}s"
-                except Exception:  # noqa: BLE001
-                    total = len(robot_files)
-                    elapsed = "unknown"
-            ok = send_slack_notification(
-                slack_url, project_name, total, n_pass, n_fail, elapsed,
-            )
-            if ok:
-                st.toast("Slack notification sent!")
-            else:
-                st.warning("Could not deliver Slack notification — check the webhook URL.")
-
-        # ── Jira / Zephyr sync ────────────────────────────────────────
-        jira_url = st.session_state.get("jira_base_url", "").strip()
-        jira_token = st.session_state.get("jira_api_token", "").strip()
-        jira_key = st.session_state.get("jira_project_key", "").strip()
-        if jira_url and jira_token and jira_key:
-            xml_zephyr = out_dir / "output.xml"
-            if xml_zephyr.is_file():
-                try:
-                    from app_reporting import publish_results_to_zephyr
-
-                    act_env = st.session_state.get("active_environment", "Dev")
-                    with st.spinner("📊 Syncing results to Jira/Zephyr…"):
-                        sync_count = publish_results_to_zephyr(
-                            xml_zephyr, jira_url, jira_token, jira_key, act_env,
-                        )
-                    if sync_count:
-                        st.toast(f"Synced {sync_count} result(s) to Jira/Zephyr! 📊")
-                    else:
-                        st.caption("No tagged test cases (US-/TC-) found to sync to Jira.")
-                except Exception as exc:  # noqa: BLE001
-                    st.warning(f"Jira/Zephyr sync error: {exc}")
+        # DEMO: Jira / Zephyr sync hidden for clean demo
+        # jira_url = st.session_state.get("jira_base_url", "").strip()
+        # jira_token = st.session_state.get("jira_api_token", "").strip()
+        # jira_key = st.session_state.get("jira_project_key", "").strip()
+        # if jira_url and jira_token and jira_key:
+        #     xml_zephyr = out_dir / "output.xml"
+        #     if xml_zephyr.is_file():
+        #         try:
+        #             from app_reporting import publish_results_to_zephyr
+        #
+        #             act_env = st.session_state.get("active_environment", "Dev")
+        #             with st.spinner("📊 Syncing results to Jira/Zephyr…"):
+        #                 sync_count = publish_results_to_zephyr(
+        #                     xml_zephyr, jira_url, jira_token, jira_key, act_env,
+        #                 )
+        #             if sync_count:
+        #                 st.toast(f"Synced {sync_count} result(s) to Jira/Zephyr! 📊")
+        #             else:
+        #                 st.caption("No tagged test cases (US-/TC-) found to sync to Jira.")
+        #         except Exception as exc:  # noqa: BLE001
+        #             st.warning(f"Jira/Zephyr sync error: {exc}")
 
         with st.expander("Full log (copy)"):
             st.code(full_log or "(empty)", language="text")
