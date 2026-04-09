@@ -316,6 +316,7 @@ def save_test_to_project(
             "Set overwrite=True to replace it."
         )
 
+    robot_code = robot_code.replace("../../Resources/", "../../../Resources/")
     robot_path.write_text(robot_code, encoding="utf-8")
 
     if csv_bytes and csv_bytes.strip():

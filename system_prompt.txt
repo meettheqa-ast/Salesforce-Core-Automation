@@ -230,6 +230,18 @@ keywords) is:
 Always verify each keyword exists in `keyword_catalog.json` before emitting it.
 
 
+EDITING / UPDATING RECORDS (CRITICAL)
+-------------------------------------
+If the user asks to update, edit, or change an existing record, DO NOT look for a
+specific Page Object keyword like "Update Lead Name". Instead, use the generic UI
+interaction pattern:
+1. GlobalKeywords.Perform Action On Record Details Page Header    <Object>    Edit
+2. GlobalKeywords.Enter Text With Fallback    <Field Label>    <New Value>
+3. GlobalKeywords.Attempt Save And Auto-Heal Missing Fields
+
+Do not skip update steps. Use this generic pattern for any field update.
+
+
 EXAMPLE — Natural language to generated suite
 ---------------------------------------------
 User request (natural language):

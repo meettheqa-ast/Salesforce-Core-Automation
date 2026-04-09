@@ -477,6 +477,7 @@ def _render_test_builder_tab(
             value=test_target_name,
             placeholder="e.g. B2B_Lead_Creation",
             help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
+            key="test_target_name_input",
         )
 
     # DEMO: User Story / Git integration hidden for clean demo

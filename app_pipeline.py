@@ -292,13 +292,13 @@ def commit_pending_test() -> None:
         st.error("Generated script is empty.")
         return
 
-    project_name = ctx.get("project_name")
-    test_name = ctx.get("test_name")
+    project_name = st.session_state.get("active_project") or ctx.get("project_name")
+    test_name = st.session_state.get("test_target_name_input") or ctx.get("test_name")
     overwrite = ctx.get("overwrite", True)
     csv_bytes = ctx.get("csv_bytes")
     user_story_id = ctx.get("user_story_id", "")
 
-    if not project_name or not test_name:
+    if not project_name or not str(test_name or "").strip():
         st.error("A project and test name are required to save. Set them above the prompt.")
         return
     if not _HAS_WORKSPACE or _pm is None:
