@@ -99,12 +99,12 @@ def render_report_log_actions(
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         if report_path and report_path.is_file():
-            if st.button(
+            _report_uri = report_path.resolve().as_uri()
+            st.link_button(
                 "📄 Open Report",
-                key=f"{key_prefix}_report",
-                help="Opens report.html in your default browser.",
-            ):
-                open_local_path(report_path)
+                url=_report_uri,
+                help="Opens report.html in a new browser tab.",
+            )
             st.download_button(
                 "⬇️ Download Report",
                 data=report_path.read_bytes(),
@@ -116,12 +116,12 @@ def render_report_log_actions(
             st.caption("report.html not found.")
     with col_b:
         if log_path and log_path.is_file():
-            if st.button(
+            _log_uri = log_path.resolve().as_uri()
+            st.link_button(
                 "📄 Open Log",
-                key=f"{key_prefix}_log",
-                help="Opens log.html in your default browser.",
-            ):
-                open_local_path(log_path)
+                url=_log_uri,
+                help="Opens log.html in a new browser tab.",
+            )
             st.download_button(
                 "⬇️ Download Log",
                 data=log_path.read_bytes(),
@@ -410,8 +410,8 @@ def render_pending_robot_review_panel(
         )
 
     st.caption(
-        "Edit the script if needed. "
-        "**Debug Run** executes the draft locally without saving. **Discard** clears this draft."
+        "Review and edit the script if needed. "
+        "Click **▶️ Run** to execute, or **❌ Discard** to clear and start over."
     )
     st.text_area(
         "Generated `.robot`",
@@ -419,14 +419,9 @@ def render_pending_robot_review_panel(
         key=PENDING_ROBOT_EDITOR_KEY,
         help="Robot Framework syntax. Fix locators or variables before running.",
     )
-    # DEMO: hidden to prevent errors during execution
-    # c1, c2, c3 = st.columns(3)
-    # with c1:
-    #     if st.button("💾 Save & Commit", type="primary", key="pending_commit_btn"):
-    #         commit_pending_test()
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("▶️ Debug Run (Local)", key="pending_debug_btn"):
+        if st.button("▶️ Run", type="primary", key="pending_run_btn"):
             if not sandbox_url.strip() or not username.strip() or not password.strip():
                 st.error("Please fill in Sandbox URL, Username, and Password.")
                 return
@@ -504,12 +499,13 @@ def run_automation_pipeline(
 
         plan_match = detect_plan_intent(effective_prompt)
         if plan_match:
-            level, sf_obj = plan_match
-            expanded = build_expanded_prompt(sf_obj, level)
+            level, sf_objects = plan_match
+            expanded = build_expanded_prompt(sf_objects, level)
             if expanded:
                 effective_prompt = expanded
+                obj_list = ", ".join(sf_objects)
                 st.info(
-                    f"🧪 **{level.capitalize()} suite detected** for **{sf_obj}** — "
+                    f"🧪 **{level.capitalize()} suite detected** for **{obj_list}** — "
                     f"generating multiple independent test cases."
                 )
                 auto_generate_data = True
@@ -582,7 +578,7 @@ def run_automation_pipeline(
 
     st.success(
         "Generation complete. Code has been auto-formatted to strict standards. "
-        "Review the script below, then **▶️ Debug Run** or **❌ Discard**."
+        "Review the script below, then click **▶️ Run** to execute or **❌ Discard** to start over."
     )
 
 

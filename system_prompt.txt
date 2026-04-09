@@ -293,6 +293,14 @@ interaction pattern:
 
 Do not skip update steps. Use this generic pattern for any field update.
 
+POST-UPDATE VERIFICATION (CRITICAL):
+After updating a record's fields, NEVER call the original "Verify Created
+Successfully" keyword (e.g. SalesPO.Verify Lead Created Successfully) because
+it checks the ORIGINAL variable values which are now stale. Instead, verify
+the updated values directly:
+    Page Should Contain    <New Value>
+    GlobalKeywords.Verify Record Creation With Data    <Object>    <Field>    <New Value>
+
 
 EXAMPLE — Natural language to generated suite
 ---------------------------------------------

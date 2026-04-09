@@ -503,8 +503,7 @@ def _render_test_builder_tab(
             "Please analyze the Robot Framework code and provide a self-healing fix. "
             "Focus on fixing broken locators, missing waits, or incorrect keyword usage."
         )
-        st.session_state["main_prompt_text"] = repair_prompt
-        st.session_state.pop("main_prompt_text_widget", None)
+        st.session_state["_pending_prompt"] = repair_prompt
 
         st.success(f"🔧 **Repair mode active** — loaded failing test **{test_name}** into the editor.")
 
@@ -551,22 +550,38 @@ def _render_test_builder_tab(
     # )
     user_story_id = ""
 
-    def _update_prompt() -> None:
-        st.session_state["main_prompt_text"] = st.session_state.main_prompt_text_widget
+    # ── Quick-action: Smoke & Regression buttons ─────────────────────
+    _smoke_col, _regr_col = st.columns(2)
+    with _smoke_col:
+        if st.button("🔥 Run Smoke Test", key="quick_smoke_btn", use_container_width=True):
+            st.session_state["_pending_prompt"] = (
+                "Run a smoke test for Leads, Accounts, Contacts, and Opportunities"
+            )
+            st.rerun()
+    with _regr_col:
+        if st.button("🧪 Run Regression Test", key="quick_regression_btn", use_container_width=True):
+            st.session_state["_pending_prompt"] = (
+                "Run a regression test for Leads, Accounts, Contacts, and Opportunities"
+            )
+            st.rerun()
+
+    if st.session_state.get("_pending_prompt"):
+        st.session_state["main_prompt"] = st.session_state.pop("_pending_prompt")
+    if "main_prompt" not in st.session_state:
+        st.session_state["main_prompt"] = ""
 
     prompt = st.text_area(
         "Describe your test in plain English",
-        value=st.session_state.get("main_prompt_text", ""),
         height=160,
         placeholder='e.g. "Verify I can create an Account named Acme Corp and then delete it"',
         help="Natural-language description of what the test should do.",
-        key="main_prompt_text_widget",
-        on_change=_update_prompt,
+        key="main_prompt",
     )
 
     def _clear_prompt() -> None:
-        st.session_state["main_prompt_text"] = ""
-        st.session_state.pop("main_prompt_text_widget", None)
+        st.session_state["_pending_prompt"] = ""
+
+    st.button("🧹 Clear Prompt", key="clear_prompt_btn", on_click=_clear_prompt)
 
     auto_gen = st.checkbox(
         "🎲 Auto-generate missing test data (AI/Faker)",
@@ -574,27 +589,6 @@ def _render_test_builder_tab(
         help="When checked, the AI invents realistic dummy data for any required fields "
         "instead of asking you to fill in a clarification form.",
     )
-
-    # ── Quick-action: Smoke & Regression buttons ─────────────────────
-    st.caption("**Quick Actions** — auto-populate the prompt for standard test suites:")
-    _obj_col, _smoke_col, _regr_col = st.columns([2, 1, 1])
-    with _obj_col:
-        _qa_object = st.selectbox(
-            "Salesforce Object",
-            ["Lead", "Account", "Contact", "Opportunity"],
-            key="quick_action_object",
-            label_visibility="collapsed",
-        )
-    with _smoke_col:
-        if st.button("🔥 Smoke Test", key="quick_smoke_btn", use_container_width=True):
-            st.session_state["main_prompt_text"] = f"Run a smoke test for {_qa_object}s"
-            st.session_state.pop("main_prompt_text_widget", None)
-            st.rerun()
-    with _regr_col:
-        if st.button("🧪 Regression Test", key="quick_regression_btn", use_container_width=True):
-            st.session_state["main_prompt_text"] = f"Run a regression test for {_qa_object}s"
-            st.session_state.pop("main_prompt_text_widget", None)
-            st.rerun()
 
     # SIMPLIFIED: CSV uploader, image uploader, and CSV preview hidden for clean flow
     # csv_col, img_col = st.columns(2)
@@ -638,16 +632,9 @@ def _render_test_builder_tab(
             if not st.checkbox("Yes, overwrite the existing test script"):
                 overwrite_ok = False
 
-    btn_run_col, btn_clear_col = st.columns([3, 1])
-    with btn_run_col:
-        run_clicked = st.button(
-            "🚀 Generate & Run", type="primary", use_container_width=True,
-        )
-    with btn_clear_col:
-        st.button(
-            "🧹 Clear", key="clear_prompt_btn", on_click=_clear_prompt,
-            use_container_width=True,
-        )
+    run_clicked = st.button(
+        "🚀 Generate Script", type="primary", use_container_width=True,
+    )
 
     if run_clicked:
         try:
@@ -668,7 +655,15 @@ def _render_test_builder_tab(
         is_smoke = False
         final_prompt_txt = prompt.strip()
 
-        if _HAS_SMOKE and _detect_smoke_fn is not None and _smoke_prompt_fn is not None:
+        _is_test_plan = False
+        try:
+            from test_plans import detect_plan_intent
+            if detect_plan_intent(final_prompt_txt):
+                _is_test_plan = True
+        except Exception:  # noqa: BLE001
+            pass
+
+        if not _is_test_plan and _HAS_SMOKE and _detect_smoke_fn is not None and _smoke_prompt_fn is not None:
             smoke_ctx = _detect_smoke_fn(final_prompt_txt)
             if smoke_ctx:
                 is_smoke = True
@@ -897,17 +892,17 @@ def _render_suite_execution_tab(
                 st.caption("Sets the prompt in **Test Builder** — switch there to review & run.")
                 s1, s2 = st.columns(2)
                 if s1.button("Lead", use_container_width=True, key="smoke_lead_btn"):
-                    st.session_state["main_prompt_text"] = "Run full smoke test for Lead lifecycle"
+                    st.session_state["_pending_prompt"] = "Run full smoke test for Lead lifecycle"
                     st.rerun()
                 if s2.button("Account", use_container_width=True, key="smoke_account_btn"):
-                    st.session_state["main_prompt_text"] = "Run full smoke test for Account lifecycle"
+                    st.session_state["_pending_prompt"] = "Run full smoke test for Account lifecycle"
                     st.rerun()
                 s3, s4 = st.columns(2)
                 if s3.button("Contact", use_container_width=True, key="smoke_contact_btn"):
-                    st.session_state["main_prompt_text"] = "Run full smoke test for Contact lifecycle"
+                    st.session_state["_pending_prompt"] = "Run full smoke test for Contact lifecycle"
                     st.rerun()
                 if s4.button("Opportunity", use_container_width=True, key="smoke_opp_btn"):
-                    st.session_state["main_prompt_text"] = "Run full smoke test for Opportunity lifecycle"
+                    st.session_state["_pending_prompt"] = "Run full smoke test for Opportunity lifecycle"
                     st.rerun()
 
     # ── Column 2: Saved Tests Inventory ───────────────────────────────────

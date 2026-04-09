@@ -111,10 +111,10 @@ _OBJECT_RE = re.compile(
 )
 
 
-def detect_plan_intent(prompt: str) -> tuple[str, str] | None:
-    """Detect if *prompt* requests a smoke or regression suite for a core object.
+def detect_plan_intent(prompt: str) -> tuple[str, list[str]] | None:
+    """Detect if *prompt* requests a smoke or regression suite for core objects.
 
-    Returns ``(level, object_name)`` or ``None`` if not a plan-style request.
+    Returns ``(level, [object_names])`` or ``None`` if not a plan-style request.
     """
     level = ""
     if _REGRESSION_RE.search(prompt):
@@ -124,28 +124,40 @@ def detect_plan_intent(prompt: str) -> tuple[str, str] | None:
     if not level:
         return None
 
-    obj_match = _OBJECT_RE.search(prompt)
-    if not obj_match:
+    obj_matches = _OBJECT_RE.findall(prompt)
+    if not obj_matches:
         return None
 
-    obj = obj_match.group(1).capitalize()
-    if obj not in _OBJECTS:
+    objects = []
+    seen: set[str] = set()
+    for m in obj_matches:
+        cap = m.capitalize()
+        if cap in _OBJECTS and cap not in seen:
+            objects.append(cap)
+            seen.add(cap)
+    if not objects:
         return None
-    return level, obj
+    return level, objects
 
 
-def build_expanded_prompt(sf_object: str, level: str = "smoke") -> str:
+def build_expanded_prompt(sf_objects: list[str], level: str = "smoke") -> str:
     """Build the full LLM prompt that instructs multi-test-case generation."""
-    scenarios = get_plan(sf_object, level)
-    if not scenarios:
+    all_scenarios: list[str] = []
+    for obj in sf_objects:
+        scenarios = get_plan(obj, level)
+        for s in scenarios:
+            all_scenarios.append(f"[{obj}] {s}")
+
+    if not all_scenarios:
         return ""
 
     label = level.capitalize()
-    numbered = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(scenarios))
+    numbered = "\n".join(f"  {i+1}. {s}" for i, s in enumerate(all_scenarios))
+    obj_list = ", ".join(sf_objects)
 
     return (
         f"Generate a SINGLE .robot file containing MULTIPLE *** Test Cases *** "
-        f"for a {label} Test Suite targeting Salesforce **{sf_object}** records.\n\n"
+        f"for a {label} Test Suite targeting Salesforce **{obj_list}** records.\n\n"
         f"Here are the exact scenarios to implement as SEPARATE, INDEPENDENT test cases:\n\n"
         f"{numbered}\n\n"
         f"CRITICAL RULES FOR THIS MULTI-TEST SUITE:\n"
@@ -153,8 +165,9 @@ def build_expanded_prompt(sf_object: str, level: str = "smoke") -> str:
         f"- Use Test Setup  Begin Web Test  and  Test Teardown  End Web Test  at the *** Settings *** level.\n"
         f"- Each test case MUST call GlobalKeywords.Login To Sandbox as its first step.\n"
         f"- For tests that need an existing record (update, delete, convert), use API data seeding "
-        f"(API Seed {sf_object} from GlobalApi.robot) in the test's first step to create the prerequisite, "
-        f"then clean it up with API Cleanup Record in the test's [Teardown] if the test didn't already delete it.\n"
-        f"- Name each test case descriptively: '{label} - Create {sf_object}', '{label} - Update {sf_object} Phone', etc.\n"
-        f"- Tag every test case with: {level}    {sf_object.lower()}\n"
+        f"(API Seed Lead / API Seed Account / etc. from GlobalApi.robot) in the test's first step "
+        f"to create the prerequisite, then clean it up with API Cleanup Record in the test's "
+        f"[Teardown] if the test didn't already delete it.\n"
+        f"- Name each test case descriptively: '{label} - Create Lead', '{label} - Update Account Phone', etc.\n"
+        f"- Tag every test case with: {level}    <object_name_lowercase>\n"
     )
