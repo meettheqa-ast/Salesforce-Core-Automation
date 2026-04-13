@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-13T19:06:27.036074+00:00",
+  "generated_at": "2026-04-13T19:25:07.734012+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
@@ -1128,9 +1128,9 @@
       "arguments": [
         "${dialogName}"
       ],
-      "documentation": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
+      "documentation": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Dismisses overlays, scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
       "documentation_source": "author",
-      "natural_language_summary": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Waits out list spinners and the ``forceChangeRecordType`` overlay (ESC + dynamic wait), scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
+      "natural_language_summary": "Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Dismisses overlays, scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.",
       "inferred_description": null,
       "tags": [
         "modal",
@@ -1235,9 +1235,9 @@
       "arguments": [
         "${dropdownFieldArg}"
       ],
-      "documentation": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls the control into view (Selenium + JS centering), refuses **disabled** / **aria-disabled** controls, then JS-clicks to open the list.",
+      "documentation": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls into view via JS, checks disabled state, then JS-clicks to open the list.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls the control into view (Selenium + JS centering), refuses **disabled** / **aria-disabled** controls, then JS-clicks to open the list.",
+      "natural_language_summary": "Opens a picklist/combobox in the modal. Tries ``aria-label`` primary locator first (faster, resilient per §1.1), then falls back to the full XPath union. Scrolls into view via JS, checks disabled state, then JS-clicks to open the list.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -1791,9 +1791,9 @@
       "arguments": [
         "@{locators}"
       ],
-      "documentation": "Tries each locator in order and returns the first one where the element is present on the page within a short timeout. Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns. Use this to implement tiered locator strategies (§1.1) where CSS / ``aria-label`` locators are preferred but a heavier XPath fallback must remain available.",
+      "documentation": "Tries each locator in order and returns the first one where the element is present on the page. Uses a short 0.5s probe per tier (CSS/aria locators resolve near-instantly when present). Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns.",
       "documentation_source": "author",
-      "natural_language_summary": "Tries each locator in order and returns the first one where the element is present on the page within a short timeout. Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns. Use this to implement tiered locator strategies (§1.1) where CSS / ``aria-label`` locators are preferred but a heavier XPath fallback must remain available.",
+      "natural_language_summary": "Tries each locator in order and returns the first one where the element is present on the page. Uses a short 0.5s probe per tier (CSS/aria locators resolve near-instantly when present). Falls back to the **last** locator so the caller always gets a usable value for subsequent ``Wait Until`` patterns.",
       "inferred_description": null,
       "tags": [
         "utilities",
@@ -1804,11 +1804,11 @@
     {
       "keyword_name": "Wait For Lightning Spinners Absent",
       "arguments": [
-        "${timeout}=30s"
+        "${timeout}=15s"
       ],
-      "documentation": "Waits until standard Salesforce Lightning spinners are no longer visible. Covers list-view search spinner, generic ``lightning-spinner``, and SLDS ``slds-spinner`` containers. Each check uses ``Run Keyword And Ignore Error`` so a missing spinner does not fail the keyword (the spinner may never have appeared). Use instead of ``Sleep`` after actions that trigger server round-trips.",
+      "documentation": "Waits until standard Salesforce Lightning spinners are no longer visible. Uses a single combined CSS selector to check all spinner variants in one pass instead of sequential waits. Falls back to individual checks only if the combined selector is not supported.",
       "documentation_source": "author",
-      "natural_language_summary": "Waits until standard Salesforce Lightning spinners are no longer visible. Covers list-view search spinner, generic ``lightning-spinner``, and SLDS ``slds-spinner`` containers. Each check uses ``Run Keyword And Ignore Error`` so a missing spinner does not fail the keyword (the spinner may never have appeared). Use instead of ``Sleep`` after actions that trigger server round-trips.",
+      "natural_language_summary": "Waits until standard Salesforce Lightning spinners are no longer visible. Uses a single combined CSS selector to check all spinner variants in one pass instead of sequential waits. Falls back to individual checks only if the combined selector is not supported.",
       "inferred_description": null,
       "tags": [
         "utilities",
@@ -1820,11 +1820,11 @@
     {
       "keyword_name": "Wait For Record Type Overlay Cleared",
       "arguments": [
-        "${timeout}=15s"
+        "${timeout}=8s"
       ],
-      "documentation": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Safe to call when the overlay may or may not be present — uses ``Run Keyword And Ignore Error`` internally. Use after pressing ESC to dismiss the overlay rather than a static ``Sleep``.",
+      "documentation": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Uses a combined selector for speed.",
       "documentation_source": "author",
-      "natural_language_summary": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Safe to call when the overlay may or may not be present — uses ``Run Keyword And Ignore Error`` internally. Use after pressing ESC to dismiss the overlay rather than a static ``Sleep``.",
+      "natural_language_summary": "Waits until the Salesforce ``forceChangeRecordType`` overlay (record-type picker) is no longer visible. Uses a combined selector for speed.",
       "inferred_description": null,
       "tags": [
         "utilities",

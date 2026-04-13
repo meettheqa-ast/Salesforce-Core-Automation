@@ -535,6 +535,28 @@ def run_automation_pipeline(
     except Exception:  # noqa: BLE001
         pass
 
+    try:
+        import sf_dx_bridge
+        if sf_dx_bridge.is_available():
+            from app_schema import detect_salesforce_objects
+            sf_objects = detect_salesforce_objects(effective_prompt)
+            if sf_objects:
+                with st.spinner("🔌 Fetching field metadata via SF DX MCP…"):
+                    dx_ctx_parts = []
+                    for obj in sf_objects[:3]:
+                        try:
+                            fields = sf_dx_bridge.describe_object_fields(obj)
+                            raw = fields.get("raw", "")
+                            if raw and len(raw) > 20:
+                                dx_ctx_parts.append(f"### {obj} fields (SF DX MCP)\n{raw[:3000]}")
+                        except Exception:
+                            pass
+                    if dx_ctx_parts:
+                        effective_prompt += "\n\n" + "\n\n".join(dx_ctx_parts)
+                        st.caption("✅ SF DX MCP field metadata injected into AI context.")
+    except Exception:  # noqa: BLE001
+        pass
+
     if image_bytes:
         effective_prompt += (
             "\n\nCRITICAL: I have attached a screenshot of the Salesforce UI. "

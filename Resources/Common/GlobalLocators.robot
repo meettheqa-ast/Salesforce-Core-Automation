@@ -15,8 +15,8 @@ ${activeAppLocator}=                                    xpath://span[@title='<ap
 ${tabInAppLocator}=                                     xpath://one-app-nav-bar-item-root[a[@title='<tab-name>']]
 # ${tabInAppLocator}=    xpath://one-app-nav-bar-item-root[@data-id="<tab-name>"]
 
-# The last or part for this locator is used to handle the intelligent view breadcrumbs
-${activeTabLocator}=                                    xpath://lst-breadcrumbs//span[text()='<tab-name>'] | //lst-breadcrumbs//h1[text()='<tab-name>'] | //*[@class='slds-page-header__name-meta'][contains(text(), '<tab-name>')]
+# Active tab verification — covers breadcrumbs, page header, LWC list header, and aria-selected tab
+${activeTabLocator}=                                    xpath://lst-breadcrumbs//span[text()='<tab-name>'] | //lst-breadcrumbs//h1[text()='<tab-name>'] | //*[@class='slds-page-header__name-meta'][contains(text(), '<tab-name>')] | //h1[contains(@class,'slds-page-header__title')][contains(text(),'<tab-name>')] | //span[contains(@class,'slds-var-p-right')][text()='<tab-name>'] | //one-app-nav-bar-item-root[.//a[@title='<tab-name>']]//a[@aria-selected='true' or @aria-current='page']
 
 # New Record — tiered locators: CSS title+role → LWC lightning-button → XPath fallback (§1.1)
 ${newRecordTier1}=                                      css:a[title='New'][role='button'], button[name='New']

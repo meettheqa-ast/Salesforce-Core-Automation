@@ -1223,9 +1223,122 @@ def main_ui() -> None:
             except ImportError:
                 st.warning("mcp_bridge module not found.")
 
+        # ── Salesforce DX Tools ──────────────────────────────────────────
+        st.divider()
+        st.subheader("Salesforce DX Tools")
+        try:
+            import sf_dx_bridge
+            st.caption(sf_dx_bridge.get_status_summary())
+
+            with st.expander("SOQL Query", expanded=False):
+                soql_query = st.text_area(
+                    "Enter SOQL",
+                    placeholder="SELECT Id, Name FROM Lead ORDER BY CreatedDate DESC LIMIT 5",
+                    height=80,
+                    key="soql_query_input",
+                )
+                if st.button("Run SOQL", key="run_soql_btn", use_container_width=True):
+                    if soql_query.strip():
+                        with st.spinner("Running SOQL query..."):
+                            try:
+                                result = sf_dx_bridge.run_soql_query(soql_query.strip())
+                                st.session_state["_soql_result"] = result
+                            except Exception as exc:
+                                st.error(f"SOQL failed: {exc}")
+                    else:
+                        st.warning("Enter a query first.")
+                if st.session_state.get("_soql_result"):
+                    st.json(st.session_state["_soql_result"])
+
+            with st.expander("Apex Tests", expanded=False):
+                apex_classes = st.text_input(
+                    "Test class names (comma-separated)",
+                    placeholder="MyTestClass, AnotherTestClass",
+                    key="apex_test_input",
+                )
+                if st.button("Run Apex Tests", key="run_apex_btn", use_container_width=True):
+                    if apex_classes.strip():
+                        with st.spinner("Running Apex tests..."):
+                            try:
+                                result = sf_dx_bridge.run_apex_tests(apex_classes.strip())
+                                st.session_state["_apex_result"] = result
+                            except Exception as exc:
+                                st.error(f"Apex tests failed: {exc}")
+                    else:
+                        st.warning("Enter test class names first.")
+                if st.session_state.get("_apex_result"):
+                    st.json(st.session_state["_apex_result"])
+
+            with st.expander("Org Schema", expanded=False):
+                schema_obj = st.selectbox(
+                    "Object",
+                    ["Lead", "Account", "Contact", "Opportunity", "Case"],
+                    key="schema_obj_select",
+                )
+                if st.button("Fetch Fields", key="fetch_schema_btn", use_container_width=True):
+                    with st.spinner(f"Fetching {schema_obj} fields..."):
+                        try:
+                            result = sf_dx_bridge.describe_object_fields(schema_obj)
+                            st.session_state["_schema_result"] = result
+                        except Exception as exc:
+                            st.error(f"Schema fetch failed: {exc}")
+                if st.session_state.get("_schema_result"):
+                    st.json(st.session_state["_schema_result"])
+
+        except ImportError:
+            st.caption("sf_dx_bridge module not found.")
+
+        # ── Locator Health Scanner (Plan Dhurandhar) ─────────────────────
+        st.divider()
+        st.subheader("Locator Scanner")
+        try:
+            import locator_validator
+            if st.button("Scan Org Locators", key="scan_locators_btn", use_container_width=True,
+                         help="Login to the sandbox, navigate through Lead flow, and test all locators against the live DOM."):
+                st.session_state["_run_locator_scan"] = True
+                st.rerun()
+        except ImportError:
+            st.caption("locator_validator module not found.")
+
     # ── Active Workspace (project + credentials) — collapsible ──────────
     with st.expander("⚙️ Workspace & Credentials", expanded=True):
         active_proj, sandbox_url, username, password = _render_workspace_header()
+
+    # ── Locator scan results (rendered in main area) ─────────────────────
+    if st.session_state.pop("_run_locator_scan", False):
+        try:
+            import locator_validator
+            with st.status("Scanning org locators...", expanded=True) as scan_status:
+                report = locator_validator.run_scan(sandbox_url, username, password)
+                scan_status.update(label="Locator scan complete", state="complete")
+            st.session_state["_locator_report"] = report
+        except Exception as exc:
+            st.error(f"Locator scan failed: {exc}")
+
+    if st.session_state.get("_locator_report"):
+        with st.expander("Locator Health Report", expanded=True):
+            report = st.session_state["_locator_report"]
+            passed = [r for r in report if r["status"] == "FOUND"]
+            stale = [r for r in report if r["status"] == "NOT_FOUND"]
+            errors = [r for r in report if r["status"] == "ERROR"]
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Healthy", len(passed))
+            c2.metric("Stale", len(stale))
+            c3.metric("Skipped", len(errors))
+
+            if stale:
+                st.markdown("### Stale Locators")
+                for r in stale:
+                    st.markdown(f"- **`{r['name']}`** — `{r['locator'][:80]}...`")
+            if passed:
+                with st.expander(f"Healthy ({len(passed)})", expanded=False):
+                    for r in passed:
+                        st.markdown(f"- `{r['name']}`")
+            if errors:
+                with st.expander(f"Skipped ({len(errors)})", expanded=False):
+                    for r in errors:
+                        st.markdown(f"- `{r['name']}` — {r.get('error', 'needs record context')}")
 
     # ── Single-page Test Architect ────────────────────────────────────────
     _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
