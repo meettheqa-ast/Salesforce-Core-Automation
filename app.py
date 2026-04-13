@@ -51,6 +51,7 @@ from app_pipeline import (
     render_persisted_run_panel,
     run_automation_pipeline,
     run_existing_test,
+    run_mcp_stepwise_pipeline,
     run_project_entire_suite,
     sync_sidebar_api_key,
 )
@@ -233,16 +234,18 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                             st.error("Please enter a custom environment name.")
                         else:
                             try:
-                                _pm.create_project(new_name, new_desc)
+                                # Folder name is slugified (e.g. "My Project" -> My_Project); credentials must use that id.
+                                proj_dir = _pm.create_project(new_name, new_desc)
+                                project_id = proj_dir.name
                                 _pm.write_project_credentials(
-                                    new_name.strip(),
+                                    project_id,
                                     np_url.strip(),
                                     np_user.strip(),
                                     np_pw,
                                     environment=resolved_env,
                                     persona="System Admin",
                                 )
-                                st.session_state["active_project"] = new_name.strip()
+                                st.session_state["active_project"] = project_id
                                 st.session_state["active_environment"] = resolved_env
                                 st.session_state["active_persona"] = "System Admin"
                                 st.session_state.pop("_credentials_bound_key", None)
@@ -717,20 +720,33 @@ def _render_test_builder_tab(
 
             final_prompt = append_csv_data_to_prompt(final_prompt_txt, csv_llm_block)
             img_bytes = uploaded_image.getvalue() if uploaded_image else None
-            run_automation_pipeline(
-                final_prompt,
-                sandbox_url=sandbox_url,
-                username=username,
-                password=password,
-                headless=headless,
-                csv_bytes=csv_upload_bytes(uploaded_csv),
-                project_name=active_proj if active_proj else None,
-                test_name=test_target_name if test_target_name else None,
-                overwrite=overwrite_ok,
-                auto_generate_data=auto_gen,
-                image_bytes=img_bytes,
-                user_story_id=user_story_id.strip() if user_story_id else "",
-            )
+            _active_gen_mode = st.session_state.get("gen_mode_radio", "Quick Generate")
+            if _active_gen_mode == "MCP Stepwise":
+                run_mcp_stepwise_pipeline(
+                    final_prompt,
+                    sandbox_url=sandbox_url,
+                    username=username,
+                    password=password,
+                    project_name=active_proj if active_proj else None,
+                    test_name=test_target_name if test_target_name else None,
+                    overwrite=overwrite_ok,
+                    user_story_id=user_story_id.strip() if user_story_id else "",
+                )
+            else:
+                run_automation_pipeline(
+                    final_prompt,
+                    sandbox_url=sandbox_url,
+                    username=username,
+                    password=password,
+                    headless=headless,
+                    csv_bytes=csv_upload_bytes(uploaded_csv),
+                    project_name=active_proj if active_proj else None,
+                    test_name=test_target_name if test_target_name else None,
+                    overwrite=overwrite_ok,
+                    auto_generate_data=auto_gen,
+                    image_bytes=img_bytes,
+                    user_story_id=user_story_id.strip() if user_story_id else "",
+                )
 
     clarify_ctx = st.session_state.get(CLARIFY_SESSION_KEY)
     if clarify_ctx:
@@ -1111,9 +1127,13 @@ def main_ui() -> None:
 
     _init_sf_credential_session_keys()
 
-    if "llm_provider_radio" not in st.session_state:
+    from ai_bridge import LLM_PROVIDERS, PROVIDER_LABELS
+    _label_to_id = {v: k for k, v in PROVIDER_LABELS.items()}
+    _id_to_label = PROVIDER_LABELS
+
+    if "llm_provider_select" not in st.session_state:
         p = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
-        st.session_state["llm_provider_radio"] = "OpenAI" if p == "openai" else "Gemini"
+        st.session_state["llm_provider_select"] = _id_to_label.get(p, "Gemini")
 
     if "smoke_app_name" not in st.session_state:
         st.session_state["smoke_app_name"] = "Sales"
@@ -1144,50 +1164,64 @@ def main_ui() -> None:
         headless = execution_mode == "Background (Fast)"
         st.divider()
         st.subheader("AI (LLM)")
-        llm_prov = st.radio(
-            "LLM provider",
-            ("Gemini", "OpenAI"),
-            horizontal=True,
-            key="llm_provider_radio",
-            help="Default stack uses Google Gemini. Use OpenAI only if LLM_PROVIDER=openai in `.env`.",
+        provider_labels = list(PROVIDER_LABELS.values())
+        llm_prov_label = st.selectbox(
+            "LLM Provider",
+            provider_labels,
+            index=provider_labels.index(st.session_state.get("llm_provider_select", "Gemini")),
+            key="llm_provider_select",
+            help="Select an AI provider. Gemini is the default (free tier). Set your API key in `.env` or paste below.",
         )
-        os.environ["LLM_PROVIDER"] = "gemini" if llm_prov == "Gemini" else "openai"
+        selected_provider_id = _label_to_id.get(llm_prov_label, "gemini")
+        os.environ["LLM_PROVIDER"] = selected_provider_id
 
-        gemini_sidebar_key = ""
-        openai_sidebar_key = ""
-        if llm_prov == "Gemini":
-            gemini_sidebar_key = st.text_input(
-                "Gemini API key (optional)",
-                type="password",
-                placeholder="Uses .env or .streamlit/secrets.toml if empty",
-                help=(
-                    "Create a key at https://aistudio.google.com/apikey. "
-                    "Set GEMINI_API_KEY in `.env`, or paste here for this session only."
-                ),
-                key="gemini_sidebar_key",
-            )
-        else:
-            openai_sidebar_key = st.text_input(
-                "OpenAI API key (optional)",
-                type="password",
-                placeholder="Uses .env or .streamlit/secrets.toml if empty",
-                help=(
-                    "Set OPENAI_API_KEY in `.env` (see `.env.example`) or "
-                    "`.streamlit/secrets.toml` — see `secrets.toml.example`."
-                ),
-                key="openai_sidebar_key",
-            )
+        provider_info = LLM_PROVIDERS[selected_provider_id]
+        key_env_name = provider_info[0]
 
-        sync_sidebar_api_key(
-            "GEMINI_API_KEY",
-            "gemini",
-            gemini_sidebar_key if llm_prov == "Gemini" else "",
+        sidebar_api_key = st.text_input(
+            f"{llm_prov_label} API Key (optional — overrides .env)",
+            type="password",
+            placeholder="Uses .env key if empty; paste here for session override",
+            key="sidebar_api_key_input",
         )
-        sync_sidebar_api_key(
-            "OPENAI_API_KEY",
-            "openai",
-            openai_sidebar_key if llm_prov == "OpenAI" else "",
+
+        sync_sidebar_api_key(key_env_name, selected_provider_id, sidebar_api_key)
+
+        st.divider()
+        st.subheader("Generation Mode")
+        gen_mode = st.radio(
+            "How should tests be generated?",
+            ("Quick Generate", "MCP Stepwise"),
+            index=0,
+            key="gen_mode_radio",
+            help=(
+                "**Quick Generate:** LLM generates the .robot file directly from the prompt (fast). "
+                "**MCP Stepwise:** RF-MCP executes each keyword against a live browser to verify "
+                "it works, then builds the .robot file from verified steps (slower but higher quality)."
+            ),
         )
+
+        if gen_mode == "MCP Stepwise":
+            try:
+                import mcp_bridge
+                if mcp_bridge.is_server_running():
+                    st.caption("RF-MCP Server: Running")
+                else:
+                    st.caption("RF-MCP Server: Stopped (starts on generate)")
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    if st.button("Start Server", key="mcp_start_btn", use_container_width=True):
+                        try:
+                            mcp_bridge.start_mcp_server()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(str(e))
+                with _c2:
+                    if st.button("Stop Server", key="mcp_stop_btn", use_container_width=True):
+                        mcp_bridge.stop_mcp_server()
+                        st.rerun()
+            except ImportError:
+                st.warning("mcp_bridge module not found.")
 
     # ── Active Workspace (project + credentials) — collapsible ──────────
     with st.expander("⚙️ Workspace & Credentials", expanded=True):

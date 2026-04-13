@@ -58,7 +58,11 @@ Open New Lead From Sales App
     Open New Dialog    Lead
 
 Create A New Lead
-    [Documentation]    Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.
+    [Documentation]    Fills the New Lead modal. Optional ``first_name``, ``last_name``, ``company`` override ``SalesData`` defaults; suite variables are updated so downstream verification matches. Call with **no** args to use suite defaults only. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.
+    [Arguments]    ${first_name}=${leadFirstName}    ${last_name}=${leadLastName}    ${company}=${leadCompany}
+    Set Suite Variable    ${leadFirstName}    ${first_name}
+    Set Suite Variable    ${leadLastName}    ${last_name}
+    Set Suite Variable    ${leadCompany}    ${company}
     Open Dropdown And Select First Option    Salutation
     Enter Text    Website    ${leadWebsite}
     Enter Text    First Name    ${leadFirstName}

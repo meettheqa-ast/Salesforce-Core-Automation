@@ -873,6 +873,209 @@ def render_persisted_run_panel() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# MCP Stepwise pipeline
+# ---------------------------------------------------------------------------
+
+def run_mcp_stepwise_pipeline(
+    final_prompt: str,
+    *,
+    sandbox_url: str,
+    username: str,
+    password: str,
+    project_name: str | None = None,
+    test_name: str | None = None,
+    overwrite: bool = False,
+    user_story_id: str = "",
+) -> None:
+    """Generate a Robot suite by executing each keyword step-by-step against a
+    live browser via RF-MCP, then building the final .robot file from verified steps.
+    """
+    try:
+        import mcp_bridge
+        from ai_bridge import break_prompt_into_steps
+    except ImportError as exc:
+        st.error(f"Could not import MCP bridge modules: {exc}")
+        return
+
+    # 1. Start MCP server
+    with st.status("Starting RF-MCP server...", expanded=True) as status:
+        try:
+            mcp_bridge.start_mcp_server()
+            st.write("RF-MCP server is running.")
+        except Exception as exc:
+            st.error(f"Failed to start RF-MCP server: {exc}")
+            return
+
+        # 2. Init session & import resources
+        status.update(label="Initializing MCP session...")
+        try:
+            session_id = mcp_bridge.init_session(sandbox_url, username, password)
+            st.write(f"Session initialized: `{session_id[:12]}...`")
+        except Exception as exc:
+            st.error(f"MCP session init failed: {exc}")
+            return
+
+        # 3. Analyze scenario
+        status.update(label="Analyzing test scenario...")
+        try:
+            analysis = mcp_bridge.analyze_scenario(final_prompt, session_id)
+            test_type = analysis.get("test_type", "web")
+            st.write(f"Scenario analysis: **{test_type}** test detected.")
+        except Exception as exc:
+            st.warning(f"Scenario analysis skipped: {exc}")
+            analysis = {}
+
+        # 4. Decompose prompt into steps via LLM
+        status.update(label="AI is planning keyword steps...")
+        try:
+            steps = break_prompt_into_steps(final_prompt, scenario_analysis=analysis)
+            st.write(f"Planned **{len(steps)}** keyword steps.")
+        except Exception as exc:
+            st.error(f"Step decomposition failed: {exc}")
+            return
+
+        status.update(label="Executing steps against live browser...", expanded=True)
+
+    # 5. Execute each step
+    step_results: list[dict] = []
+    progress_container = st.container()
+
+    with progress_container:
+        for i, step in enumerate(steps, 1):
+            kw = step.get("keyword", "")
+            args = step.get("args", [])
+            args_display = ", ".join(str(a) for a in args) if args else ""
+            step_label = f"Step {i}/{len(steps)}: `{kw}`"
+            if args_display:
+                step_label += f"  ({args_display})"
+
+            col_step, col_status = st.columns([5, 1])
+            with col_step:
+                st.markdown(step_label)
+
+            try:
+                result = mcp_bridge.execute_step(session_id, kw, args)
+                passed = result.get("status") != "FAIL"
+                error_msg = result.get("error", "")
+            except Exception as exc:
+                passed = False
+                error_msg = str(exc)
+                result = {"status": "FAIL", "error": error_msg}
+
+            with col_status:
+                if passed:
+                    st.success("PASS")
+                else:
+                    st.error("FAIL")
+
+            step_results.append({
+                "keyword": kw,
+                "args": args,
+                "passed": passed,
+                "error": error_msg if not passed else "",
+            })
+
+            if not passed:
+                st.warning(f"Step failed: {error_msg}")
+                try:
+                    page_state = mcp_bridge.get_page_state(session_id)
+                    dom_hint = str(page_state)[:500]
+                    st.caption(f"Page state hint: {dom_hint}")
+                except Exception:
+                    pass
+
+    passed_count = sum(1 for s in step_results if s["passed"])
+    total_count = len(step_results)
+    st.info(f"Stepwise execution: **{passed_count}/{total_count}** steps passed.")
+
+    # 6. Build test suite from MCP
+    with st.spinner("Building .robot file from verified steps..."):
+        try:
+            suite_name = test_name or "Stepwise Generated Test"
+            robot_code = mcp_bridge.build_suite(session_id, suite_name)
+        except Exception as exc:
+            st.warning(f"RF-MCP build_test_suite failed ({exc}); constructing suite from step log.")
+            robot_code = _build_fallback_suite(step_results, suite_name=test_name or "MCP Stepwise Test")
+
+    if not robot_code.strip():
+        robot_code = _build_fallback_suite(step_results, suite_name=test_name or "MCP Stepwise Test")
+
+    # Post-process the same way as quick-generate
+    try:
+        from ai_bridge import (
+            strip_credential_variable_overrides,
+            strip_hallucinated_csv_variables_from_suite,
+            strip_llm_robot_garbage,
+            format_robot_code,
+        )
+        robot_code = strip_credential_variable_overrides(robot_code)
+        robot_code = strip_llm_robot_garbage(robot_code)
+        robot_code = strip_hallucinated_csv_variables_from_suite(robot_code)
+    except ImportError:
+        pass
+
+    final_source = robot_code.rstrip() + "\n"
+    GENERATED_SUITE.parent.mkdir(parents=True, exist_ok=True)
+    GENERATED_SUITE.write_text(final_source, encoding="utf-8")
+    try:
+        from ai_bridge import format_robot_code
+        format_robot_code(GENERATED_SUITE)
+    except Exception:
+        pass
+
+    st.session_state[PENDING_ROBOT_EDITOR_KEY] = GENERATED_SUITE.read_text(encoding="utf-8")
+    st.session_state[PENDING_GEN_CTX_KEY] = {
+        "project_name": project_name,
+        "test_name": test_name,
+        "overwrite": overwrite,
+        "csv_bytes": None,
+        "user_story_id": user_story_id,
+    }
+
+    try:
+        from ai_bridge import validate_generated_robot
+        st.session_state["_lint_errors"] = validate_generated_robot(final_source)
+    except Exception:
+        st.session_state["_lint_errors"] = []
+
+    st.success(
+        f"MCP Stepwise generation complete ({passed_count}/{total_count} steps verified). "
+        "Review the script below, then click **Run** to execute or **Discard** to start over."
+    )
+
+
+def _build_fallback_suite(
+    step_results: list[dict],
+    suite_name: str = "MCP Stepwise Test",
+) -> str:
+    """Construct a .robot file from the step execution log when build_test_suite fails."""
+    lines = [
+        "*** Settings ***",
+        "Library             SeleniumLibrary",
+        "Resource            ../../Resources/Common/GlobalKeywords.robot",
+        "Resource            ../../Resources/PO/Platform/SalesPO.robot",
+        "",
+        "Test Setup          Begin Web Test",
+        "Test Teardown       End Web Test",
+        "",
+        "",
+        "*** Test Cases ***",
+        suite_name,
+        f"    [Documentation]    Generated by MCP Stepwise mode.",
+        f"    [Tags]    mcp    stepwise",
+    ]
+    for step in step_results:
+        kw = step["keyword"]
+        args = step.get("args", [])
+        parts = [f"    {kw}"]
+        for a in args:
+            parts.append(f"    {a}")
+        lines.append("    ".join(parts) if len(parts) == 1 else ("    " + "    ".join([kw] + args)))
+    lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def sync_sidebar_api_key(env_key: str, state_suffix: str, sidebar_api_key: str) -> None:
     """
     Apply optional sidebar API key to os.environ, or clear a prior sidebar-only value

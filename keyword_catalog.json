@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-13T05:27:56.848736+00:00",
+  "generated_at": "2026-04-13T17:54:49.558128+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
@@ -597,10 +597,14 @@
     },
     {
       "keyword_name": "Create A New Lead",
-      "arguments": [],
-      "documentation": "Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
+      "arguments": [
+        "${first_name}=${leadFirstName}",
+        "${last_name}=${leadLastName}",
+        "${company}=${leadCompany}"
+      ],
+      "documentation": "Fills the New Lead modal. Optional ``first_name``, ``last_name``, ``company`` override ``SalesData`` defaults; suite variables are updated so downstream verification matches. Call with **no** args to use suite defaults only. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
       "documentation_source": "author",
-      "natural_language_summary": "Fills the New Lead modal. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
+      "natural_language_summary": "Fills the New Lead modal. Optional ``first_name``, ``last_name``, ``company`` override ``SalesData`` defaults; suite variables are updated so downstream verification matches. Call with **no** args to use suite defaults only. **Lead Status:** if ``${leadStatusOption}`` is non-empty (after trim), uses ``Select Dropdown Option`` for PM-specified value; otherwise ``Select Random Valid Picklist Option`` (skips ``--None--`` and empty ``data-value``). Salutation and Lead Source use random combobox items via ``Open Dropdown And Select First Option``.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"

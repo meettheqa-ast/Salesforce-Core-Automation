@@ -2,15 +2,14 @@
 """
 Bridge between natural-language prompts and Robot Framework test files.
 
-Loads system_prompt.txt + keyword_catalog.json, calls Gemini or OpenAI, extracts
+Loads system_prompt.txt + keyword_catalog.json, calls the configured LLM, extracts
 .robot source from the reply, and writes Tests/Generated/temp_test.robot.
 
-Configure via .env (never commit real keys). Default provider is Gemini:
-  LLM_PROVIDER=gemini          # or openai
-  GEMINI_API_KEY=...           # or GOOGLE_API_KEY (from https://aistudio.google.com/apikey)
-  GEMINI_MODEL=gemini-2.5-flash   # if 429/limit 0, try gemini-2.5-flash-lite or gemini-1.5-flash
-  OPENAI_API_KEY=sk-...        # if LLM_PROVIDER=openai
-  OPENAI_MODEL=gpt-4o
+Configure via .env (never commit real keys). Default provider is Gemini.
+Supported LLM_PROVIDER values:
+  gemini | openai | groq | mistral | together | openrouter | anthropic | cohere
+
+Each provider reads <PROVIDER>_API_KEY and <PROVIDER>_MODEL from env.
 """
 
 from __future__ import annotations
@@ -90,6 +89,30 @@ def detect_smoke_intent(prompt: str) -> dict | None:
     return None
 
 
+# All supported providers: id → (env key for API key, env key for model, default model)
+LLM_PROVIDERS: dict[str, tuple[str, str, str]] = {
+    "gemini":      ("GEMINI_API_KEY",      "GEMINI_MODEL",      "gemini-2.5-flash"),
+    "openai":      ("OPENAI_API_KEY",      "OPENAI_MODEL",      "gpt-4o"),
+    "groq":        ("GROQ_API_KEY",        "GROQ_MODEL",        "llama-3.3-70b-versatile"),
+    "mistral":     ("MISTRAL_API_KEY",     "MISTRAL_MODEL",     "mistral-small-latest"),
+    "together":    ("TOGETHER_API_KEY",    "TOGETHER_MODEL",    "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    "openrouter":  ("OPENROUTER_API_KEY",  "OPENROUTER_MODEL",  "meta-llama/llama-3.3-70b-instruct"),
+    "anthropic":   ("ANTHROPIC_API_KEY",   "ANTHROPIC_MODEL",   "claude-sonnet-4-20250514"),
+    "cohere":      ("COHERE_API_KEY",      "COHERE_MODEL",      "command-r-plus"),
+}
+
+PROVIDER_LABELS: dict[str, str] = {
+    "gemini": "Gemini",
+    "openai": "OpenAI (ChatGPT)",
+    "groq": "Groq",
+    "mistral": "Mistral AI",
+    "together": "Together AI",
+    "openrouter": "OpenRouter",
+    "anthropic": "Anthropic (Claude)",
+    "cohere": "Cohere",
+}
+
+
 def hydrate_llm_env() -> None:
     """
     Load .env again (e.g. file created after import) and map Streamlit secrets into os.environ.
@@ -102,40 +125,35 @@ def hydrate_llm_env() -> None:
         sec = getattr(st, "secrets", None)
         if sec is None:
             return
-        pairs = (
-            ("OPENAI_API_KEY", "OPENAI_API_KEY"),
-            ("GEMINI_API_KEY", "GEMINI_API_KEY"),
-            ("GOOGLE_API_KEY", "GOOGLE_API_KEY"),
-            ("LLM_PROVIDER", "LLM_PROVIDER"),
-            ("OPENAI_MODEL", "OPENAI_MODEL"),
-            ("GEMINI_MODEL", "GEMINI_MODEL"),
-        )
-        for secret_key, env_key in pairs:
-            if os.environ.get(env_key):
+        env_keys = ["LLM_PROVIDER", "GOOGLE_API_KEY"]
+        for _key_env, _model_env, _ in LLM_PROVIDERS.values():
+            env_keys += [_key_env, _model_env]
+        for secret_key in env_keys:
+            if os.environ.get(secret_key):
                 continue
             try:
                 if secret_key in sec:
-                    os.environ[env_key] = str(sec[secret_key]).strip()
+                    os.environ[secret_key] = str(sec[secret_key]).strip()
             except Exception:
                 continue
     except (ImportError, RuntimeError, FileNotFoundError):
         pass
 
 
-def llm_config_help(*, gemini: bool = False) -> str:
+def llm_config_help(provider: str = "") -> str:
     """Human-readable hint for missing API keys."""
-    rel_env = ".env"
-    if gemini:
-        key_line = 'GEMINI_API_KEY = "..." or GOOGLE_API_KEY = "..."'
-        env_line = "GEMINI_API_KEY=... or GOOGLE_API_KEY=..."
+    provider = (provider or os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+    if provider == "gemini":
+        env_line = "GEMINI_API_KEY=... (or GOOGLE_API_KEY=...)"
     else:
-        key_line = 'OPENAI_API_KEY = "sk-..."'
-        env_line = "OPENAI_API_KEY=sk-..."
+        info = LLM_PROVIDERS.get(provider)
+        key_env = info[0] if info else f"{provider.upper()}_API_KEY"
+        env_line = f"{key_env}=..."
     return (
-        f"Set credentials in one of these ways:\n"
-        f"1) Project file `{rel_env}` (copy `.env.example` → `.env`): {env_line}\n"
-        f"2) Streamlit secrets `.streamlit/secrets.toml`: {key_line} (see `.streamlit/secrets.toml.example`)\n"
-        f"3) Sidebar **AI (LLM)** fields in the app (session only, not saved to disk)."
+        f"Set credentials for **{PROVIDER_LABELS.get(provider, provider)}** in one of these ways:\n"
+        f"1) Project file `.env`: {env_line}\n"
+        f"2) Streamlit secrets `.streamlit/secrets.toml`\n"
+        f"3) Sidebar **AI (LLM)** paste-key field in the app (session only, not saved to disk)."
     )
 
 
@@ -538,33 +556,44 @@ def extract_robot_code(response_text: str) -> str:
     return text
 
 
-def _call_openai(
+def _get_provider_key_and_model(provider_id: str) -> tuple[str, str]:
+    """Return (api_key, model) for the given provider, raising on missing key."""
+    info = LLM_PROVIDERS.get(provider_id)
+    if not info:
+        raise ValueError(f"Unknown provider: {provider_id}")
+    key_env, model_env, default_model = info
+    api_key = os.environ.get(key_env, "").strip()
+    if not api_key:
+        raise RuntimeError(
+            f"{key_env} is not set.\n" + llm_config_help(provider_id)
+        )
+    model = os.environ.get(model_env, "").strip() or default_model
+    return api_key, model
+
+
+def _call_openai_compatible(
     system_prompt: str,
     user_content: str,
+    *,
+    api_key: str,
+    model: str,
+    base_url: str | None = None,
     image_bytes: bytes | None = None,
 ) -> str:
+    """Shared caller for any OpenAI-compatible chat API (OpenAI, Groq, Together, OpenRouter, Mistral)."""
     from openai import OpenAI
 
-    hydrate_llm_env()
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set.\n" + llm_config_help())
-
-    client = OpenAI(api_key=api_key)
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o")
+    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
 
     if image_bytes:
         import base64
 
         b64 = base64.b64encode(image_bytes).decode("ascii")
-        user_message = {
+        user_message: dict = {
             "role": "user",
             "content": [
                 {"type": "text", "text": user_content},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{b64}"},
-                },
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
             ],
         }
     else:
@@ -581,6 +610,19 @@ def _call_openai(
     return completion.choices[0].message.content or ""
 
 
+def _call_openai(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("openai")
+    return _call_openai_compatible(
+        system_prompt, user_content,
+        api_key=api_key, model=model, image_bytes=image_bytes,
+    )
+
+
 def _call_gemini(
     system_prompt: str,
     user_content: str,
@@ -592,7 +634,7 @@ def _call_gemini(
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "GEMINI_API_KEY or GOOGLE_API_KEY is not set.\n" + llm_config_help(gemini=True)
+            "GEMINI_API_KEY or GOOGLE_API_KEY is not set.\n" + llm_config_help("gemini")
         )
 
     genai.configure(api_key=api_key)
@@ -638,6 +680,210 @@ def _call_gemini(
     if not out:
         raise RuntimeError("Gemini returned empty text (blocked or unsupported response).")
     return out
+
+
+def _call_groq(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("groq")
+    return _call_openai_compatible(
+        system_prompt, user_content,
+        api_key=api_key, model=model,
+        base_url="https://api.groq.com/openai/v1",
+        image_bytes=image_bytes,
+    )
+
+
+def _call_mistral(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("mistral")
+    return _call_openai_compatible(
+        system_prompt, user_content,
+        api_key=api_key, model=model,
+        base_url="https://api.mistral.ai/v1",
+        image_bytes=image_bytes,
+    )
+
+
+def _call_together(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("together")
+    return _call_openai_compatible(
+        system_prompt, user_content,
+        api_key=api_key, model=model,
+        base_url="https://api.together.xyz/v1",
+        image_bytes=image_bytes,
+    )
+
+
+def _call_openrouter(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("openrouter")
+    return _call_openai_compatible(
+        system_prompt, user_content,
+        api_key=api_key, model=model,
+        base_url="https://openrouter.ai/api/v1",
+        image_bytes=image_bytes,
+    )
+
+
+def _call_anthropic(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    import anthropic
+
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("anthropic")
+    client = anthropic.Anthropic(api_key=api_key)
+
+    content: list[dict] = [{"type": "text", "text": user_content}]
+    if image_bytes:
+        import base64
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        content.insert(0, {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": b64},
+        })
+
+    msg = client.messages.create(
+        model=model,
+        max_tokens=4096,
+        system=system_prompt,
+        messages=[{"role": "user", "content": content}],
+        temperature=0.2,
+    )
+    return msg.content[0].text or ""
+
+
+def _call_cohere(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    import cohere
+
+    hydrate_llm_env()
+    api_key, model = _get_provider_key_and_model("cohere")
+    client = cohere.ClientV2(api_key=api_key)
+
+    resp = client.chat(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+    )
+    return resp.message.content[0].text or ""
+
+
+_PROVIDER_CALLERS: dict[str, callable] = {
+    "gemini": _call_gemini,
+    "google": _call_gemini,
+    "openai": _call_openai,
+    "groq": _call_groq,
+    "mistral": _call_mistral,
+    "together": _call_together,
+    "openrouter": _call_openrouter,
+    "anthropic": _call_anthropic,
+    "cohere": _call_cohere,
+}
+
+
+def call_llm(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+    provider: str | None = None,
+) -> str:
+    """Route to the correct LLM backend based on LLM_PROVIDER env var or explicit override."""
+    hydrate_llm_env()
+    provider = (provider or os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+    caller = _PROVIDER_CALLERS.get(provider)
+    if not caller:
+        supported = ", ".join(sorted(LLM_PROVIDERS.keys()))
+        raise ValueError(f"Unsupported LLM_PROVIDER: {provider!r}. Supported: {supported}")
+    return caller(system_prompt, user_content, image_bytes=image_bytes)
+
+
+def break_prompt_into_steps(
+    user_prompt: str,
+    catalog_json: str | None = None,
+    scenario_analysis: dict | None = None,
+) -> list[dict[str, list[str] | str]]:
+    """Use the current LLM to decompose a natural-language prompt into
+    a list of Robot Framework keyword steps.
+
+    Returns a list of dicts: [{"keyword": "...", "args": ["...", ...]}, ...]
+    """
+    hydrate_llm_env()
+    if catalog_json is None:
+        catalog_json = _load_catalog_compact()
+
+    analysis_block = ""
+    if scenario_analysis:
+        analysis_block = (
+            "\n\nRF-MCP scenario analysis result:\n"
+            + json.dumps(scenario_analysis, indent=2, ensure_ascii=False)
+        )
+
+    system = (
+        "You are a Robot Framework step planner. Given a user prompt and keyword catalog, "
+        "break the prompt into an ordered list of Robot Framework keyword calls. "
+        "Each step must use a keyword from the catalog (prefer GlobalKeywords.* and SalesPO.* prefixes). "
+        "Return ONLY a JSON array where each element is an object with 'keyword' (string) and "
+        "'args' (array of strings, may be empty). No markdown fences, no explanation — just the JSON array.\n\n"
+        "RULES:\n"
+        "1. Always start with: GlobalKeywords.Login To Sandbox with args "
+        "[\"${globalSandboxTestUrl}\", \"${sandboxUserNameInput}\", \"${sandboxPasswordInput}\"]\n"
+        "2. Use qualified keyword names (GlobalKeywords.Launch App, SalesPO.Create A New Lead, etc.)\n"
+        "3. For Lead creation, use SalesPO.Open New Lead From Sales App then SalesPO.Create A New Lead.\n"
+        "4. End with verification keywords when appropriate.\n"
+        "5. Keep variable references like ${leadFirstName} as-is.\n"
+    )
+    user_content = (
+        f"## Keyword Catalog\n\n{catalog_json}\n\n"
+        f"## User Request\n\n{user_prompt.strip()}"
+        f"{analysis_block}\n"
+    )
+
+    raw = call_llm(system, user_content)
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+
+    try:
+        steps = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", raw, re.DOTALL)
+        if match:
+            steps = json.loads(match.group())
+        else:
+            raise ValueError(f"LLM did not return valid JSON steps: {raw[:500]}")
+
+    if not isinstance(steps, list):
+        raise ValueError(f"Expected a JSON array of steps, got: {type(steps)}")
+    return steps
 
 
 _FORBIDDEN_SLEEP = re.compile(r"^\s+Sleep\s", re.MULTILINE)
@@ -697,10 +943,7 @@ def analyze_test_failure(test_name: str, error_message: str) -> str:
     )
     system = "You are a concise QA debugging assistant. Answer in plain text only."
     try:
-        provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
-        if provider == "openai":
-            return _call_openai(system, prompt).strip()
-        return _call_gemini(system, prompt).strip()
+        return call_llm(system, prompt).strip()
     except Exception:  # noqa: BLE001
         return "AI Analysis unavailable."
 
@@ -764,13 +1007,7 @@ def generate_test_from_prompt(
         f"## User request\n\n{user_input.strip()}\n"
     )
 
-    provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
-    if provider == "openai":
-        raw = _call_openai(system_prompt, user_content, image_bytes=image_bytes)
-    elif provider in ("gemini", "google"):
-        raw = _call_gemini(system_prompt, user_content, image_bytes=image_bytes)
-    else:
-        raise ValueError(f"Unsupported LLM_PROVIDER: {provider!r}. Use 'openai' or 'gemini'.")
+    raw = call_llm(system_prompt, user_content, image_bytes=image_bytes)
 
     robot_source = extract_robot_code(raw)
     if not robot_source.strip():

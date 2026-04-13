@@ -82,6 +82,10 @@ STRICT RULES
    - NEVER put a line like `${someName}` alone under `*** Keywords ***` as a keyword name—Robot treats
      that as an invalid keyword header. For random values use `Evaluate` in the test body (e.g.
      `random.randint` with `modules=random`), not a pseudo-keyword named like a variable.
+   - NEVER reference undefined placeholders like `${random_string}`. Assign a value first, e.g.
+     `${suffix}=    Generate Random String    8    [LETTERS]` (String library is loaded via
+     `GlobalKeywords`), or rely on `${leadFirstName}` / `${leadCompany}` from `SalesData` when using
+     `SalesPO.Create A New Lead` with no arguments.
    - Use exact catalog names: `Select Dropdown Option`, `Select Dialog Button` (spaces), not
      `SelectDropdownOption`. Do not end the file with Markdown fences (no ```).
    - If the org uses MFA/OTP, use three arguments only; Watch mode / non-headless runs pass
@@ -150,6 +154,10 @@ STRICT RULES
      project imports resources (mirror `Sales_Smoke_Test.robot`).
 
 6) User-specific test data (e.g. “John” at “Google”)
+   - **`SalesPO.Create A New Lead`** may be called **with no arguments** (uses `${leadFirstName}`,
+     `${leadLastName}`, `${leadCompany}` from `SalesData` / suite vars) **or** with **three**
+     optional positional args: first name, last name, company. Do not pass a different count
+     (e.g. one or two bare strings) unless you also set the remaining fields via variables.
    - PO keywords such as `Create A New Lead` use variables like `${leadFirstName}`,
      `${leadCompany}` from `Resources/TestData/Platform/SalesData.robot` by
      default. To run with user-provided values without editing files, use Robot
