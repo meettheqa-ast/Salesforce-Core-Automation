@@ -13,8 +13,8 @@ from __future__ import annotations
 import streamlit as st
 
 st.set_page_config(
-    page_title="Test Intelligence Platform",
-    page_icon="🤖",
+    page_title="TIP — Test Intelligence Platform",
+    page_icon="assets/tip_logo.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -534,64 +534,99 @@ def _render_test_builder_tab(
     #             clear_pending_generation()
     #             st.session_state.pop("_loaded_test_name", None)
 
-    if active_proj:
-        test_target_name = st.text_input(
-            "Test Case Name",
-            value=test_target_name,
-            placeholder="e.g. B2B_Lead_Creation",
-            help=f"Saved under Saved_Projects/{active_proj}/Tests/. Leave blank for ad-hoc runs.",
-            key="test_target_name_input",
-        )
-
-    # DEMO: User Story / Git integration hidden for clean demo
-    # user_story_id = st.text_input(
-    #     "🎫 User Story / Ticket ID (Optional)",
-    #     placeholder="e.g., US-1234",
-    #     help="Links the generated test to a requirement. "
-    #     "The tag is injected into the .robot [Tags] section and the file is committed to a feature branch.",
-    #     key="user_story_id_input",
-    # )
+    import streamlit_antd_components as _sac_tb
     user_story_id = ""
 
-    # ── Quick-action: Smoke & Regression buttons ─────────────────────
-    _smoke_col, _regr_col = st.columns(2)
-    with _smoke_col:
-        if st.button("🔥 Run Smoke Test", key="quick_smoke_btn", use_container_width=True):
-            st.session_state["_pending_prompt"] = (
-                "Run a smoke test for Leads, Accounts, Contacts, and Opportunities"
-            )
-            st.rerun()
-    with _regr_col:
-        if st.button("🧪 Run Regression Test", key="quick_regression_btn", use_container_width=True):
-            st.session_state["_pending_prompt"] = (
-                "Run a regression test for Leads, Accounts, Contacts, and Opportunities"
-            )
-            st.rerun()
+    # ── STEP 2: DEFINE TEST ─────────────────────────────────────────
+    _section_header("Define Your Test", "Describe what you want to test")
 
+    # Pending prompt + name handling (must run before widgets render)
     if st.session_state.get("_pending_prompt"):
         st.session_state["main_prompt"] = st.session_state.pop("_pending_prompt")
     if "main_prompt" not in st.session_state:
         st.session_state["main_prompt"] = ""
 
-    prompt = st.text_area(
-        "Describe your test in plain English",
-        height=160,
-        placeholder='e.g. "Verify I can create an Account named Acme Corp and then delete it"',
-        help="Natural-language description of what the test should do.",
-        key="main_prompt",
-    )
+    _suggested_name = st.session_state.pop("_suggested_test_name", "")
 
-    def _clear_prompt() -> None:
-        st.session_state["_pending_prompt"] = ""
+    if active_proj:
+        default_name = _suggested_name if _suggested_name else test_target_name
+        test_target_name = st.text_input(
+            "Test Case Name",
+            value=default_name,
+            placeholder="Auto-filled from description, or type your own",
+            help="Give your test a short, descriptive name. Auto-suggested when you use a template.",
+            key="test_target_name_input",
+        )
 
-    st.button("🧹 Clear Prompt", key="clear_prompt_btn", on_click=_clear_prompt)
+    st.caption("Start with a template:")
+    _ex1, _ex2, _ex3, _ex4 = st.columns(4)
+    _examples = {
+        "ex_lead": ("Create a Lead", "Create_Lead_Verify", "Create a new Lead with auto-generated data and verify it was created"),
+        "ex_account": ("Account CRUD", "Account_Create_Delete", "Create an Account named Acme Corp, verify it exists, then delete it"),
+        "ex_contact": ("Verify Contact", "Contact_Create_Verify", "Create a Contact and verify First Name, Last Name, and Email on the record page"),
+        "ex_opp": ("Update Opportunity", "Opportunity_Stage_Update", "Create an Opportunity, then update its Stage to Closed Won and verify"),
+    }
+    for col, (key, (label, name, prompt_text)) in zip([_ex1, _ex2, _ex3, _ex4], _examples.items()):
+        with col:
+            if st.button(label, key=key, use_container_width=True):
+                st.session_state["_pending_prompt"] = prompt_text
+                st.session_state["_suggested_test_name"] = name
+                st.rerun()
 
-    auto_gen = st.checkbox(
-        "🎲 Auto-generate missing test data (AI/Faker)",
-        value=True,
-        help="When checked, the AI invents realistic dummy data for any required fields "
-        "instead of asking you to fill in a clarification form.",
-    )
+    # Main prompt
+    prompt_col, clear_col = st.columns([12, 1])
+    with prompt_col:
+        prompt = st.text_area(
+            "Describe your test",
+            height=120,
+            placeholder='Describe what the test should do, e.g. "Create a Lead named John at Acme Corp and verify it"',
+            key="main_prompt",
+            label_visibility="collapsed",
+        )
+    with clear_col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        def _clear_prompt() -> None:
+            st.session_state["_pending_prompt"] = ""
+        st.button("X", key="clear_prompt_btn", on_click=_clear_prompt, help="Clear prompt")
+
+    # ── STEP 3: CONFIGURE ──────────────────────────────────────────
+    _section_header("Configure", "Choose test type and data settings")
+
+    cfg_c1, cfg_c2 = st.columns([3, 2])
+    with cfg_c1:
+        _type_labels = ["Custom", "Smoke", "Regression"]
+        _type_help_map = {"Custom": "Define your own steps", "Smoke": "Quick health check across core objects", "Regression": "Full workflow validation"}
+        test_type_val = _sac_tb.segmented(
+            items=[
+                _sac_tb.SegmentedItem(label="Custom", icon="pencil-square"),
+                _sac_tb.SegmentedItem(label="Smoke", icon="fire"),
+                _sac_tb.SegmentedItem(label="Regression", icon="arrow-repeat"),
+            ],
+            index=0,
+            color="violet",
+            use_container_width=True,
+            key="test_type_segmented",
+            return_index=True,
+        )
+        test_type_label = _type_labels[test_type_val] if isinstance(test_type_val, int) else str(test_type_val)
+        st.caption(_type_help_map.get(test_type_label, ""))
+
+        if test_type_label == "Smoke" and not prompt.strip():
+            st.session_state["_pending_prompt"] = "Run a smoke test for Leads, Accounts, Contacts, and Opportunities"
+            st.session_state["_suggested_test_name"] = "Smoke_Test"
+            st.rerun()
+        elif test_type_label == "Regression" and not prompt.strip():
+            st.session_state["_pending_prompt"] = "Run a regression test for Leads, Accounts, Contacts, and Opportunities"
+            st.session_state["_suggested_test_name"] = "Regression_Test"
+            st.rerun()
+
+    with cfg_c2:
+        auto_gen = st.toggle(
+            "Auto-generate test data",
+            value=True,
+            key="auto_gen_toggle",
+        )
+        st.caption("Fills required fields with realistic data (AI + Faker)" if auto_gen else "You'll be asked to provide field values manually")
 
     # SIMPLIFIED: CSV uploader, image uploader, and CSV preview hidden for clean flow
     # csv_col, img_col = st.columns(2)
@@ -625,18 +660,21 @@ def _render_test_builder_tab(
     uploaded_image = None
     csv_llm_block = ""
 
-    with st.expander("💡 What can I ask for? (Available Capabilities)", expanded=False):
+    with st.expander("What can I ask for? (Available Capabilities)", expanded=False):
         render_capabilities_cheat_sheet()
+
+    # ── STEP 4: GENERATE ───────────────────────────────────────────
+    _section_header("Generate", "Create and run your test script")
 
     overwrite_ok = True
     if active_proj and test_target_name and _pm is not None:
         if _pm.test_exists_in_project(active_proj, test_target_name):
-            st.warning(f"⚠️ '{test_target_name}' already exists in project '{active_proj}'.")
+            st.warning(f"'{test_target_name}' already exists in project '{active_proj}'.")
             if not st.checkbox("Yes, overwrite the existing test script"):
                 overwrite_ok = False
 
     run_clicked = st.button(
-        "🚀 Generate Script", type="primary", use_container_width=True,
+        "Generate Script", type="primary", use_container_width=True,
     )
 
     if run_clicked:
@@ -720,7 +758,7 @@ def _render_test_builder_tab(
 
             final_prompt = append_csv_data_to_prompt(final_prompt_txt, csv_llm_block)
             img_bytes = uploaded_image.getvalue() if uploaded_image else None
-            _active_gen_mode = st.session_state.get("gen_mode_radio", "Quick Generate")
+            _active_gen_mode = st.session_state.get("_tb_gen_mode", "MCP Stepwise")
             if _active_gen_mode == "MCP Stepwise":
                 run_mcp_stepwise_pipeline(
                     final_prompt,
@@ -1108,204 +1146,842 @@ def _render_data_templates_tab(active_proj: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Main entry point
+# CSS Theme: dark sidebar + light main area + card styles
 # ---------------------------------------------------------------------------
 
-def main_ui() -> None:
-    st.title("Test Intelligence Platform")
-    st.caption(
-        "Describe a test in plain English. The AI generates Robot Framework code, "
-        "then executes it against your sandbox."
+_THEME_CSS = """
+<style>
+/* ==========================================================================
+   Modern SaaS — Dark blue sidebar + clean white main (WCAG AA)
+   Inspired by Stripe/Vercel: indigo active, soft shadows, 10px radius
+   ========================================================================== */
+
+/* ── Clean white main area ── */
+.stApp {
+    background: #F9FAFB !important;
+}
+
+/* ── Dark sidebar ── */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #1F2A44 0%, #121826 100%) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    padding: 16px !important;
+}
+section[data-testid="stSidebar"] > div {
+    background: transparent !important;
+}
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] .stMarkdown {
+    color: #A0AEC0 !important;
+}
+section[data-testid="stSidebar"] hr {
+    border: none !important;
+    height: 1px !important;
+    background: rgba(255,255,255,0.08) !important;
+    margin: 12px 0 !important;
+}
+section[data-testid="stSidebar"] button {
+    background: transparent !important;
+    border: none !important;
+    color: #A0AEC0 !important;
+    font-weight: 400 !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+}
+section[data-testid="stSidebar"] button:hover {
+    background: rgba(255,255,255,0.06) !important;
+    color: #FFFFFF !important;
+    transform: translateX(2px) !important;
+}
+section[data-testid="stSidebar"] button p {
+    color: #A0AEC0 !important;
+}
+section[data-testid="stSidebar"] button:hover p {
+    color: #FFFFFF !important;
+}
+
+/* ── Sidebar nav buttons — clean on dark bg ── */
+section[data-testid="stSidebar"] .stButton {
+    margin-bottom: 3px !important;
+}
+
+/* ── Branding ── */
+.sidebar-brand {
+    padding: 0.5rem 0.75rem 0.25rem 0.75rem;
+    text-align: center;
+    background: rgba(255,255,255,0.05);
+    border-radius: 12px;
+    margin-bottom: 0.5rem;
+}
+.sidebar-brand-title {
+    margin: 0; font-size: 1.3rem; font-weight: 700;
+    color: #FFFFFF !important;
+    -webkit-text-fill-color: #FFFFFF;
+    letter-spacing: -0.01em;
+}
+.sidebar-brand-sub {
+    margin: 0.1rem 0 0 0; font-size: 0.7rem;
+    color: #A0AEC0 !important; font-weight: 500;
+    letter-spacing: 0.04em; text-transform: uppercase;
+}
+
+/* ── Cards ── */
+.feature-card {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    transition: all 0.2s ease;
+    height: 100%;
+}
+.feature-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    border-color: #6366F1;
+    transform: translateY(-2px);
+}
+.feature-card-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+.feature-card-title { font-size: 1rem; font-weight: 600; color: #111827; margin-bottom: 0.25rem; }
+.feature-card-desc { font-size: 0.8rem; color: #6B7280; line-height: 1.4; }
+
+/* ── Page header ── */
+.page-header { margin-bottom: 1.5rem; }
+.page-header h1 { font-size: 1.8rem; font-weight: 700; color: #111827; margin-bottom: 0.25rem; }
+.page-header p { font-size: 0.9rem; color: #6B7280; margin: 0; }
+
+/* ── Metric cards ── */
+div[data-testid="stMetric"] {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* ── Rounded inputs ── */
+.stTextInput input, .stTextArea textarea {
+    border-radius: 10px !important;
+    border: 1.5px solid #E5E7EB !important;
+    transition: border-color 0.2s ease !important;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 2px rgba(99,102,241,0.15) !important;
+}
+.stSelectbox > div > div {
+    border-radius: 10px !important;
+}
+
+/* ── Expanders ── */
+.streamlit-expanderHeader {
+    border-radius: 10px !important;
+    background: #FFFFFF !important;
+    border: 1px solid #E5E7EB !important;
+}
+
+/* ── Primary buttons — indigo ── */
+.stButton button[kind="primary"],
+.stButton button[data-testid="stBaseButton-primary"] {
+    background: linear-gradient(135deg, #4F46E5, #6366F1) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(79,70,229,0.25) !important;
+    transition: all 0.2s ease !important;
+}
+.stButton button[kind="primary"]:hover,
+.stButton button[data-testid="stBaseButton-primary"]:hover {
+    background: linear-gradient(135deg, #4338CA, #4F46E5) !important;
+    box-shadow: 0 4px 16px rgba(79,70,229,0.35) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── Secondary buttons ── */
+.stButton button[kind="secondary"],
+.stButton button[data-testid="stBaseButton-secondary"] {
+    background: #FFFFFF !important;
+    color: #374151 !important;
+    border: 1px solid #E5E7EB !important;
+    font-weight: 500 !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+}
+.stButton button[kind="secondary"]:hover,
+.stButton button[data-testid="stBaseButton-secondary"]:hover {
+    background: #F9FAFB !important;
+    border-color: #6366F1 !important;
+    color: #4F46E5 !important;
+}
+
+/* ── Tabs — indigo accent ── */
+.stTabs [data-baseweb="tab-list"] {
+    border-radius: 10px;
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+}
+.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+    border-bottom-color: #4F46E5 !important;
+    color: #4F46E5 !important;
+    font-weight: 600 !important;
+}
+.stTabs [data-baseweb="tab-list"] button {
+    color: #6B7280 !important;
+    border-radius: 8px !important;
+}
+
+/* ── Focus outlines (accessibility) ── */
+button:focus-visible, a:focus-visible, input:focus-visible,
+textarea:focus-visible, select:focus-visible {
+    outline: 2px solid #4F46E5 !important;
+    outline-offset: 2px !important;
+}
+
+/* ── Smooth transitions ── */
+button, input, textarea, select {
+    transition: all 0.2s ease !important;
+}
+
+/* ── Section headers ── */
+.section-header {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+.section-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2C2C2C;
+    margin: 0 0 0.2rem 0;
+    letter-spacing: -0.01em;
+}
+.section-header p {
+    font-size: 0.8rem;
+    color: #6B7280;
+    margin: 0 0 0.5rem 0;
+}
+.section-header hr {
+    border: none;
+    border-top: 1px solid #E5E5E5;
+    margin: 0;
+}
+
+/* ── Layout — constrained width for readability ── */
+.block-container {
+    padding-top: 1.5rem !important;
+    max-width: 960px !important;
+    margin: 0 auto !important;
+}
+</style>
+"""
+
+
+def _section_header(title: str, subtitle: str = "") -> None:
+    """Render a clean section header with title, optional subtitle, and light divider."""
+    sub_html = f"<p>{subtitle}</p>" if subtitle else ""
+    st.markdown(
+        f'<div class="section-header">'
+        f"<h3>{title}</h3>"
+        f"{sub_html}"
+        f"<hr>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Page renderers
+# ---------------------------------------------------------------------------
+
+def _render_test_builder_page(
+    sandbox_url: str, username: str, password: str, headless: bool, active_proj: str,
+) -> None:
+    """Home / Test Builder page — guided flow: Setup > Define > Configure > Generate."""
+    import streamlit_antd_components as sac
+
+    st.markdown(
+        '<div class="page-header" style="margin-bottom:0.5rem">'
+        '<h1 style="font-size:1.6rem;margin-bottom:0.1rem">What would you like to test today?</h1>'
+        "<p>Describe your test in plain English -- no coding needed.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── STEP 1: SETUP ───────────────────────────────────────────────
+    _section_header("Setup", "Configure workspace and execution settings")
+
+    setup_c1, setup_c2, setup_c3, setup_c4 = st.columns([2, 1, 2, 1])
+
+    with setup_c1:
+        all_projs = _pm.list_projects() if _HAS_WORKSPACE and _pm is not None else []
+        proj_opts = ["Ad-hoc"] + all_projs
+        cur_proj = st.session_state.get("active_project", "")
+        cur_idx = proj_opts.index(cur_proj) if cur_proj in proj_opts else 0
+
+        proj_sel = st.selectbox(
+            "Workspace",
+            proj_opts,
+            index=cur_idx,
+            key="tb_project_select",
+        )
+        if proj_sel == "Ad-hoc":
+            if st.session_state.get("active_project", "") != "":
+                st.session_state["active_project"] = ""
+                st.session_state.pop("_credentials_bound_key", None)
+                st.rerun()
+        else:
+            if st.session_state.get("active_project") != proj_sel:
+                st.session_state["active_project"] = proj_sel
+                st.session_state.pop("_credentials_bound_key", None)
+                _apply_project_credentials_to_session()
+                st.rerun()
+
+    active_proj = st.session_state.get("active_project", "")
+
+    if active_proj and _HAS_WORKSPACE and _pm is not None:
+        env_list = _pm.list_environments(active_proj) or ["Dev"]
+        cur_env = st.session_state.get("active_environment", "Dev")
+
+        with setup_c2:
+            env_sel = st.selectbox(
+                "Environment",
+                env_list,
+                index=env_list.index(cur_env) if cur_env in env_list else 0,
+                key="tb_env_select",
+            )
+            if env_sel != cur_env:
+                st.session_state["active_environment"] = env_sel
+                st.session_state.pop("_credentials_bound_key", None)
+                _apply_project_credentials_to_session()
+                st.rerun()
+
+        _apply_project_credentials_to_session()
+        sandbox_url = st.session_state.get("sf_sandbox_url", "")
+        username = st.session_state.get("sf_username", "")
+        password = st.session_state.get("sf_password", "")
+
+        with setup_c3:
+            if sandbox_url:
+                st.text_input("Sandbox", value=sandbox_url, disabled=True, key=f"tb_sandbox_{cur_env}")
+            else:
+                st.warning("No sandbox URL. Set up in **Projects**.")
+        with setup_c4:
+            if username:
+                st.text_input("User", value=username, disabled=True, key=f"tb_user_{cur_env}")
+            else:
+                st.caption("Not configured")
+    else:
+        sandbox_url = st.session_state.get("sf_sandbox_url", "")
+        username = st.session_state.get("sf_username", "")
+        password = st.session_state.get("sf_password", "")
+        with setup_c2:
+            st.caption("")
+        with setup_c3:
+            if sandbox_url:
+                st.caption(f"**{sandbox_url.split('//')[-1][:40]}**")
+            else:
+                st.info("Go to **Projects** to configure credentials.")
+        with setup_c4:
+            if username:
+                st.caption(f"**{username}**")
+
+    # Execution settings
+    import streamlit_antd_components as sac
+    es_c1, es_c2 = st.columns(2)
+    with es_c1:
+        st.caption("Execution Mode")
+        exec_idx = sac.segmented(
+            items=[
+                sac.SegmentedItem(label="Watch (live browser)", icon="eye"),
+                sac.SegmentedItem(label="Background (headless)", icon="lightning-charge"),
+            ],
+            index=0,
+            color="violet",
+            use_container_width=True,
+            key="tb_exec_segmented",
+        )
+        headless = exec_idx == 1
+    with es_c2:
+        st.caption("Generation Mode")
+        gen_idx = sac.segmented(
+            items=[
+                sac.SegmentedItem(label="MCP Stepwise (verified)", icon="check2-circle"),
+                sac.SegmentedItem(label="Quick Generate", icon="lightning"),
+            ],
+            index=0,
+            color="violet",
+            use_container_width=True,
+            key="gen_mode_radio",
+        )
+        st.session_state["_tb_gen_mode"] = "MCP Stepwise" if gen_idx == 0 else "Quick Generate"
+
+    _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
+
+
+def _render_projects_page(
+    sandbox_url: str, username: str, password: str,
+) -> None:
+    """Projects page: structured sections for project, environment, persona, credentials."""
+    st.markdown(
+        '<div class="page-header">'
+        "<h1>Projects</h1>"
+        "<p>Create and manage test projects, environments, and credentials.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    if not _HAS_WORKSPACE or _pm is None:
+        st.warning("Project workspace module is unavailable.")
+        return
+
+    _ENV_PRESETS = ["Dev", "QA", "UAT", "Prod"]
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 1: PROJECT INFO
+    # ══════════════════════════════════════════════════════════════════
+    _section_header("Project Info", "Select or create a project")
+
+    all_projs = _pm.list_projects()
+
+    if not all_projs and not st.session_state.get("_show_create_project"):
+        st.markdown(
+            '<div class="feature-card" style="text-align:center;padding:2rem">'
+            '<div class="feature-card-icon">📂</div>'
+            '<div class="feature-card-title">No projects yet</div>'
+            '<div class="feature-card-desc">Create your first project to organize tests, environments, and credentials.</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Create Your First Project", type="primary", key="create_first_proj_btn", use_container_width=True):
+            st.session_state["_show_create_project"] = True
+            st.rerun()
+
+    else:
+        proj_opts = ["+ Create New Project"] + all_projs
+        active_proj = st.session_state.get("active_project", "")
+        cur_idx = proj_opts.index(active_proj) if active_proj in proj_opts else (1 if all_projs else 0)
+
+        proj_sel = st.selectbox("Project", proj_opts, index=cur_idx, key="proj_page_select", label_visibility="collapsed")
+
+        if proj_sel == "+ Create New Project" or st.session_state.get("_show_create_project"):
+            st.session_state.pop("_show_create_project", None)
+            with st.container(border=True):
+                p_c1, p_c2 = st.columns(2)
+                with p_c1:
+                    new_name = st.text_input("Project Name", placeholder="e.g. Regression_Suite_Q3", key="proj_new_name")
+                with p_c2:
+                    new_desc = st.text_input("Description (optional)", placeholder="e.g. End-to-end tests for CPQ", key="proj_new_desc")
+
+                init_env = st.selectbox("Initial Environment", _ENV_PRESETS + ["Custom..."], key="proj_new_env")
+                if init_env == "Custom...":
+                    init_env = st.text_input("Custom environment name", key="proj_new_env_custom")
+
+                np_url = st.text_input("Sandbox URL", placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/", key="proj_new_url")
+                cred_c1, cred_c2 = st.columns(2)
+                with cred_c1:
+                    np_user = st.text_input("Username", key="proj_new_user")
+                with cred_c2:
+                    np_pw = st.text_input("Password", type="password", key="proj_new_pw")
+
+                if st.button("Save Project", type="primary", key="proj_save_btn", use_container_width=True):
+                    if not new_name or not new_name.strip():
+                        st.error("Project name cannot be empty.")
+                    elif not init_env or not init_env.strip():
+                        st.error("Please select or enter an environment name.")
+                    else:
+                        try:
+                            proj_dir = _pm.create_project(new_name, new_desc or "")
+                            project_id = proj_dir.name
+                            _pm.write_project_credentials(
+                                project_id, np_url.strip(), np_user.strip(), np_pw,
+                                environment=init_env.strip(), persona="System Admin",
+                            )
+                            st.session_state["active_project"] = project_id
+                            st.session_state["active_environment"] = init_env.strip()
+                            st.session_state["active_persona"] = "System Admin"
+                            st.session_state.pop("_credentials_bound_key", None)
+                            st.toast(f"Project **{new_name}** created!")
+                            st.rerun()
+                        except ValueError as e:
+                            st.error(str(e))
+        else:
+            if st.session_state.get("active_project") != proj_sel:
+                st.session_state["active_project"] = proj_sel
+                st.session_state.pop("_credentials_bound_key", None)
+                st.session_state["edit_creds_mode"] = False
+                env_list_init = _pm.list_environments(proj_sel)
+                if env_list_init:
+                    st.session_state["active_environment"] = env_list_init[0]
+                st.session_state["active_persona"] = "System Admin"
+                st.rerun()
+
+    active = st.session_state.get("active_project", "")
+    if not active:
+        return
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 2: ENVIRONMENT SETUP
+    # ══════════════════════════════════════════════════════════════════
+    _section_header("Environment Setup", "Configure sandbox environments for this project")
+
+    env_list = _pm.list_environments(active) or []
+    env_opts = env_list + ["+ Add Environment"]
+    cur_env = st.session_state.get("active_environment", env_list[0] if env_list else "Dev")
+    env_idx = env_opts.index(cur_env) if cur_env in env_opts else 0
+
+    env_sel = st.selectbox("Environment", env_opts, index=env_idx, key="proj_env_select")
+
+    if env_sel == "+ Add Environment":
+        with st.container(border=True):
+            st.caption("New Environment + Persona + Credentials")
+
+            available_presets = [e for e in _ENV_PRESETS if e not in env_list]
+            env_choices = available_presets + ["Custom..."] if available_presets else ["Custom..."]
+
+            top_c1, top_c2 = st.columns(2)
+            with top_c1:
+                add_env_sel = st.selectbox("Environment Name", env_choices, key="proj_add_env_sel")
+                if add_env_sel == "Custom...":
+                    add_env_name = st.text_input("Custom environment name", key="proj_add_env_custom")
+                else:
+                    add_env_name = add_env_sel
+                if not available_presets and add_env_sel != "Custom...":
+                    st.caption("All predefined environments exist. Use a custom name.")
+            with top_c2:
+                ae_persona = st.text_input(
+                    "Test Persona",
+                    value="System Admin",
+                    placeholder="e.g. System Admin, Marketing User",
+                    key="proj_add_env_persona",
+                    help="The user persona for this environment. Default: System Admin.",
+                )
+
+            ae_url = st.text_input("Sandbox URL", placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/", key="proj_add_env_url")
+            ae_c1, ae_c2 = st.columns(2)
+            with ae_c1:
+                ae_user = st.text_input("Username", key="proj_add_env_user")
+            with ae_c2:
+                ae_pw = st.text_input("Password", type="password", key="proj_add_env_pw")
+
+            btn_c1, btn_c2 = st.columns(2)
+            with btn_c1:
+                if st.button("Save Environment", type="primary", key="proj_save_env_btn", use_container_width=True):
+                    if not add_env_name or not add_env_name.strip():
+                        st.error("Please enter an environment name.")
+                    elif add_env_name.strip() in env_list:
+                        st.error(f"Environment **{add_env_name}** already exists.")
+                    elif not ae_persona or not ae_persona.strip():
+                        st.error("Persona name cannot be empty.")
+                    else:
+                        _pm.write_project_credentials(
+                            active, ae_url.strip(), ae_user.strip(), ae_pw,
+                            environment=add_env_name.strip(),
+                            persona=ae_persona.strip(),
+                        )
+                        st.session_state["active_environment"] = add_env_name.strip()
+                        st.session_state["active_persona"] = ae_persona.strip()
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.toast(f"Environment **{add_env_name}** / **{ae_persona}** added!")
+                        st.rerun()
+            with btn_c2:
+                if st.button("Cancel", key="proj_cancel_env_btn", use_container_width=True):
+                    st.session_state["active_environment"] = env_list[0] if env_list else "Dev"
+                    st.rerun()
+    else:
+        st.session_state["active_environment"] = env_sel
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 3: TEST PERSONA
+    # ══════════════════════════════════════════════════════════════════
+    act_env = st.session_state.get("active_environment") or "Dev"
+    if env_sel != "+ Add Environment":
+        _section_header("Test Persona", "Select the user persona for testing")
+
+        persona_list = _pm.list_personas(active, act_env) or ["System Admin"]
+        persona_opts = persona_list + ["+ Add Persona"]
+        cur_per = st.session_state.get("active_persona", "System Admin")
+        per_idx = persona_opts.index(cur_per) if cur_per in persona_opts else 0
+
+        per_sel = st.selectbox("Persona", persona_opts, index=per_idx, key="proj_persona_select")
+
+        if per_sel == "+ Add Persona":
+            per_c1, per_c2 = st.columns([3, 1])
+            with per_c1:
+                new_per = st.text_input("Persona name", placeholder="e.g. Marketing User", key="proj_new_persona_name")
+            with per_c2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Create", type="primary", key="proj_create_persona_btn", use_container_width=True):
+                    if new_per and new_per.strip():
+                        _pm.write_project_credentials(
+                            active, "", "", "",
+                            environment=act_env, persona=new_per.strip(),
+                        )
+                        st.session_state["active_persona"] = new_per.strip()
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.toast(f"Persona **{new_per}** created!")
+                        st.rerun()
+                    else:
+                        st.error("Persona name cannot be empty.")
+        else:
+            st.session_state["active_persona"] = per_sel
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 4: CREDENTIALS
+    # ══════════════════════════════════════════════════════════════════
+    _persona = st.session_state.get("active_persona") or "System Admin"
+    if env_sel != "+ Add Environment":
+        _section_header("Credentials", f"Sandbox connection for {act_env} / {_persona}")
+
+        _apply_project_credentials_to_session()
+        editing = st.session_state.get("edit_creds_mode", False)
+
+        if not editing:
+            st.markdown(
+                "<style>"
+                "div[data-testid='stTextInput'] input:disabled {"
+                "  color: #1a1a2e !important;"
+                "  -webkit-text-fill-color: #1a1a2e !important;"
+                "  opacity: 1 !important;"
+                "}"
+                "</style>",
+                unsafe_allow_html=True,
+            )
+
+        cr_c1, cr_c2 = st.columns(2)
+        with cr_c1:
+            st.text_input(
+                "Sandbox URL",
+                placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                help="Login URL for your Salesforce sandbox.",
+                key="sf_sandbox_url",
+                disabled=not editing,
+            )
+        with cr_c2:
+            st.text_input("Username", placeholder="user@example.com", key="sf_username", disabled=not editing)
+        cr_c3, cr_c4 = st.columns(2)
+        with cr_c3:
+            st.text_input("Password", type="password", placeholder="••••••••", key="sf_password", disabled=not editing)
+        with cr_c4:
+            st.text_input(
+                "Security Token", type="password",
+                placeholder="Leave blank if IP whitelisted",
+                help="Required for API data seeding when your IP isn't in the org's trusted range.",
+                key="sf_security_token",
+                disabled=not editing,
+            )
+
+        if not editing:
+            if st.button("Edit Credentials", key="proj_edit_creds_btn"):
+                st.session_state["edit_creds_mode"] = True
+                st.rerun()
+        else:
+            save_c, cancel_c = st.columns(2)
+            with save_c:
+                if st.button("Save Credentials", type="primary", key="proj_save_creds_btn", use_container_width=True):
+                    _pm.write_project_credentials(
+                        active,
+                        st.session_state.get("sf_sandbox_url", ""),
+                        st.session_state.get("sf_username", ""),
+                        st.session_state.get("sf_password", ""),
+                        st.session_state.get("sf_security_token", ""),
+                        environment=act_env,
+                        persona=_persona,
+                    )
+                    st.session_state["edit_creds_mode"] = False
+                    st.session_state.pop("_credentials_bound_key", None)
+                    st.toast(f"Credentials saved for **{act_env}** / **{_persona}**.")
+                    st.rerun()
+            with cancel_c:
+                if st.button("Cancel", key="proj_cancel_creds_btn", use_container_width=True):
+                    st.session_state["edit_creds_mode"] = False
+                    st.session_state.pop("_credentials_bound_key", None)
+                    st.rerun()
+
+    # Set env token
+    tok = st.session_state.get("sf_security_token", "").strip()
+    if tok:
+        os.environ["SF_SECURITY_TOKEN"] = tok
+    else:
+        os.environ.pop("SF_SECURITY_TOKEN", None)
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 5: SAVED TESTS
+    # ══════════════════════════════════════════════════════════════════
+    saved = _pm.list_project_tests(active)
+    if saved:
+        _section_header("Saved Tests", f"{len(saved)} test scripts in this project")
+        cols = st.columns(3)
+        for i, t in enumerate(saved):
+            with cols[i % 3]:
+                st.markdown(
+                    f'<div class="feature-card">'
+                    f'<div class="feature-card-icon">📄</div>'
+                    f'<div class="feature-card-title">{t["name"]}</div>'
+                    f'<div class="feature-card-desc">.robot file</div>'
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("Load", key=f"load_test_{t['name']}", use_container_width=True):
+                    load_test_into_editor(active, t["name"])
+                    st.session_state["nav_page"] = "test_builder"
+                    st.rerun()
+    else:
+        _section_header("Saved Tests", "No tests saved yet")
+        st.markdown(
+            '<div class="feature-card" style="text-align:center;padding:1.5rem">'
+            '<div class="feature-card-desc">No saved tests in this project yet. Generate one from the Test Builder.</div>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ══════════════════════════════════════════════════════════════════
+    # SECTION 6: ANALYTICS
+    # ══════════════════════════════════════════════════════════════════
+    _section_header("Analytics", "Run history and pass/fail trends")
+    render_project_analytics_dashboard(active)
+
+
+def _render_sfdx_page() -> None:
+    """SF DX Tools page: SOQL, Apex Tests, Org Schema as cards."""
+    st.markdown(
+        '<div class="page-header">'
+        "<h1>Salesforce DX Tools</h1>"
+        "<p>Query your org, run Apex tests, and inspect object schemas directly.</p>"
+        "</div>",
+        unsafe_allow_html=True,
     )
 
     try:
-        from ai_bridge import hydrate_llm_env
-
-        hydrate_llm_env()
+        import sf_dx_bridge
+        st.caption(f"Status: {sf_dx_bridge.get_status_summary()}")
     except ImportError:
-        pass
+        st.warning("sf_dx_bridge module not available. Ensure Node.js and Salesforce CLI are installed.")
+        return
 
-    _init_sf_credential_session_keys()
+    col1, col2, col3 = st.columns(3)
 
-    from ai_bridge import LLM_PROVIDERS, PROVIDER_LABELS
-    _label_to_id = {v: k for k, v in PROVIDER_LABELS.items()}
-    _id_to_label = PROVIDER_LABELS
-
-    if "llm_provider_select" not in st.session_state:
-        p = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
-        st.session_state["llm_provider_select"] = _id_to_label.get(p, "Gemini")
-
-    if "smoke_app_name" not in st.session_state:
-        st.session_state["smoke_app_name"] = "Sales"
-
-    # ── Minimal sidebar: branding + execution mode + AI / LLM ──────────────
-    with st.sidebar:
+    with col1:
         st.markdown(
-            """
-<style>
-  .tip-brand-title { margin: 0 0 0.15rem 0; font-size: 1.35rem; font-weight: 700;
-    color: #0047B3; letter-spacing: -0.02em; }
-  .tip-brand-sub { margin: 0; font-size: 0.78rem; color: #42526E; font-weight: 500; }
-</style>
-<div>
-  <p class="tip-brand-title">🚀 AI QA Portal</p>
-  <p class="tip-brand-sub">Test Intelligence Platform</p>
-</div>
-            """,
+            '<div class="feature-card">'
+            '<div class="feature-card-icon">🔍</div>'
+            '<div class="feature-card-title">SOQL Query</div>'
+            '<div class="feature-card-desc">Run queries against your Salesforce org</div>'
+            "</div>",
             unsafe_allow_html=True,
         )
-        st.divider()
-        execution_mode = st.radio(
-            "Execution mode",
-            ("Background (Fast)", "Watch on Screen (Debug)"),
-            index=1,
-            help="Background uses headless Chrome. Watch opens a visible browser for debugging.",
+    with col2:
+        st.markdown(
+            '<div class="feature-card">'
+            '<div class="feature-card-icon">🧪</div>'
+            '<div class="feature-card-title">Apex Tests</div>'
+            '<div class="feature-card-desc">Execute Apex unit tests in your org</div>'
+            "</div>",
+            unsafe_allow_html=True,
         )
-        headless = execution_mode == "Background (Fast)"
-        st.divider()
-        st.subheader("AI (LLM)")
-        provider_labels = list(PROVIDER_LABELS.values())
-        llm_prov_label = st.selectbox(
-            "LLM Provider",
-            provider_labels,
-            index=provider_labels.index(st.session_state.get("llm_provider_select", "Gemini")),
-            key="llm_provider_select",
-            help="Select an AI provider. Gemini is the default (free tier). Set your API key in `.env` or paste below.",
-        )
-        selected_provider_id = _label_to_id.get(llm_prov_label, "gemini")
-        os.environ["LLM_PROVIDER"] = selected_provider_id
-
-        provider_info = LLM_PROVIDERS[selected_provider_id]
-        key_env_name = provider_info[0]
-
-        sidebar_api_key = st.text_input(
-            f"{llm_prov_label} API Key (optional — overrides .env)",
-            type="password",
-            placeholder="Uses .env key if empty; paste here for session override",
-            key="sidebar_api_key_input",
+    with col3:
+        st.markdown(
+            '<div class="feature-card">'
+            '<div class="feature-card-icon">📋</div>'
+            '<div class="feature-card-title">Org Schema</div>'
+            '<div class="feature-card-desc">Inspect object fields and picklist values</div>'
+            "</div>",
+            unsafe_allow_html=True,
         )
 
-        sync_sidebar_api_key(key_env_name, selected_provider_id, sidebar_api_key)
+    st.markdown("---")
 
-        st.divider()
-        st.subheader("Generation Mode")
-        gen_mode = st.radio(
-            "How should tests be generated?",
-            ("Quick Generate", "MCP Stepwise"),
-            index=0,
-            key="gen_mode_radio",
-            help=(
-                "**Quick Generate:** LLM generates the .robot file directly from the prompt (fast). "
-                "**MCP Stepwise:** RF-MCP executes each keyword against a live browser to verify "
-                "it works, then builds the .robot file from verified steps (slower but higher quality)."
-            ),
+    tab_soql, tab_apex, tab_schema = st.tabs(["SOQL Query", "Apex Tests", "Org Schema"])
+
+    with tab_soql:
+        soql_query = st.text_area(
+            "Enter SOQL",
+            placeholder="SELECT Id, Name FROM Lead ORDER BY CreatedDate DESC LIMIT 5",
+            height=120,
+            key="soql_query_input_page",
         )
+        if st.button("Run Query", key="run_soql_page_btn", type="primary", use_container_width=True):
+            if soql_query.strip():
+                with st.spinner("Running SOQL query..."):
+                    try:
+                        result = sf_dx_bridge.run_soql_query(soql_query.strip())
+                        st.session_state["_soql_result_page"] = result
+                    except Exception as exc:
+                        st.error(f"SOQL failed: {exc}")
+            else:
+                st.warning("Enter a query first.")
+        if st.session_state.get("_soql_result_page"):
+            st.json(st.session_state["_soql_result_page"])
 
-        if gen_mode == "MCP Stepwise":
-            try:
-                import mcp_bridge
-                if mcp_bridge.is_server_running():
-                    st.caption("RF-MCP Server: Running")
-                else:
-                    st.caption("RF-MCP Server: Stopped (starts on generate)")
-                _c1, _c2 = st.columns(2)
-                with _c1:
-                    if st.button("Start Server", key="mcp_start_btn", use_container_width=True):
-                        try:
-                            mcp_bridge.start_mcp_server()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(str(e))
-                with _c2:
-                    if st.button("Stop Server", key="mcp_stop_btn", use_container_width=True):
-                        mcp_bridge.stop_mcp_server()
-                        st.rerun()
-            except ImportError:
-                st.warning("mcp_bridge module not found.")
+    with tab_apex:
+        apex_classes = st.text_input(
+            "Test class names (comma-separated)",
+            placeholder="MyTestClass, AnotherTestClass",
+            key="apex_test_input_page",
+        )
+        if st.button("Run Tests", key="run_apex_page_btn", type="primary", use_container_width=True):
+            if apex_classes.strip():
+                with st.spinner("Running Apex tests..."):
+                    try:
+                        result = sf_dx_bridge.run_apex_tests(apex_classes.strip())
+                        st.session_state["_apex_result_page"] = result
+                    except Exception as exc:
+                        st.error(f"Apex tests failed: {exc}")
+            else:
+                st.warning("Enter test class names first.")
+        if st.session_state.get("_apex_result_page"):
+            st.json(st.session_state["_apex_result_page"])
 
-        # ── Salesforce DX Tools ──────────────────────────────────────────
-        st.divider()
-        st.subheader("Salesforce DX Tools")
-        try:
-            import sf_dx_bridge
-            st.caption(sf_dx_bridge.get_status_summary())
+    with tab_schema:
+        schema_obj = st.selectbox(
+            "Salesforce Object",
+            ["Lead", "Account", "Contact", "Opportunity", "Case"],
+            key="schema_obj_select_page",
+        )
+        if st.button("Fetch Fields", key="fetch_schema_page_btn", type="primary", use_container_width=True):
+            with st.spinner(f"Fetching {schema_obj} fields..."):
+                try:
+                    result = sf_dx_bridge.describe_object_fields(schema_obj)
+                    st.session_state["_schema_result_page"] = result
+                except Exception as exc:
+                    st.error(f"Schema fetch failed: {exc}")
+        if st.session_state.get("_schema_result_page"):
+            st.json(st.session_state["_schema_result_page"])
 
-            with st.expander("SOQL Query", expanded=False):
-                soql_query = st.text_area(
-                    "Enter SOQL",
-                    placeholder="SELECT Id, Name FROM Lead ORDER BY CreatedDate DESC LIMIT 5",
-                    height=80,
-                    key="soql_query_input",
-                )
-                if st.button("Run SOQL", key="run_soql_btn", use_container_width=True):
-                    if soql_query.strip():
-                        with st.spinner("Running SOQL query..."):
-                            try:
-                                result = sf_dx_bridge.run_soql_query(soql_query.strip())
-                                st.session_state["_soql_result"] = result
-                            except Exception as exc:
-                                st.error(f"SOQL failed: {exc}")
-                    else:
-                        st.warning("Enter a query first.")
-                if st.session_state.get("_soql_result"):
-                    st.json(st.session_state["_soql_result"])
 
-            with st.expander("Apex Tests", expanded=False):
-                apex_classes = st.text_input(
-                    "Test class names (comma-separated)",
-                    placeholder="MyTestClass, AnotherTestClass",
-                    key="apex_test_input",
-                )
-                if st.button("Run Apex Tests", key="run_apex_btn", use_container_width=True):
-                    if apex_classes.strip():
-                        with st.spinner("Running Apex tests..."):
-                            try:
-                                result = sf_dx_bridge.run_apex_tests(apex_classes.strip())
-                                st.session_state["_apex_result"] = result
-                            except Exception as exc:
-                                st.error(f"Apex tests failed: {exc}")
-                    else:
-                        st.warning("Enter test class names first.")
-                if st.session_state.get("_apex_result"):
-                    st.json(st.session_state["_apex_result"])
+def _render_locator_page(sandbox_url: str, username: str, password: str) -> None:
+    """Locator Scanner page (Plan Dhurandhar)."""
+    st.markdown(
+        '<div class="page-header">'
+        "<h1>Locator Health Scanner</h1>"
+        "<p>Test your GlobalLocators.robot selectors against the live Salesforce DOM. "
+        "Identifies stale locators that need updating after Salesforce releases.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-            with st.expander("Org Schema", expanded=False):
-                schema_obj = st.selectbox(
-                    "Object",
-                    ["Lead", "Account", "Contact", "Opportunity", "Case"],
-                    key="schema_obj_select",
-                )
-                if st.button("Fetch Fields", key="fetch_schema_btn", use_container_width=True):
-                    with st.spinner(f"Fetching {schema_obj} fields..."):
-                        try:
-                            result = sf_dx_bridge.describe_object_fields(schema_obj)
-                            st.session_state["_schema_result"] = result
-                        except Exception as exc:
-                            st.error(f"Schema fetch failed: {exc}")
-                if st.session_state.get("_schema_result"):
-                    st.json(st.session_state["_schema_result"])
+    col_info, col_action = st.columns([2, 1])
+    with col_info:
+        st.markdown(
+            '<div class="feature-card">'
+            '<div class="feature-card-icon">🔬</div>'
+            '<div class="feature-card-title">Scan All Locators</div>'
+            '<div class="feature-card-desc">'
+            "Logs into your sandbox, navigates through the Lead flow, "
+            "and tests each locator against the live DOM."
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+    with col_action:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(
+            "Start Scan", type="primary", use_container_width=True, key="scan_locators_page_btn",
+        ):
+            st.session_state["_run_locator_scan_page"] = True
+            st.rerun()
 
-        except ImportError:
-            st.caption("sf_dx_bridge module not found.")
-
-        # ── Locator Health Scanner (Plan Dhurandhar) ─────────────────────
-        st.divider()
-        st.subheader("Locator Scanner")
-        try:
-            import locator_validator
-            if st.button("Scan Org Locators", key="scan_locators_btn", use_container_width=True,
-                         help="Login to the sandbox, navigate through Lead flow, and test all locators against the live DOM."):
-                st.session_state["_run_locator_scan"] = True
-                st.rerun()
-        except ImportError:
-            st.caption("locator_validator module not found.")
-
-    # ── Active Workspace (project + credentials) — collapsible ──────────
-    with st.expander("⚙️ Workspace & Credentials", expanded=True):
-        active_proj, sandbox_url, username, password = _render_workspace_header()
-
-    # ── Locator scan results (rendered in main area) ─────────────────────
-    if st.session_state.pop("_run_locator_scan", False):
+    if st.session_state.pop("_run_locator_scan_page", False):
         try:
             import locator_validator
             with st.status("Scanning org locators...", expanded=True) as scan_status:
@@ -1315,33 +1991,197 @@ def main_ui() -> None:
         except Exception as exc:
             st.error(f"Locator scan failed: {exc}")
 
-    if st.session_state.get("_locator_report"):
-        with st.expander("Locator Health Report", expanded=True):
-            report = st.session_state["_locator_report"]
-            passed = [r for r in report if r["status"] == "FOUND"]
-            stale = [r for r in report if r["status"] == "NOT_FOUND"]
-            errors = [r for r in report if r["status"] == "ERROR"]
+    report = st.session_state.get("_locator_report")
+    if report:
+        st.divider()
+        passed = [r for r in report if r["status"] == "FOUND"]
+        stale = [r for r in report if r["status"] == "NOT_FOUND"]
+        errors = [r for r in report if r["status"] == "ERROR"]
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Healthy", len(passed))
-            c2.metric("Stale", len(stale))
-            c3.metric("Skipped", len(errors))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Healthy", len(passed))
+        c2.metric("Stale", len(stale))
+        c3.metric("Skipped", len(errors))
 
-            if stale:
-                st.markdown("### Stale Locators")
-                for r in stale:
-                    st.markdown(f"- **`{r['name']}`** — `{r['locator'][:80]}...`")
-            if passed:
-                with st.expander(f"Healthy ({len(passed)})", expanded=False):
-                    for r in passed:
-                        st.markdown(f"- `{r['name']}`")
-            if errors:
-                with st.expander(f"Skipped ({len(errors)})", expanded=False):
-                    for r in errors:
-                        st.markdown(f"- `{r['name']}` — {r.get('error', 'needs record context')}")
+        if stale:
+            st.subheader("Stale Locators")
+            for r in stale:
+                st.markdown(f"- **`{r['name']}`** -- `{r['locator'][:80]}...`")
+        if passed:
+            with st.expander(f"Healthy ({len(passed)})", expanded=False):
+                for r in passed:
+                    st.markdown(f"- `{r['name']}`")
+        if errors:
+            with st.expander(f"Skipped ({len(errors)})", expanded=False):
+                for r in errors:
+                    st.markdown(f"- `{r['name']}` -- {r.get('error', 'needs record context')}")
 
-    # ── Single-page Test Architect ────────────────────────────────────────
-    _render_test_builder_tab(sandbox_url, username, password, headless, active_proj)
+
+def _render_settings_page() -> None:
+    """Settings page: AI provider, generation mode, MCP controls."""
+    st.markdown(
+        '<div class="page-header">'
+        "<h1>Settings</h1>"
+        "<p>Configure your AI provider and test generation preferences.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    from ai_bridge import LLM_PROVIDERS, PROVIDER_LABELS
+    _label_to_id = {v: k for k, v in PROVIDER_LABELS.items()}
+
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("AI Provider")
+        provider_labels = list(PROVIDER_LABELS.values())
+        llm_prov_label = st.selectbox(
+            "LLM Provider",
+            provider_labels,
+            index=provider_labels.index(st.session_state.get("llm_provider_select", "Gemini")),
+            key="llm_provider_select",
+            help="Gemini is the default (free tier).",
+        )
+        selected_provider_id = _label_to_id.get(llm_prov_label, "gemini")
+        os.environ["LLM_PROVIDER"] = selected_provider_id
+
+        provider_info = LLM_PROVIDERS[selected_provider_id]
+        key_env_name = provider_info[0]
+
+        sidebar_api_key = st.text_input(
+            f"{llm_prov_label} API Key (optional -- overrides .env)",
+            type="password",
+            placeholder="Uses .env key if empty; paste here for session override",
+            key="sidebar_api_key_input",
+        )
+        sync_sidebar_api_key(key_env_name, selected_provider_id, sidebar_api_key)
+
+    with col_right:
+        st.subheader("MCP Server")
+        try:
+            import mcp_bridge
+            if mcp_bridge.is_server_running():
+                st.success("RF-MCP Server: Running")
+            else:
+                st.info("RF-MCP Server: Stopped (auto-starts on generate)")
+            _c1, _c2 = st.columns(2)
+            with _c1:
+                if st.button("Start Server", key="mcp_start_settings", use_container_width=True):
+                    try:
+                        mcp_bridge.start_mcp_server()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(str(e))
+            with _c2:
+                if st.button("Stop Server", key="mcp_stop_settings", use_container_width=True):
+                    mcp_bridge.stop_mcp_server()
+                    st.rerun()
+        except ImportError:
+            st.warning("mcp_bridge module not found.")
+
+        st.divider()
+        st.subheader("SF DX Status")
+        try:
+            import sf_dx_bridge
+            st.info(sf_dx_bridge.get_status_summary())
+        except ImportError:
+            st.caption("SF DX bridge not available.")
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+
+_NAV_PAGES = [
+    ("test_builder",     "Test Builder"),
+    ("projects",         "Projects"),
+    ("---",              "---"),
+    ("sfdx_tools",       "SF DX Tools"),
+    ("locator_scanner",  "Locator Scanner"),
+    ("---",              "---"),
+    ("settings",         "Settings"),
+]
+
+
+def main_ui() -> None:
+    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+
+    try:
+        from ai_bridge import hydrate_llm_env
+        hydrate_llm_env()
+    except ImportError:
+        pass
+
+    _init_sf_credential_session_keys()
+
+    from ai_bridge import LLM_PROVIDERS, PROVIDER_LABELS
+    if "llm_provider_select" not in st.session_state:
+        p = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+        st.session_state["llm_provider_select"] = PROVIDER_LABELS.get(p, "Gemini")
+    if "smoke_app_name" not in st.session_state:
+        st.session_state["smoke_app_name"] = "Sales"
+    if "nav_page" not in st.session_state:
+        st.session_state["nav_page"] = "test_builder"
+
+    # ── Sidebar: logo + branding + navigation ────────────────────────
+    with st.sidebar:
+        st.markdown(
+            '<div class="sidebar-brand">'
+            '<p class="sidebar-brand-title">AI QA Portal</p>'
+            '<p class="sidebar-brand-sub">Test Intelligence Platform (TIP)</p>'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
+
+        current_page = st.session_state.get("nav_page", "test_builder")
+
+        for page_id, page_label in _NAV_PAGES:
+            if page_id == "---":
+                st.markdown(
+                    '<div style="height:1px;background:rgba(255,255,255,0.08);margin:12px 0"></div>',
+                    unsafe_allow_html=True,
+                )
+                continue
+
+            is_active = current_page == page_id
+            if is_active:
+                st.markdown(
+                    f'<div style="background:linear-gradient(90deg,#4F46E5,#6366F1);'
+                    f'color:#FFFFFF;font-weight:500;font-size:14px;'
+                    f'padding:10px 14px;border-radius:10px;margin:3px 0;'
+                    f'box-shadow:0 4px 12px rgba(79,70,229,0.4);'
+                    f'cursor:default">{page_label}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                if st.button(page_label, key=f"nav_{page_id}", use_container_width=True):
+                    st.session_state["nav_page"] = page_id
+                    st.rerun()
+
+    # ── Resolve credentials from session for non-builder pages ───────
+    sandbox_url = st.session_state.get("sf_sandbox_url", "")
+    username = st.session_state.get("sf_username", "")
+    password = st.session_state.get("sf_password", "")
+
+    # ── Page router ───────────────────────────────────────────────────
+    page = st.session_state.get("nav_page", "test_builder")
+
+    if page == "test_builder":
+        active_proj = st.session_state.get("active_project", "")
+        _render_test_builder_page(sandbox_url, username, password, False, active_proj)
+
+    elif page == "projects":
+        _render_projects_page(sandbox_url, username, password)
+
+    elif page == "sfdx_tools":
+        _render_sfdx_page()
+
+    elif page == "locator_scanner":
+        _render_locator_page(sandbox_url, username, password)
+
+    elif page == "settings":
+        _render_settings_page()
 
 
 main_ui()

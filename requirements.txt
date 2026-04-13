@@ -36,3 +36,7 @@ cohere>=5.0.0
 
 # RF-MCP — stepwise test generation with live browser verification
 rf-mcp
+
+# UI enhancements
+streamlit-option-menu>=0.4.0
+streamlit-antd-components>=0.3.2

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-13T19:25:07.734012+00:00",
+  "generated_at": "2026-04-13T22:38:33.502660+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
@@ -1114,9 +1114,9 @@
       "arguments": [
         "${tabName}"
       ],
-      "documentation": "Selects a specific tab within an app that includes dropdown options. It dynamically locates the desired tab by its name, waits for it to become visible, and then clicks on it. After selecting the tab, it verifies that the tab is active by checking for the presence of the corresponding element on the page.",
+      "documentation": "Selects a tab and verifies activation. Uses the expanded ``activeTabLocator`` (breadcrumbs, page header, aria-selected). If the strict locator check fails, falls back to verifying the tab link's ``aria-current`` or that the page URL contains the object name.",
       "documentation_source": "author",
-      "natural_language_summary": "Selects a specific tab within an app that includes dropdown options. It dynamically locates the desired tab by its name, waits for it to become visible, and then clicks on it. After selecting the tab, it verifies that the tab is active by checking for the presence of the corresponding element on the page.",
+      "natural_language_summary": "Selects a tab and verifies activation. Uses the expanded ``activeTabLocator`` (breadcrumbs, page header, aria-selected). If the strict locator check fails, falls back to verifying the tab link's ``aria-current`` or that the page URL contains the object name.",
       "inferred_description": null,
       "tags": [
         "navigation"

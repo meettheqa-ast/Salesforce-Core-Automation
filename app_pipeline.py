@@ -99,35 +99,29 @@ def render_report_log_actions(
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         if report_path and report_path.is_file():
-            _report_uri = report_path.resolve().as_uri()
-            st.link_button(
-                "📄 Open Report",
-                url=_report_uri,
-                help="Opens report.html in a new browser tab.",
-            )
+            if st.button("Open Report", key=f"{key_prefix}_open_report", use_container_width=True):
+                open_local_path(report_path)
             st.download_button(
-                "⬇️ Download Report",
+                "Download Report",
                 data=report_path.read_bytes(),
                 file_name="report.html",
                 mime="text/html",
                 key=f"{key_prefix}_dl_report",
+                on_click=lambda: None,
             )
         else:
             st.caption("report.html not found.")
     with col_b:
         if log_path and log_path.is_file():
-            _log_uri = log_path.resolve().as_uri()
-            st.link_button(
-                "📄 Open Log",
-                url=_log_uri,
-                help="Opens log.html in a new browser tab.",
-            )
+            if st.button("Open Log", key=f"{key_prefix}_open_log", use_container_width=True):
+                open_local_path(log_path)
             st.download_button(
-                "⬇️ Download Log",
+                "Download Log",
                 data=log_path.read_bytes(),
                 file_name="log.html",
                 mime="text/html",
                 key=f"{key_prefix}_dl_log",
+                on_click=lambda: None,
             )
         else:
             st.caption("log.html not found.")
