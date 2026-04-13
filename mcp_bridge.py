@@ -262,14 +262,14 @@ def get_page_state(session_id: str) -> dict[str, Any]:
     })
 
 
-def build_suite(session_id: str, suite_name: str = "Generated Test") -> str:
+def build_suite(session_id: str, test_name: str = "Generated Test") -> str:
     """Ask RF-MCP to build a .robot file from the validated steps.
 
     Returns the Robot source code string.
     """
     result = call_mcp_tool("build_test_suite", {
         "session_id": session_id,
-        "suite_name": suite_name,
+        "test_name": test_name,
     })
     return result.get("suite_content", result.get("raw", ""))
 

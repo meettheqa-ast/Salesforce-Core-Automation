@@ -998,7 +998,7 @@ def run_mcp_stepwise_pipeline(
             st.warning(f"RF-MCP build_test_suite failed ({exc}); constructing suite from step log.")
             robot_code = _build_fallback_suite(step_results, suite_name=test_name or "MCP Stepwise Test")
 
-    if not robot_code.strip():
+    if not robot_code.strip() or "*** Test Cases ***" not in robot_code:
         robot_code = _build_fallback_suite(step_results, suite_name=test_name or "MCP Stepwise Test")
 
     # Post-process the same way as quick-generate
@@ -1068,10 +1068,10 @@ def _build_fallback_suite(
     for step in step_results:
         kw = step["keyword"]
         args = step.get("args", [])
-        parts = [f"    {kw}"]
+        line = "    " + kw
         for a in args:
-            parts.append(f"    {a}")
-        lines.append("    ".join(parts) if len(parts) == 1 else ("    " + "    ".join([kw] + args)))
+            line += "    " + str(a)
+        lines.append(line)
     lines.append("")
     return "\n".join(lines) + "\n"
 

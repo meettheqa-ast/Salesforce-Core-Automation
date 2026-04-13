@@ -850,13 +850,24 @@ def break_prompt_into_steps(
         "Each step must use a keyword from the catalog (prefer GlobalKeywords.* and SalesPO.* prefixes). "
         "Return ONLY a JSON array where each element is an object with 'keyword' (string) and "
         "'args' (array of strings, may be empty). No markdown fences, no explanation — just the JSON array.\n\n"
-        "RULES:\n"
-        "1. Always start with: GlobalKeywords.Login To Sandbox with args "
-        "[\"${globalSandboxTestUrl}\", \"${sandboxUserNameInput}\", \"${sandboxPasswordInput}\"]\n"
-        "2. Use qualified keyword names (GlobalKeywords.Launch App, SalesPO.Create A New Lead, etc.)\n"
-        "3. For Lead creation, use SalesPO.Open New Lead From Sales App then SalesPO.Create A New Lead.\n"
+        "CRITICAL FORMAT RULES:\n"
+        "- 'keyword' must be ONLY the keyword name — NEVER include 'with args' or arguments in the keyword string.\n"
+        "- 'args' is a separate array of argument values.\n"
+        "- For SalesPO.Create A New Lead, pass ZERO args (it reads from suite variables) or three "
+        "plain string args: [\"John\", \"Doe\", \"Acme Corp\"]. NEVER pass named args like "
+        "\"${leadFirstName}=${EMPTY}\".\n\n"
+        "EXAMPLE (correct):\n"
+        '[{"keyword": "GlobalKeywords.Login To Sandbox", '
+        '"args": ["${globalSandboxTestUrl}", "${sandboxUserNameInput}", "${sandboxPasswordInput}"]},\n'
+        '{"keyword": "SalesPO.Open New Lead From Sales App", "args": []},\n'
+        '{"keyword": "SalesPO.Create A New Lead", "args": []},\n'
+        '{"keyword": "SalesPO.Verify Lead Created Successfully", "args": []}]\n\n'
+        "WORKFLOW RULES:\n"
+        "1. Always start with GlobalKeywords.Login To Sandbox (3 args as shown above).\n"
+        "2. Use qualified keyword names (GlobalKeywords.Launch App, SalesPO.Create A New Lead, etc.).\n"
+        "3. For Lead creation: SalesPO.Open New Lead From Sales App then SalesPO.Create A New Lead.\n"
         "4. End with verification keywords when appropriate.\n"
-        "5. Keep variable references like ${leadFirstName} as-is.\n"
+        "5. Keep variable references like ${leadFirstName} as-is in args.\n"
     )
     user_content = (
         f"## Keyword Catalog\n\n{catalog_json}\n\n"
@@ -883,7 +894,38 @@ def break_prompt_into_steps(
 
     if not isinstance(steps, list):
         raise ValueError(f"Expected a JSON array of steps, got: {type(steps)}")
-    return steps
+    return [_sanitize_step(s) for s in steps]
+
+
+def _sanitize_step(step: dict) -> dict:
+    """Fix common LLM mistakes in step dicts before execution."""
+    kw = step.get("keyword", "")
+    args = list(step.get("args", []))
+
+    # Strip "with args" appended to keyword name
+    kw = re.sub(r"\s+with\s+args?\s*$", "", kw, flags=re.IGNORECASE).strip()
+
+    # Fix named-arg patterns like "${leadFirstName}=${EMPTY}" or "${leadFirstName}=John"
+    # These are Robot named-args the LLM emits; the "=" must be the separator between
+    # parameter name and value, and the param name is NOT a ${variable} — it's a plain name.
+    cleaned_args = []
+    for a in args:
+        a = str(a)
+        # Pattern: ${someVar}=${EMPTY} → drop entirely (let keyword use its default)
+        if re.match(r"^\$\{[^}]+\}\s*=\s*\$\{EMPTY\}\s*$", a, re.IGNORECASE):
+            continue
+        # Pattern: ${someVar}=<value> → keep just <value> as a positional arg
+        m = re.match(r"^\$\{[^}]+\}\s*=\s*(.+)$", a)
+        if m and "=" in a:
+            val = m.group(1).strip()
+            # But if the whole thing is just a variable ref like ${globalSandboxTestUrl}
+            # with no "=" after the closing brace, it's a normal arg — don't touch it
+            if not re.match(r"^\$\{[^}]+\}$", a):
+                cleaned_args.append(val)
+                continue
+        cleaned_args.append(a)
+
+    return {"keyword": kw, "args": cleaned_args}
 
 
 _FORBIDDEN_SLEEP = re.compile(r"^\s+Sleep\s", re.MULTILINE)
