@@ -1202,9 +1202,57 @@ section[data-testid="stSidebar"] button:hover p {
     color: #FFFFFF !important;
 }
 
-/* ── Sidebar nav buttons — clean on dark bg ── */
+/* ── Sidebar nav buttons — stripped to look like nav items ── */
 section[data-testid="stSidebar"] .stButton {
-    margin-bottom: 3px !important;
+    margin-bottom: 0 !important;
+}
+section[data-testid="stSidebar"] .stButton button {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #A0AEC0 !important;
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    text-align: center !important;
+    justify-content: center !important;
+    padding: 10px 14px !important;
+    border-radius: 10px !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+}
+section[data-testid="stSidebar"] .stButton button:hover {
+    background: rgba(255,255,255,0.06) !important;
+    background-color: rgba(255,255,255,0.06) !important;
+    color: #FFFFFF !important;
+    transform: translateX(2px) !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+section[data-testid="stSidebar"] .stButton button:active {
+    background: rgba(255,255,255,0.1) !important;
+    color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] .stButton button p {
+    color: inherit !important;
+    font-size: 14px !important;
+}
+
+/* ── Active nav item (rendered as HTML div) ── */
+.sidebar-nav-active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #4F46E5, #6366F1);
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+    margin: 3px 0;
+    box-shadow: 0 4px 12px rgba(79,70,229,0.4);
 }
 
 /* ── Branding ── */
@@ -2147,11 +2195,7 @@ def main_ui() -> None:
             is_active = current_page == page_id
             if is_active:
                 st.markdown(
-                    f'<div style="background:linear-gradient(90deg,#4F46E5,#6366F1);'
-                    f'color:#FFFFFF;font-weight:500;font-size:14px;'
-                    f'padding:10px 14px;border-radius:10px;margin:3px 0;'
-                    f'box-shadow:0 4px 12px rgba(79,70,229,0.4);'
-                    f'cursor:default">{page_label}</div>',
+                    f'<div class="sidebar-nav-active">{page_label}</div>',
                     unsafe_allow_html=True,
                 )
             else:
