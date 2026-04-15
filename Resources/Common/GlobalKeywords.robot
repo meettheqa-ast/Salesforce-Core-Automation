@@ -41,7 +41,7 @@ End Web Test
     Close All Browsers
 
 Login To Sandbox
-    [Documentation]    Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.
+    [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.
     [Tags]    login
     [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
     Go To    ${instanceURL}
@@ -49,12 +49,29 @@ Login To Sandbox
     Input Text    ${sandboxUserName}    ${instanceUsername}
     Input Text    ${sandboxPassword}    ${instancePassword}
     Click Element    ${sandboxLoginButton}
+    Dismiss Post-Login Prompts
     ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    30s
     IF    not $ok and $allow_mfa_manual_pause
         Pause Execution    Complete MFA / OTP in the browser window, then click OK here to continue the test.
         Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
+        Dismiss Post-Login Prompts
     ELSE IF    not $ok
         Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Run in Watch mode so the app can pause for manual OTP. (2) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (3) Use a sandbox integration user exempt from MFA if policy allows. (4) For TOTP secrets, extend automation to submit the verification code—see your security team.
+    END
+
+Dismiss Post-Login Prompts
+    [Documentation]    Handles Salesforce interstitial screens that appear between login and the Lightning home page. Covers phone registration ("I Don't Want to Register My Phone"), email verification reminders, and "Remind Me Later" / "Skip" prompts. Checks up to 3 times with a short pause between attempts to catch pages that render after a redirect. Safe to call when no prompt is present — exits silently.
+    [Tags]    login    utilities
+    FOR    ${_}    IN RANGE    3
+        ${prompt_visible}=    Run Keyword And Return Status
+        ...    Wait Until Element Is Visible    ${dismissPhoneRegistration}    timeout=3s
+        IF    ${prompt_visible}
+            ${el}=    Get Webelement    ${dismissPhoneRegistration}
+            Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${el}
+            Sleep    1s
+        ELSE
+            Exit For Loop
+        END
     END
 
 Launch App
@@ -1053,6 +1070,36 @@ Run Keyword In Salesforce Iframe
         Run Keyword    ${keyword_name}    @{args}
     FINALLY
         Unselect Frame
+    END
+
+Select State Or Province
+    [Documentation]    Selects a US state in the Salesforce address State/Province field. Accepts either
+    ...    abbreviations (CA, TX, NY) or full names (California, Texas, New York). Automatically
+    ...    maps common abbreviations to full state names. Handles both picklist/dropdown and
+    ...    text-input variants of the field: tries ``Open Dropdown`` first; if the field is a
+    ...    text input instead, falls back to ``Enter Text With Fallback``.
+    [Tags]    interaction    address    utilities
+    [Arguments]    ${state_value}
+    ${upper}=    Convert To Upper Case    ${state_value}
+    ${upper}=    Strip String    ${upper}
+    ${full_name}=    Evaluate    {"AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia","FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine","MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire","NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island","SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"}.get("${upper}", "${state_value}")
+    # Try dropdown first (Salesforce renders State/Province as a picklist in most orgs)
+    ${is_dropdown}=    Run Keyword And Return Status    Open Dropdown With Fallback    State/Province
+    IF    ${is_dropdown}
+        ${picked}=    Run Keyword And Return Status    Select Dropdown Option    State/Province    ${full_name}
+        IF    not ${picked}
+            Log    "${full_name}" not found in State/Province dropdown — trying abbreviation "${upper}".    WARN
+            ${picked2}=    Run Keyword And Return Status    Select Dropdown Option    State/Province    ${upper}
+            IF    not ${picked2}
+                Select Random Valid Picklist Option
+                Log    Neither "${full_name}" nor "${upper}" found — selected random state option.    WARN
+            END
+        END
+    ELSE
+        ${typed}=    Enter Text With Fallback    State/Province    ${full_name}
+        IF    not ${typed}
+            Log    State/Province field not found as dropdown or text input.    WARN
+        END
     END
 
 # Use Modal

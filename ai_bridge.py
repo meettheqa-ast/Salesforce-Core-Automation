@@ -439,6 +439,76 @@ def strip_llm_robot_garbage(robot_source: str) -> str:
     return text + ("\n" if robot_source.endswith("\n") else "")
 
 
+def fix_misplaced_setup_teardown(robot_source: str) -> str:
+    """Fix LLM mistake of placing Test Setup / Test Teardown inside a test body.
+
+    When the AI emits lines like ``    Test Setup    Begin Web Test`` indented under
+    a test case, Robot Framework interprets them as keyword calls and fails with
+    "No keyword with name 'Test Setup' found."  This function detects those lines,
+    removes them from the test body, and ensures the *** Settings *** section has
+    proper ``Test Setup`` and ``Test Teardown`` directives.
+    """
+    lines = robot_source.splitlines()
+    setup_kw: str | None = None
+    teardown_kw: str | None = None
+    cleaned: list[str] = []
+    settings_end_idx: int | None = None
+    in_settings = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if re.match(r"^\*\*\*\s*Settings\s*\*\*\*", stripped, re.I):
+            in_settings = True
+            cleaned.append(line)
+            continue
+        if in_settings:
+            if stripped.startswith("***") and "settings" not in stripped.lower():
+                in_settings = False
+                settings_end_idx = len(cleaned)
+            elif re.match(r"^Test\s+Setup\b", stripped, re.I):
+                cleaned.append(line)
+                continue
+            elif re.match(r"^Test\s+Teardown\b", stripped, re.I):
+                cleaned.append(line)
+                continue
+
+        if line.startswith((" ", "\t")):
+            m_setup = re.match(r"^\s+Test\s+Setup\s+(.+)", line, re.I)
+            m_teardown = re.match(r"^\s+Test\s+Teardown\s+(.+)", line, re.I)
+            if m_setup:
+                setup_kw = m_setup.group(1).strip()
+                continue
+            if m_teardown:
+                teardown_kw = m_teardown.group(1).strip()
+                continue
+
+        cleaned.append(line)
+
+    if not setup_kw and not teardown_kw:
+        return robot_source
+
+    has_setup = any(re.match(r"^Test\s+Setup\b", ln.strip(), re.I) for ln in cleaned)
+    has_teardown = any(re.match(r"^Test\s+Teardown\b", ln.strip(), re.I) for ln in cleaned)
+
+    inject: list[str] = []
+    if setup_kw and not has_setup:
+        inject.append(f"Test Setup          {setup_kw}")
+    if teardown_kw and not has_teardown:
+        inject.append(f"Test Teardown       {teardown_kw}")
+
+    if inject and settings_end_idx is not None:
+        for j, inj_line in enumerate(inject):
+            cleaned.insert(settings_end_idx + j, inj_line)
+    elif inject:
+        for i, ln in enumerate(cleaned):
+            if re.match(r"^\*\*\*\s*Settings\s*\*\*\*", ln.strip(), re.I):
+                for j, inj_line in enumerate(inject):
+                    cleaned.insert(i + 1 + j, inj_line)
+                break
+
+    return "\n".join(cleaned) + ("\n" if robot_source.endswith("\n") else "")
+
+
 def inject_csv_loader_into_robot(robot_source: str) -> str:
     """
     When the LLM emits FOR ... @{LEADS_FROM_CSV} but leaves the list undefined
@@ -1058,6 +1128,7 @@ def generate_test_from_prompt(
     robot_source = strip_credential_variable_overrides(robot_source)
     robot_source = strip_llm_robot_garbage(robot_source)
     robot_source = strip_hallucinated_csv_variables_from_suite(robot_source)
+    robot_source = fix_misplaced_setup_teardown(robot_source)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     if csv_bytes and csv_bytes.strip():

@@ -52,8 +52,9 @@ Create BC Commercial Account In App
     Select Dialog Button    Save
 
 Open New Lead From Sales App
-    [Documentation]    Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.
-    Launch App    ${salesAutomationAppName}
+    [Documentation]    Opens the given app (default ``Sales``) → **Leads** → **New**. Pass a custom app name (e.g. ``Pentair Sales``, ``Mark Anthony``) when the user specifies one; omit for the default Sales app.
+    [Arguments]    ${app_name}=${salesAutomationAppName}
+    Launch App    ${app_name}
     Select App Tab    Leads
     Open New Dialog    Lead
 
@@ -64,13 +65,14 @@ Create A New Lead
     Set Suite Variable    ${leadLastName}    ${last_name}
     Set Suite Variable    ${leadCompany}    ${company}
     Open Dropdown And Select First Option    Salutation
-    Enter Text    Website    ${leadWebsite}
     Enter Text    First Name    ${leadFirstName}
     Enter Text    Last Name    ${leadLastName}
     Enter Text    Company    ${leadCompany}
-    Enter Text    Phone    ${leadPhone}
-    Enter Text    Title    ${leadTitle}
-    Enter Text    Email    ${leadEmail}
+    # Non-required fields use fallback — layout differs by org
+    Enter Text With Fallback    Website    ${leadWebsite}
+    Enter Text With Fallback    Phone    ${leadPhone}
+    Enter Text With Fallback    Title    ${leadTitle}
+    Enter Text With Fallback    Email    ${leadEmail}
     Open Dropdown And Select First Option    Lead Source
     Open Dropdown    Lead Status
     ${lead_status_trim}=    Strip String    ${leadStatusOption}
@@ -148,8 +150,9 @@ Delete Lead
     Delete Current Record    Lead
 
 Open New Opportunity From Sales App
-    [Documentation]    Opens **Sales** → **Opportunities** → **New**.
-    Launch App    ${salesAutomationAppName}
+    [Documentation]    Opens the given app (default ``Sales``) → **Opportunities** → **New**. Pass a custom app name when the user specifies one.
+    [Arguments]    ${app_name}=${salesAutomationAppName}
+    Launch App    ${app_name}
     Select App Tab    Opportunities
     Open New Dialog    Opportunity
 
@@ -180,8 +183,9 @@ Create A New Account
     Attempt Save And Auto-Heal Missing Fields
 
 Open New Account From Sales App
-    [Documentation]    Opens **Sales** → **Accounts** → **New**.
-    Launch App    ${salesAutomationAppName}
+    [Documentation]    Opens the given app (default ``Sales``) → **Accounts** → **New**. Pass a custom app name when the user specifies one.
+    [Arguments]    ${app_name}=${salesAutomationAppName}
+    Launch App    ${app_name}
     Select App Tab    Accounts
     Open New Dialog    Account
 
@@ -194,8 +198,9 @@ Delete Account
     Delete Current Record    Account
 
 Open New Contact From Sales App
-    [Documentation]    Opens **Sales** → **Contacts** → **New**.
-    Launch App    ${salesAutomationAppName}
+    [Documentation]    Opens the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name when the user specifies one.
+    [Arguments]    ${app_name}=${salesAutomationAppName}
+    Launch App    ${app_name}
     Select App Tab    Contacts
     Open New Dialog    Contact
 

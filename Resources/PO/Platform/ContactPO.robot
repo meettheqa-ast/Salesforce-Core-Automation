@@ -6,9 +6,10 @@ Resource    ../../Common/GlobalKeywords.robot
 
 *** Keywords ***
 Open New Contact From Sales App
-    [Documentation]    Launches the configured Sales app, navigates to the Contacts tab, and opens the New Contact dialog.
+    [Documentation]    Launches the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name (e.g. ``Pentair Sales``) when the user specifies one; omit for the default Sales app.
     [Tags]    navigation    contact
-    Launch App    ${salesAutomationAppName}
+    [Arguments]    ${app_name}=${salesAutomationAppName}
+    Launch App    ${app_name}
     Select App Tab    Contacts
     Open New Dialog    Contact
 

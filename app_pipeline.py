@@ -1020,6 +1020,7 @@ def run_mcp_stepwise_pipeline(
     # Post-process the same way as quick-generate
     try:
         from ai_bridge import (
+            fix_misplaced_setup_teardown,
             strip_credential_variable_overrides,
             strip_hallucinated_csv_variables_from_suite,
             strip_llm_robot_garbage,
@@ -1028,6 +1029,7 @@ def run_mcp_stepwise_pipeline(
         robot_code = strip_credential_variable_overrides(robot_code)
         robot_code = strip_llm_robot_garbage(robot_code)
         robot_code = strip_hallucinated_csv_variables_from_suite(robot_code)
+        robot_code = fix_misplaced_setup_teardown(robot_code)
     except ImportError:
         pass
 

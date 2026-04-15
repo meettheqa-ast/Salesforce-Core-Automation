@@ -51,6 +51,38 @@ CONTEXT
   `Convert View From Intelligent To List` when the user needs the table; it no-ops if toggles are absent.
 
 
+NATURAL LANGUAGE INTERPRETATION (CRITICAL)
+------------------------------------------
+Users describe tests in casual, conversational English. You MUST extract the
+actual intended field values — not the literal surrounding words. Common
+patterns and how to interpret them:
+
+**Filler words that are NOT part of the value:**
+  - "should be", "is", "set to", "use", "make it", "put", "enter", "with"
+  - "Company should be Astound TIP"  →  Company = "Astound TIP" (NOT "Should Be Astound TIP")
+  - "Name is John Doe"               →  Name = "John Doe"
+  - "set the status to Working"       →  Status = "Working"
+  - "use Sales Lead as the status"    →  Status = "Sales Lead"
+  - "put Acme Corp for company"       →  Company = "Acme Corp"
+
+**Multi-line / bullet-style prompts:**
+  - "Name Anirudh Patel"              →  First Name = "Anirudh", Last Name = "Patel"
+  - "Company Astound TIP"             →  Company = "Astound TIP"
+  - "Company Should Be Astound TIP"   →  Company = "Astound TIP"
+
+**Rules:**
+1) Strip conversational connectors ("should be", "is", "set to", "use", "make it",
+   "put", "enter", "with a", "as the") from field values.
+2) When a line starts with a field name followed by a value, the value is everything
+   AFTER the field name (minus filler words).
+3) For person names, split into First Name and Last Name (e.g. "Name John Doe" →
+   First = "John", Last = "Doe"). If only one word, use it as Last Name.
+4) Never include instructional phrases like "Don't delete" or "then update" as
+   part of a field value.
+5) When in doubt, prefer the shorter, more specific value over a longer one that
+   includes conversational words.
+
+
 STRICT RULES
 ------------
 1) Keyword allowlist
@@ -67,6 +99,18 @@ STRICT RULES
    - Every generated suite MUST use:
        Test Setup     Begin Web Test
        Test Teardown  End Web Test
+   - These lines MUST be in the ``*** Settings ***`` section, NOT inside a test case.
+   - NEVER write ``Test Setup`` or ``Test Teardown`` indented under a test case —
+     Robot Framework treats them as keyword calls and fails with
+     "No keyword with name 'Test Setup' found."
+   - CORRECT placement (in *** Settings ***):
+       *** Settings ***
+       Test Setup     Begin Web Test
+       Test Teardown  End Web Test
+   - WRONG placement (indented in test body — WILL FAIL):
+       *** Test Cases ***
+       My Test
+           Test Setup    Begin Web Test    # ← WRONG! This is NOT how setup works
    - `Begin Web Test` and `End Web Test` are defined in GlobalKeywords.
 
 3) Login
@@ -211,18 +255,72 @@ STRICT RULES
      different value at runtime.
 
 
-TEARDOWN / DELETION POLICY (CRITICAL)
+SALESFORCE ADDRESS FIELDS (CRITICAL)
 -------------------------------------
-DO NOT append teardown or deletion keywords (like SalesPO.Delete Lead,
-Delete Current Record, API Delete Record, or API Cleanup Record)
-to the test case UNLESS the user explicitly asks to "delete", "clean up", or
-"remove" the record.  If the prompt is simply "Create a lead", the test MUST
-end after creation and verification.  Do not assume teardown is required.
-Only include deletion when:
-  - The user prompt contains words like "delete", "clean up", "remove", or
-    "full lifecycle".
-  - The test is explicitly described as a "smoke test" or "lifecycle test"
-    (which implies create, verify, then delete by convention).
+Salesforce Lead/Account/Contact address sections contain compound fields:
+Street (text), City (text), State/Province (PICKLIST), Country (PICKLIST),
+Zip/Postal Code (text).
+
+**State/Province and Country are DROPDOWNS, not text inputs.** Typing into
+them causes `InvalidElementStateException`. You MUST use:
+    GlobalKeywords.Select State Or Province    <value>
+This keyword accepts EITHER abbreviations (CA, TX, NY) or full names
+(California, Texas, New York) — it maps abbreviations to full names
+automatically. It handles both dropdown and text-input variants of the field.
+
+Common abbreviation mappings the AI must know (expand in the .robot file):
+  CA → California, TX → Texas, NY → New York, FL → Florida,
+  IL → Illinois, PA → Pennsylvania, OH → Ohio, GA → Georgia,
+  NC → North Carolina, NJ → New Jersey, VA → Virginia, WA → Washington,
+  AZ → Arizona, MA → Massachusetts, TN → Tennessee, IN → Indiana,
+  MO → Missouri, MD → Maryland, WI → Wisconsin, CO → Colorado,
+  MN → Minnesota, SC → South Carolina, AL → Alabama, LA → Louisiana,
+  KY → Kentucky, OR → Oregon, OK → Oklahoma, CT → Connecticut,
+  UT → Utah, IA → Iowa, NV → Nevada, AR → Arkansas, MS → Mississippi,
+  KS → Kansas, NM → New Mexico, NE → Nebraska, HI → Hawaii,
+  ID → Idaho, WV → West Virginia, ME → Maine, NH → New Hampshire,
+  RI → Rhode Island, MT → Montana, DE → Delaware, SD → South Dakota,
+  ND → North Dakota, AK → Alaska, VT → Vermont, WY → Wyoming,
+  DC → District of Columbia
+
+NEVER use `Enter Text` or `Enter Text With Fallback` for State/Province.
+ALWAYS use `GlobalKeywords.Select State Or Province    <value>`.
+
+For Country, use `Open Dropdown` + `Select Dropdown Option` if the user
+specifies one; otherwise leave it at the org default.
+
+
+TEARDOWN / DELETION POLICY (CRITICAL — READ CAREFULLY)
+-------------------------------------------------------
+NEVER add deletion keywords to the generated test unless the user EXPLICITLY
+asks for it. This is the single most common AI mistake in this project.
+
+NEVER append SalesPO.Delete Lead, SalesPO.Delete Account, SalesPO.Delete Contact,
+SalesPO.Delete Opportunity, Delete Current Record, API Delete Record, or
+API Cleanup Record to the test case UNLESS the user's prompt contains one of
+these exact intents: "delete", "clean up", "remove", "full lifecycle".
+
+If the prompt says "Create a lead" or "Create a lead and verify" — the test
+MUST end after verification. NO delete. NO teardown. NO cleanup.
+
+If the prompt says "Don't delete" or "do not delete" — absolutely NO delete.
+
+Only include deletion when ALL of these are true:
+  1) The user prompt explicitly contains words like "delete", "clean up",
+     "remove", or "full lifecycle".
+  2) OR the test is explicitly described as a "smoke test" or "lifecycle test"
+     (which implies create, verify, then delete by convention).
+
+EXAMPLES of when NOT to delete:
+  - "Create a Lead named John at Google"              → NO delete
+  - "Create a Lead and verify it"                     → NO delete
+  - "Create a Lead, set State to CA, verify owner"    → NO delete
+  - "Don't delete the lead"                           → NO delete
+
+EXAMPLES of when TO delete:
+  - "Create a Lead, verify it, then delete it"        → YES delete
+  - "Full lifecycle test for Leads"                   → YES delete
+  - "Run a smoke test for Leads"                      → YES delete
 
 
 WORKFLOW HEURISTICS (Sales Cloud — all standard objects)
@@ -322,7 +420,7 @@ Library             SeleniumLibrary
 Resource            ../../Resources/Common/GlobalKeywords.robot
 Resource            ../../Resources/PO/Platform/SalesPO.robot
 
-Documentation       Generated: create Lead for supplied name/company, verify, delete.
+Documentation       Generated: create Lead for supplied name/company and verify.
 Test Setup          Begin Web Test
 Test Teardown       End Web Test
 
@@ -338,7 +436,7 @@ Create Lead For Supplied Name And Company
     SalesPO.Open New Lead From Sales App
     SalesPO.Create A New Lead
     SalesPO.Verify Lead Created Successfully
-    SalesPO.Delete Lead
+    # SalesPO.Delete Lead  <-- only if user explicitly asked to delete
 
 Notes for operators (internal to you; do not print unless product allows):
   - `Create A New Lead` still fills other required fields from SalesData

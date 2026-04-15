@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-04-14T06:19:18.871205+00:00",
+  "generated_at": "2026-04-15T08:31:11.601968+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 163,
+  "keyword_count": 165,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -481,10 +481,12 @@
     },
     {
       "keyword_name": "Open New Contact From Sales App",
-      "arguments": [],
-      "documentation": "Launches the configured Sales app, navigates to the Contacts tab, and opens the New Contact dialog.",
+      "arguments": [
+        "${app_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Launches the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name (e.g. ``Pentair Sales``) when the user specifies one; omit for the default Sales app.",
       "documentation_source": "author",
-      "natural_language_summary": "Launches the configured Sales app, navigates to the Contacts tab, and opens the New Contact dialog.",
+      "natural_language_summary": "Launches the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name (e.g. ``Pentair Sales``) when the user specifies one; omit for the default Sales app.",
       "inferred_description": null,
       "tags": [
         "navigation",
@@ -587,10 +589,12 @@
     },
     {
       "keyword_name": "Open New Lead From Sales App",
-      "arguments": [],
-      "documentation": "Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.",
+      "arguments": [
+        "${app_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Opens the given app (default ``Sales``) → **Leads** → **New**. Pass a custom app name (e.g. ``Pentair Sales``, ``Mark Anthony``) when the user specifies one; omit for the default Sales app.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens **Sales** → **Leads** → **New** (no List/Intelligence toggle—``New`` uses Aura ``forceActionLink`` / LWC locators). Then call ``Create A New Lead``.",
+      "natural_language_summary": "Opens the given app (default ``Sales``) → **Leads** → **New**. Pass a custom app name (e.g. ``Pentair Sales``, ``Mark Anthony``) when the user specifies one; omit for the default Sales app.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -671,10 +675,12 @@
     },
     {
       "keyword_name": "Open New Opportunity From Sales App",
-      "arguments": [],
-      "documentation": "Opens **Sales** → **Opportunities** → **New**.",
+      "arguments": [
+        "${app_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Opens the given app (default ``Sales``) → **Opportunities** → **New**. Pass a custom app name when the user specifies one.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens **Sales** → **Opportunities** → **New**.",
+      "natural_language_summary": "Opens the given app (default ``Sales``) → **Opportunities** → **New**. Pass a custom app name when the user specifies one.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -711,10 +717,12 @@
     },
     {
       "keyword_name": "Open New Account From Sales App",
-      "arguments": [],
-      "documentation": "Opens **Sales** → **Accounts** → **New**.",
+      "arguments": [
+        "${app_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Opens the given app (default ``Sales``) → **Accounts** → **New**. Pass a custom app name when the user specifies one.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens **Sales** → **Accounts** → **New**.",
+      "natural_language_summary": "Opens the given app (default ``Sales``) → **Accounts** → **New**. Pass a custom app name when the user specifies one.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -741,10 +749,12 @@
     },
     {
       "keyword_name": "Open New Contact From Sales App",
-      "arguments": [],
-      "documentation": "Opens **Sales** → **Contacts** → **New**.",
+      "arguments": [
+        "${app_name}=${salesAutomationAppName}"
+      ],
+      "documentation": "Opens the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name when the user specifies one.",
       "documentation_source": "author",
-      "natural_language_summary": "Opens **Sales** → **Contacts** → **New**.",
+      "natural_language_summary": "Opens the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name when the user specifies one.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -1086,12 +1096,25 @@
         "${instancePassword}",
         "${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}"
       ],
-      "documentation": "Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
+      "documentation": "Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, \"Remind Me Later\", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
       "documentation_source": "author",
-      "natural_language_summary": "Logs into the sandbox. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
+      "natural_language_summary": "Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, \"Remind Me Later\", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.",
       "inferred_description": null,
       "tags": [
         "login"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Dismiss Post-Login Prompts",
+      "arguments": [],
+      "documentation": "Handles Salesforce interstitial screens that appear between login and the Lightning home page. Covers phone registration (\"I Don't Want to Register My Phone\"), email verification reminders, and \"Remind Me Later\" / \"Skip\" prompts. Checks up to 3 times with a short pause between attempts to catch pages that render after a redirect. Safe to call when no prompt is present — exits silently.",
+      "documentation_source": "author",
+      "natural_language_summary": "Handles Salesforce interstitial screens that appear between login and the Lightning home page. Covers phone registration (\"I Don't Want to Register My Phone\"), email verification reminders, and \"Remind Me Later\" / \"Skip\" prompts. Checks up to 3 times with a short pause between attempts to catch pages that render after a redirect. Safe to call when no prompt is present — exits silently.",
+      "inferred_description": null,
+      "tags": [
+        "login",
+        "utilities"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
@@ -1864,6 +1887,22 @@
       "tags": [
         "utilities",
         "iframe"
+      ],
+      "source_file": "Resources/Common/GlobalKeywords.robot"
+    },
+    {
+      "keyword_name": "Select State Or Province",
+      "arguments": [
+        "${state_value}"
+      ],
+      "documentation": "Selects a US state in the Salesforce address State/Province field. Accepts either abbreviations (CA, TX, NY) or full names (California, Texas, New York). Automatically maps common abbreviations to full state names. Handles both picklist/dropdown and text-input variants of the field: tries ``Open Dropdown`` first; if the field is a text input instead, falls back to ``Enter Text With Fallback``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Selects a US state in the Salesforce address State/Province field. Accepts either abbreviations (CA, TX, NY) or full names (California, Texas, New York). Automatically maps common abbreviations to full state names. Handles both picklist/dropdown and text-input variants of the field: tries ``Open Dropdown`` first; if the field is a text input instead, falls back to ``Enter Text With Fallback``.",
+      "inferred_description": null,
+      "tags": [
+        "interaction",
+        "address",
+        "utilities"
       ],
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },

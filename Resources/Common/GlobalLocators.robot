@@ -4,6 +4,9 @@ ${sandboxPassword}=                                     id:password
 ${sandboxLoginButton}=                                  id:Login
 ${sandboxLaunch360Logo}=                                xpath://div[@class='slds-global-header__item']//div[@class='slds-global-header__logo']
 
+# Post-login interstitial prompts (phone registration, email verification, etc.)
+${dismissPhoneRegistration}=                           xpath://a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "don't want to register")] | //a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "remind me later")] | //input[@value="Remind Me Later"] | //a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "skip")]
+
 # App Launcher
 ${appLauncher}=                                         xpath://button[@title='App Launcher']
 ${searchAppLauncher}=                                   xpath://input[@placeholder='Search apps and items...']
