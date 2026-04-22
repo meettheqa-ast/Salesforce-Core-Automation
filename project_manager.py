@@ -292,6 +292,22 @@ def delete_environment(project_name: str, environment: str) -> bool:
     return True
 
 
+def delete_persona(project_name: str, environment: str, persona: str) -> bool:
+    """Remove a single *persona* from *environment*. Returns True if deleted."""
+    raw = _load_raw_config(project_name)
+    env_block = raw.get("environments", {}).get(environment)
+    if not isinstance(env_block, dict):
+        return False
+    personas = env_block.get("personas", {})
+    if persona not in personas:
+        return False
+    del personas[persona]
+    env_block["personas"] = personas
+    raw["environments"][environment] = env_block
+    _write_full_config(project_name, raw)
+    return True
+
+
 def read_jira_config(name: str) -> dict[str, str]:
     """Return project-level Jira/Zephyr settings (not environment-scoped)."""
     raw = _load_raw_config(name)

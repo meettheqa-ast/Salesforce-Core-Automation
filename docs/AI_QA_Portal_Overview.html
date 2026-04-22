@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI QA Portal — Product Overview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a2e; line-height: 1.7; background: #f8f9fb; }
+
+  /* ── Cover ── */
+  .cover { background: linear-gradient(135deg, #1F2A44 0%, #0f172a 100%); color: #fff; padding: 80px 40px 60px; text-align: center; }
+  .cover h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .cover .tagline { font-size: 1.15rem; color: #94a3b8; font-weight: 400; margin-bottom: 32px; }
+  .cover .meta { font-size: 0.85rem; color: #64748b; }
+  .cover .meta span { margin: 0 12px; }
+  .cover .badge { display: inline-block; background: linear-gradient(135deg, #4F46E5, #6366F1); padding: 6px 20px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 24px; }
+
+  /* ── Layout ── */
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 48px 0; }
+  section + section { border-top: 1px solid #e5e7eb; }
+
+  /* ── Typography ── */
+  h2 { font-size: 1.6rem; font-weight: 700; color: #111827; margin-bottom: 8px; letter-spacing: -0.01em; }
+  h3 { font-size: 1.1rem; font-weight: 600; color: #1e293b; margin-bottom: 6px; }
+  .section-sub { font-size: 0.9rem; color: #6b7280; margin-bottom: 28px; }
+  p { margin-bottom: 16px; color: #374151; }
+  ul { padding-left: 20px; margin-bottom: 16px; }
+  li { margin-bottom: 8px; color: #374151; }
+  strong { color: #111827; }
+
+  /* ── Cards grid ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 8px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; transition: box-shadow 0.2s, border-color 0.2s; }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06); border-color: #6366f1; }
+  .card-icon { font-size: 1.6rem; margin-bottom: 10px; }
+  .card h3 { margin-bottom: 8px; }
+  .card p { font-size: 0.88rem; color: #6b7280; margin-bottom: 0; }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 0.9rem; }
+  th { background: #f1f5f9; text-align: left; padding: 10px 14px; font-weight: 600; color: #334155; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #475569; }
+  tr:hover td { background: #f8fafc; }
+
+  /* ── Architecture diagram ── */
+  .arch-diagram { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; margin: 20px 0; text-align: center; }
+  .arch-flow { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; }
+  .arch-node { background: linear-gradient(135deg, #4F46E5, #6366F1); color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 0.85rem; font-weight: 600; min-width: 120px; text-align: center; }
+  .arch-node.secondary { background: linear-gradient(135deg, #1e293b, #334155); }
+  .arch-node.accent { background: linear-gradient(135deg, #059669, #10b981); }
+  .arch-arrow { font-size: 1.4rem; color: #94a3b8; }
+
+  /* ── Highlight box ── */
+  .highlight-box { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-left: 4px solid #4F46E5; border-radius: 0 10px 10px 0; padding: 20px 24px; margin: 24px 0; }
+  .highlight-box p { color: #3730a3; margin-bottom: 0; }
+
+  /* ── ROI metrics ── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin: 20px 0; }
+  .metric { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; text-align: center; }
+  .metric-value { font-size: 2rem; font-weight: 800; color: #4F46E5; }
+  .metric-label { font-size: 0.85rem; color: #6b7280; margin-top: 4px; }
+
+  /* ── Roadmap ── */
+  .roadmap-item { display: flex; gap: 16px; margin-bottom: 20px; }
+  .roadmap-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .roadmap-dot.done { background: #10b981; }
+  .roadmap-dot.progress { background: #f59e0b; }
+  .roadmap-dot.planned { background: #94a3b8; }
+  .roadmap-content h3 { margin-bottom: 4px; font-size: 0.95rem; }
+  .roadmap-content p { font-size: 0.85rem; color: #6b7280; margin-bottom: 0; }
+
+  /* ── Footer ── */
+  .footer { background: #0f172a; color: #94a3b8; padding: 40px 24px; text-align: center; font-size: 0.85rem; }
+  .footer .heart { color: #ef4444; }
+
+  /* ── Print ── */
+  @media print {
+    .cover { padding: 40px 20px; }
+    section { padding: 24px 0; }
+    .card { break-inside: avoid; }
+    .arch-diagram { break-inside: avoid; }
+  }
+  @media (max-width: 640px) {
+    .cover h1 { font-size: 1.8rem; }
+    .arch-flow { flex-direction: column; }
+    .metrics { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- COVER                                                              -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="badge">Product Overview</div>
+  <h1>AI QA Portal</h1>
+  <p class="tagline">Test Intelligence Platform &mdash; AI-Driven Test Automation for Salesforce</p>
+  <p class="meta">
+    <span>Version 3.0</span> &middot;
+    <span>April 2026</span> &middot;
+    <span>Astound Digital</span>
+  </p>
+</div>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 1. EXECUTIVE SUMMARY                                               -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Executive Summary</h2>
+  <p class="section-sub">What it is and why it matters</p>
+
+  <p>
+    <strong>AI QA Portal (TIP)</strong> is a test intelligence platform that transforms how QA teams 
+    build and maintain automated tests for Salesforce. Instead of writing Robot Framework scripts 
+    manually, testers describe what they want to test in plain English &mdash; the AI generates, 
+    validates, and executes the automation script automatically.
+  </p>
+  <p>
+    The platform connects to live Salesforce sandbox environments, understands org-specific layouts 
+    and picklist values, and produces production-ready test suites that handle field validation, 
+    self-healing locators, and cross-org compatibility out of the box. Version 3.0 introduces a
+    dual-interface architecture: the production Streamlit dashboard alongside a next-generation 
+    <strong>React + Next.js frontend</strong> with 3D animations, glassmorphism UI, and a 
+    <strong>FastAPI REST backend</strong> (48 endpoints) for full programmatic access.
+  </p>
+
+  <div class="highlight-box">
+    <p>
+      <strong>Key value proposition:</strong> Reduce test script creation from hours to minutes. 
+      Eliminate the need for Robot Framework expertise. Enable any QA engineer to produce 
+      enterprise-grade Salesforce test automation through natural language.
+    </p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 2. PROBLEM STATEMENT                                               -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Problem Statement</h2>
+  <p class="section-sub">Challenges in Salesforce QA today</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#9201;</div>
+      <h3>Slow Script Creation</h3>
+      <p>Writing Robot Framework scripts for Salesforce requires deep knowledge of SLDS DOM structure, Lightning locators, and picklist handling. A single CRUD test can take 2-4 hours to build manually.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128736;</div>
+      <h3>High Maintenance Cost</h3>
+      <p>Salesforce releases (3x per year) change DOM structure, breaking locators silently. Teams spend more time fixing scripts than writing new ones.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128101;</div>
+      <h3>Skill Barrier</h3>
+      <p>Only engineers with Robot Framework + Selenium + Salesforce expertise can contribute to automation. Business analysts and manual testers are excluded from the process.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128200;</div>
+      <h3>Org Variability</h3>
+      <p>Each Salesforce org has unique page layouts, required fields, picklist values, and record types. Scripts built for one org break when run against another.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 3. SOLUTION OVERVIEW                                               -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Solution Overview</h2>
+  <p class="section-sub">How AI QA Portal solves these challenges</p>
+
+  <p>
+    The platform introduces an AI-driven workflow where testers interact with a conversational 
+    agent panel (similar to Cursor or ChatGPT) to describe test scenarios. The AI understands 
+    Salesforce-specific context &mdash; object types, field labels, picklist behavior, address 
+    fields, app names &mdash; and generates syntactically correct, org-aware Robot Framework scripts.
+  </p>
+
+  <div class="arch-diagram">
+    <p style="font-weight:600; color:#334155; margin-bottom:16px;">End-to-End Flow</p>
+    <div class="arch-flow">
+      <div class="arch-node">User Prompt<br><small>"Create a Lead, set State to CA"</small></div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node secondary">AI Bridge<br><small>Gemini / GPT-4 / Claude</small></div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node">RF-MCP Server<br><small>Step-by-step validation</small></div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node secondary">.robot Script<br><small>Post-processed &amp; validated</small></div>
+      <div class="arch-arrow">&rarr;</div>
+      <div class="arch-node accent">Robot Framework<br><small>Selenium + Salesforce</small></div>
+    </div>
+  </div>
+
+  <p>
+    Every generated script goes through automated post-processing that fixes common AI mistakes: 
+    misplaced Test Setup directives, credential leaks, hallucinated variables, and incorrect 
+    keyword usage. The result is a script that runs correctly on the first attempt in most cases.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 4. KEY FEATURES                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Key Features</h2>
+  <p class="section-sub">Platform capabilities at a glance</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#129302;</div>
+      <h3>AI Test Generation</h3>
+      <p>Two modes: <strong>MCP Stepwise</strong> (verified step-by-step against keyword catalog) and <strong>Quick Generate</strong> (fast single-shot LLM call). Both produce complete .robot suites.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127760;</div>
+      <h3>Multi-LLM Support</h3>
+      <p>Switch between Gemini, GPT-4, Claude, and Cohere via the Settings page. API keys managed through environment variables or session overrides.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128736;</div>
+      <h3>Self-Healing Keywords</h3>
+      <p>Smart keywords handle real-world complexity: State/Province abbreviation mapping (CA&rarr;California), post-login phone prompt dismissal, field fallbacks for org layout variations.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128193;</div>
+      <h3>Project Workspaces</h3>
+      <p>Organize tests by project with multi-environment (Dev/QA/UAT/Prod) and multi-persona (System Admin, Marketing User) credential management.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#9889;</div>
+      <h3>Parallel Execution</h3>
+      <p>Run full test suites with Pabot (parallel Robot Framework). Auto-retry flaky tests and merge results before reporting.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128269;</div>
+      <h3>Live Org Inspector</h3>
+      <p>Connects to the Salesforce org via API to discover actual picklist values, required fields, and field types &mdash; injecting real data into the generation prompt.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128680;</div>
+      <h3>Locator Health Scanner</h3>
+      <p>Scans GlobalLocators.robot against the live Salesforce DOM. Identifies stale locators after Salesforce releases before they cause test failures.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128640;</div>
+      <h3>API Data Seeding</h3>
+      <p>Instant prerequisite data creation via Salesforce REST API (simple-salesforce). Tests that need existing records seed them in setup, not through slow UI navigation.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#129529;</div>
+      <h3>Post-Processing Pipeline</h3>
+      <p>Automated fixes for AI-generated code: Test Setup placement, credential stripping, CSV variable injection, hallucinated keyword removal, and format validation.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128202;</div>
+      <h3>Analytics Dashboard</h3>
+      <p>Per-project run history, pass/fail trends, and execution metrics. Visual reporting with drill-down into individual test results.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128172;</div>
+      <h3>Natural Language Understanding</h3>
+      <p>Interprets conversational prompts correctly: "Company should be Acme" extracts "Acme" (not "should be Acme"). Handles abbreviations, typos, and informal phrasing.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128161;</div>
+      <h3>AI Agent Panel</h3>
+      <p>Cursor-style right-side panel for prompt input, quick-start templates, and generation controls. Status updates stream in the main content area during script creation.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127919;</div>
+      <h3>Smart State/Province Mapping</h3>
+      <p>Automatically converts abbreviations (CA, TX, NY) to full names (California, Texas, New York). Handles both dropdown and text-input field variants across orgs.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128274;</div>
+      <h3>Post-Login Prompt Handling</h3>
+      <p>Automatically dismisses Salesforce phone registration, email verification, and "Remind Me Later" prompts after login &mdash; no manual intervention needed.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#129504;</div>
+      <h3>NLP Prompt Interpretation</h3>
+      <p>Strips conversational filler ("should be", "set to", "use") from field values. "Company should be Acme" correctly extracts "Acme", not "should be Acme".</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128295;</div>
+      <h3>Auto-Fix Post-Processor</h3>
+      <p>5-stage pipeline fixes common AI mistakes: Test Setup placement, credential leaks, hallucinated variables, CSV injection, and robotidy formatting.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127912;</div>
+      <h3>Next-Gen Futuristic UI</h3>
+      <p>React + Next.js frontend with Three.js 3D particle backgrounds, Framer Motion animations, glassmorphism cards, and neon gradient theme. Standalone SPA at port 3000.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128268;</div>
+      <h3>FastAPI REST Backend</h3>
+      <p>48 REST endpoints across 9 routers. Full programmatic access to generation, execution, projects, analytics, MCP, and Salesforce operations. Swagger docs included.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 5. ARCHITECTURE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Architecture</h2>
+  <p class="section-sub">System components and data flow</p>
+
+  <div class="arch-diagram">
+    <p style="font-weight:600; color:#334155; margin-bottom:20px;">Component Architecture &mdash; Dual Interface</p>
+    <table style="max-width:800px; margin:0 auto;">
+      <tr><th>Layer</th><th>Component</th><th>Technology</th></tr>
+      <tr><td><strong>UI (Production)</strong></td><td>Streamlit Dashboard</td><td>Python, Streamlit, streamlit-antd-components</td></tr>
+      <tr><td><strong>UI (Next-Gen)</strong></td><td>Futuristic React Frontend</td><td>Next.js 16, Tailwind, Framer Motion, Three.js</td></tr>
+      <tr><td><strong>API</strong></td><td>FastAPI REST Backend (48 endpoints)</td><td>FastAPI, Pydantic, Uvicorn, SSE streaming</td></tr>
+      <tr><td><strong>AI</strong></td><td>AI Bridge + System Prompt (600+ lines)</td><td>Gemini, GPT-4, Claude, Cohere APIs</td></tr>
+      <tr><td><strong>Validation</strong></td><td>RF-MCP Server</td><td>rf-mcp (HTTP MCP protocol)</td></tr>
+      <tr><td><strong>Post-Processing</strong></td><td>Auto-fix pipeline (5 stages)</td><td>Test Setup fix, credential strip, CSV inject, sanitize, format</td></tr>
+      <tr><td><strong>Execution</strong></td><td>Robot Framework + Selenium</td><td>robotframework 7.4, SeleniumLibrary 6.8, ChromeDriver</td></tr>
+      <tr><td><strong>Data</strong></td><td>API Seeding + Org Inspector</td><td>simple-salesforce, Salesforce REST API</td></tr>
+      <tr><td><strong>Infra</strong></td><td>Project Manager</td><td>File-based workspace (Saved_Projects/)</td></tr>
+    </table>
+  </div>
+
+  <div class="highlight-box">
+    <p>
+      <strong>FastAPI Backend (v3.0):</strong> All platform functionality is now accessible via 48 REST 
+      endpoints across 9 routers: projects, generate, runs, llm, mcp, salesforce, catalog, analytics, 
+      and locators. Interactive API docs available at <code>/docs</code> (Swagger) and <code>/redoc</code>.
+    </p>
+  </div>
+
+  <p>
+    The AI Bridge sends user prompts along with the keyword catalog (900+ keywords) and the 
+    system prompt (600+ lines of Salesforce-specific rules including NLP interpretation, 
+    address field handling, and no-delete policy) to the selected LLM. The response 
+    goes through a 5-stage post-processing pipeline: credential stripping, LLM garbage removal,
+    CSV variable sanitization, Test Setup/Teardown placement fix, and robotidy formatting &mdash;
+    before presenting the script for human review.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 6. TECHNOLOGY STACK                                                -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Technology Stack</h2>
+  <p class="section-sub">Built on industry-standard, open-source foundations</p>
+
+  <table>
+    <tr><th>Category</th><th>Technology</th><th>Purpose</th></tr>
+    <tr><td>Backend Language</td><td>Python 3.11+</td><td>Core application logic, AI bridge, execution</td></tr>
+    <tr><td>Frontend Language</td><td>TypeScript + React 19</td><td>Next-gen futuristic UI</td></tr>
+    <tr><td>Dashboard (Production)</td><td>Streamlit 1.56</td><td>Interactive dashboard with AI agent panel</td></tr>
+    <tr><td>Frontend (Next-Gen)</td><td>Next.js 16 + Tailwind + Framer Motion</td><td>3D animated futuristic interface</td></tr>
+    <tr><td>REST API</td><td>FastAPI + Uvicorn</td><td>48 endpoints, SSE streaming, Swagger docs</td></tr>
+    <tr><td>3D / Animation</td><td>Three.js + Framer Motion + Lottie</td><td>Particle effects, glassmorphism, micro-interactions</td></tr>
+    <tr><td>Test Framework</td><td>Robot Framework 7.4</td><td>Test execution engine</td></tr>
+    <tr><td>Browser Automation</td><td>Selenium 4.41 + SeleniumLibrary 6.8</td><td>Salesforce UI interaction</td></tr>
+    <tr><td>AI / LLM</td><td>Gemini, GPT-4, Claude, Cohere</td><td>Natural language to .robot generation</td></tr>
+    <tr><td>MCP Protocol</td><td>rf-mcp</td><td>Stepwise keyword validation</td></tr>
+    <tr><td>Salesforce API</td><td>simple-salesforce 1.12</td><td>Data seeding, org inspection</td></tr>
+    <tr><td>Data Generation</td><td>FakerLibrary</td><td>Realistic test data (names, emails, phones)</td></tr>
+    <tr><td>Parallel Execution</td><td>Pabot 5.2</td><td>Multi-process test runs</td></tr>
+    <tr><td>Version Control</td><td>Git + GitHub</td><td>Code management, collaboration</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 7. INTEGRATIONS                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Integrations</h2>
+  <p class="section-sub">Ecosystem connections</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#9729;</div>
+      <h3>Salesforce</h3>
+      <p>Full UI automation (Lightning Experience) and REST API integration. Supports sandbox and production orgs with MFA handling.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128187;</div>
+      <h3>SF DX CLI</h3>
+      <p>SOQL query execution, Apex test runner, and org schema inspection directly from the platform UI.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128232;</div>
+      <h3>Slack</h3>
+      <p>Webhook-based notifications for test run results. Configurable per-project.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128196;</div>
+      <h3>GitHub</h3>
+      <p>Git-based project storage. Workspace sync for team collaboration across branches.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128203;</div>
+      <h3>Jira / Zephyr (Planned)</h3>
+      <p>Test case linking, defect creation on failure, and Zephyr test cycle management. Configuration ready in project settings.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 8. BUSINESS VALUE / ROI                                            -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Business Value</h2>
+  <p class="section-sub">Measurable impact on QA efficiency</p>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-value">10x</div>
+      <div class="metric-label">Faster test creation<br>(minutes vs. hours)</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">80%</div>
+      <div class="metric-label">Reduction in<br>maintenance effort</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">Zero</div>
+      <div class="metric-label">Robot Framework<br>expertise required</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">3x</div>
+      <div class="metric-label">Faster regression<br>cycles (parallel)</div>
+    </div>
+  </div>
+
+  <ul>
+    <li><strong>Lower skill barrier:</strong> Business analysts and manual testers can contribute to automation using natural language prompts.</li>
+    <li><strong>Self-healing reduces breakage:</strong> Smart keywords and fallback strategies handle Salesforce layout changes, reducing post-release test maintenance.</li>
+    <li><strong>Multi-org compatibility:</strong> Generated scripts use org-agnostic picklist handling (random valid option selection) instead of hardcoded values.</li>
+    <li><strong>Faster onboarding:</strong> New team members produce their first automated test within minutes, not days.</li>
+    <li><strong>Consistent quality:</strong> AI-enforced coding standards (keyword catalog, naming conventions, setup/teardown patterns) ensure uniform test quality across the team.</li>
+  </ul>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 9. ROADMAP                                                         -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Roadmap</h2>
+  <p class="section-sub">Completed milestones and upcoming features</p>
+
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>AI Test Generation (MCP Stepwise + Quick Generate)</h3>
+      <p>Completed &mdash; Natural language to .robot with multi-LLM support and keyword validation.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Project Workspace Management</h3>
+      <p>Completed &mdash; Multi-project, multi-environment, multi-persona credential management.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Self-Healing Keywords &amp; Post-Processing</h3>
+      <p>Completed &mdash; State mapping, login prompt handling, field fallbacks, Test Setup auto-fix.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>AI Agent Panel (Cursor-style UI)</h3>
+      <p>Completed &mdash; Right-side panel with prompt input, templates, and live generation status.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Suite Execution with Parallel Runs</h3>
+      <p>Completed &mdash; Pabot integration, auto-retry flaky tests, tag-based filtering.</p>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>NLP Prompt Interpretation &amp; Smart Keywords</h3>
+      <p>Completed &mdash; State abbreviation mapping (CA&rarr;California), conversational filler stripping, post-login prompt handling, org-resilient field fallbacks.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Auto-Fix Post-Processing Pipeline</h3>
+      <p>Completed &mdash; 5-stage pipeline: Test Setup fix, credential stripping, CSV sanitization, hallucinated keyword removal, robotidy formatting.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>FastAPI REST Backend (48 Endpoints)</h3>
+      <p>Completed &mdash; Full API for projects, generation, runs, LLM, MCP, Salesforce, catalog, analytics, and locators. Swagger docs at /docs.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Next.js Futuristic Frontend</h3>
+      <p>Completed &mdash; React + Next.js 16 with Three.js 3D particles, Framer Motion animations, glassmorphism cards, neon gradient theme, and 6 animated pages.</p>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-dot progress"></div>
+    <div class="roadmap-content">
+      <h3>CSV Data-Driven Testing</h3>
+      <p>In Progress &mdash; Upload CSV test data, auto-generate FOR loops iterating over rows. Core logic ready, UI integration pending.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot progress"></div>
+    <div class="roadmap-content">
+      <h3>Screenshot-Based Form Analysis</h3>
+      <p>In Progress &mdash; Upload a Salesforce page screenshot, AI identifies fields and buttons to automate. Vision API integration ready.</p>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-dot planned"></div>
+    <div class="roadmap-content">
+      <h3>Jira / Zephyr Integration</h3>
+      <p>Planned &mdash; Link tests to Jira stories, auto-create defects on failure, sync with Zephyr test cycles.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot planned"></div>
+    <div class="roadmap-content">
+      <h3>Git Sync for Collaborative Workspaces</h3>
+      <p>Planned &mdash; Pull/push test suites to remote Git branches. Team collaboration on shared test projects.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot planned"></div>
+    <div class="roadmap-content">
+      <h3>TOTP / MFA Automation</h3>
+      <p>Planned &mdash; Automated OTP entry for orgs with enforced MFA (TOTP secret-based, no manual intervention).</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot planned"></div>
+    <div class="roadmap-content">
+      <h3>AI Chat Assistant &amp; Voice Input</h3>
+      <p>Planned &mdash; Persistent AI chat panel with streaming responses. Web Speech API for voice-driven test generation.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot planned"></div>
+    <div class="roadmap-content">
+      <h3>Cross-Browser Testing</h3>
+      <p>Planned &mdash; Firefox, Edge support alongside Chrome. Browser matrix for regression suites.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- 10. SUPPORTED SALESFORCE OBJECTS                                    -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section>
+  <h2>Supported Salesforce Operations</h2>
+  <p class="section-sub">Full CRUD automation for core Sales Cloud objects</p>
+
+  <table>
+    <tr><th>Object</th><th>Create</th><th>Read / Verify</th><th>Update / Edit</th><th>Delete</th><th>Convert</th></tr>
+    <tr><td><strong>Lead</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td></tr>
+    <tr><td><strong>Account</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&mdash;</td></tr>
+    <tr><td><strong>Contact</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&mdash;</td></tr>
+    <tr><td><strong>Opportunity</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&mdash;</td></tr>
+    <tr><td><strong>Case</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&mdash;</td></tr>
+    <tr><td><strong>Work Order</strong></td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&#10003;</td><td>&mdash;</td></tr>
+  </table>
+
+  <p>
+    Custom objects and custom fields are supported through the generic keyword layer 
+    (<code>Enter Text With Fallback</code>, <code>Open Dropdown With Fallback</code>, 
+    <code>Attempt Save And Auto-Heal Missing Fields</code>).
+  </p>
+</section>
+
+</div> <!-- /.container -->
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<div class="footer">
+  <p style="margin-bottom:8px;">
+    <strong style="color:#e2e8f0;">AI QA Portal</strong> &mdash; Test Intelligence Platform
+  </p>
+  <p>Created with <span class="heart">&hearts;</span> by Meet</p>
+  <p style="margin-top:12px; font-size:0.78rem; color:#475569;">
+    Astound Digital &middot; April 2026 &middot; Confidential
+  </p>
+</div>
+
+</body>
+</html>

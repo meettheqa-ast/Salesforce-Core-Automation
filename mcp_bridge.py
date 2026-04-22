@@ -23,7 +23,8 @@ _VENV_PYTHON = ROOT / "venv" / "Scripts" / "python.exe"
 _PYTHON = str(_VENV_PYTHON) if _VENV_PYTHON.is_file() else sys.executable
 
 _DEFAULT_HOST = "127.0.0.1"
-_DEFAULT_PORT = 8000
+# Must not match the AI QA Portal FastAPI port (8000). RF-MCP runs its own HTTP server.
+_DEFAULT_PORT = 8765
 _STARTUP_TIMEOUT_S = 45
 _POLL_INTERVAL_S = 1.0
 
@@ -35,11 +36,23 @@ RESOURCE_FILES_TO_IMPORT = [
 ]
 
 
+# Ports we know belong to other services in this repo. RF-MCP must not collide.
+_BLOCKED_PORTS: set[int] = {8000}
+
+
 def _host_port() -> tuple[str, int]:
     host = os.environ.get("RFMCP_HOST", _DEFAULT_HOST).strip()
     try:
         port = int(os.environ.get("RFMCP_PORT", _DEFAULT_PORT))
     except (ValueError, TypeError):
+        port = _DEFAULT_PORT
+    if port in _BLOCKED_PORTS:
+        _logger.warning(
+            "RFMCP_PORT=%s collides with the AI QA Portal API; falling back to %s. "
+            "Set RFMCP_PORT to a free port (e.g. 8765) in .env to silence this.",
+            port,
+            _DEFAULT_PORT,
+        )
         port = _DEFAULT_PORT
     return host, port
 
@@ -100,26 +113,34 @@ def stop_mcp_server() -> None:
 
 
 def _wait_for_server() -> None:
-    """Block until the MCP HTTP endpoint is reachable."""
-    import httpx
+    """Block until the RF-MCP process is listening on the configured TCP port.
 
-    url = mcp_url()
+    Uses a socket connect — not an HTTP GET to ``/`` — so we do not mistake
+    another server (e.g. FastAPI on :8000) for RF-MCP.
+    """
+    import socket
+
+    host, port = _host_port()
     deadline = time.monotonic() + _STARTUP_TIMEOUT_S
     while time.monotonic() < deadline:
         if _server_proc is not None and _server_proc.poll() is not None:
             raise RuntimeError(
                 f"RF-MCP server exited immediately (code {_server_proc.returncode}). "
-                "Check that rf-mcp is installed and port is free."
+                "Check that rf-mcp is installed, the port is free, and RFMCP_PORT does not "
+                "match your API server port."
             )
         try:
-            r = httpx.get(url.replace("/mcp", "/"), timeout=2)
-            if r.status_code < 500:
-                _logger.info("RF-MCP server ready at %s", url)
-                return
-        except (httpx.ConnectError, httpx.ReadTimeout, OSError):
-            pass
-        time.sleep(_POLL_INTERVAL_S)
-    raise TimeoutError(f"RF-MCP server did not start within {_STARTUP_TIMEOUT_S}s")
+            with socket.create_connection((host, port), timeout=2):
+                pass
+        except OSError:
+            time.sleep(_POLL_INTERVAL_S)
+            continue
+        _logger.info("RF-MCP server accepting TCP at http://%s:%s/mcp", host, port)
+        return
+    raise TimeoutError(
+        f"RF-MCP server did not listen on {host}:{port} within {_STARTUP_TIMEOUT_S}s. "
+        "Try a different RFMCP_PORT if the port is in use."
+    )
 
 
 def _get_or_create_event_loop() -> asyncio.AbstractEventLoop:

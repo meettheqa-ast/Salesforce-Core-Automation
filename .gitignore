@@ -1,6 +1,16 @@
 # Local secrets (API keys for ai_bridge.py)
 .env
+ai_qa_portal/.env
 .streamlit/secrets.toml
+
+# AI QA Portal local data + run outputs (per-user)
+ai_qa_portal/data/
+ai_qa_portal/outputs/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # Runtime Salesforce credentials (written by run_test.py / app)
 Resources/TestData/EnvData.robot
