@@ -38,9 +38,13 @@ app = FastAPI(
 )
 
 # Allow:
-#   - any *.vercel.app deployment (production + preview branches)
 #   - localhost / 127.0.0.1 dev origins
+#   - the project's own *.vercel.app deployments (production + per-PR preview
+#     URLs always start with the project slug)
 #   - any extra origins listed in CORS_ORIGINS or EXTRA_CORS_ORIGINS env vars
+# Note: previously we matched ANY *.vercel.app origin, which combined with
+# allow_credentials=True meant every Vercel app on the internet could issue
+# credentialed CORS requests. Tighten to this project's deployments only.
 _explicit_origins = sorted({
     o.strip()
     for raw in (settings.cors_origins, settings.extra_cors_origins)
@@ -50,7 +54,7 @@ _explicit_origins = sorted({
 _origin_regex = (
     r"^(https?://localhost(:\d+)?"
     r"|https?://127\.0\.0\.1(:\d+)?"
-    r"|https://([a-z0-9-]+\.)*vercel\.app)$"
+    r"|https://sf-core-automation(-[a-z0-9-]+)?\.vercel\.app)$"
 )
 
 app.add_middleware(

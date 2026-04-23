@@ -8,7 +8,10 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ai_qa_portal.backend.config import settings
-from ai_qa_portal.backend.services.auth import get_current_user
+from ai_qa_portal.backend.services.auth import (
+    assert_user_owns_project,
+    get_current_user,
+)
 from ai_qa_portal.backend.services.db import User
 from ..models.generation import GenerationResponse
 from ..models.tag import Tag, TagScope
@@ -67,6 +70,8 @@ async def create_user_story(
     body: UserStoryCreate,
     current_user: User = Depends(get_current_user),
 ):
+    # Block creating a story under someone else's project.
+    assert_user_owns_project(current_user, body.project_id)
     _store.seed_static_tags(body.project_id)
     now = datetime.now(timezone.utc)
     story = UserStory(

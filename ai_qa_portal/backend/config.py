@@ -31,8 +31,11 @@ class Settings(BaseSettings):
     saved_projects_dir: str = str(REPO_ROOT / "Saved_Projects")
 
     # --- Auth (Phase 1) ---
-    # Shared secret with the frontend's NextAuth instance. Same value must be set on both sides.
-    nextauth_secret: str = ""
+    # OAuth 2.0 Client ID from Google Cloud Console. Required when AUTH_DISABLED is false.
+    # The backend uses this as the expected `aud` claim when verifying Google ID tokens
+    # via Google's JWKS endpoint. MUST match the GOOGLE_CLIENT_ID configured on the
+    # frontend's NextAuth Google provider, otherwise verification fails.
+    google_client_id: str = ""
     # Only Google accounts in this Workspace domain may log in. Empty string disables the check
     # (open to any Google account) -- not recommended for production.
     allowed_email_domain: str = "astounddigital.com"

@@ -126,8 +126,17 @@ Vercel auto-detects Next.js from `frontend/vercel.json`. Each push to `main` shi
 ## 4. Authentication (Google OAuth)
 
 Phase 1 of the auth model is now in. Every API endpoint except `/health` and `/`
-requires a valid NextAuth session JWT. Sign-in is restricted to a single Google
+requires a valid Google ID token. Sign-in is restricted to a single Google
 Workspace domain (default `astounddigital.com`).
+
+**Auth model in one paragraph.** The frontend (NextAuth on Vercel) runs the
+Google OAuth flow and stashes the **raw Google ID token** in the session. The
+client fetches that token from `/api/auth/jwt` and forwards it to the backend
+as `Authorization: Bearer <token>`. The backend verifies the token directly
+against [Google's JWKS](https://www.googleapis.com/oauth2/v3/certs), checks the
+audience (`GOOGLE_CLIENT_ID`), the issuer (`accounts.google.com`), the email
+domain, and the `hd` (hosted-domain) claim. **No shared secret between Vercel
+and the FastAPI backend** -- the trust anchor is Google itself.
 
 ### 4a. Google Cloud Console (one-time, ~3 min)
 
@@ -149,9 +158,10 @@ Workspace domain (default `astounddigital.com`).
 Local `.env` (or `flyctl secrets set ...`):
 
 ```
-NEXTAUTH_SECRET=<openssl rand -hex 32>
+GOOGLE_CLIENT_ID=<paste the Client ID from 4a; MUST match the frontend value>
 ALLOWED_EMAIL_DOMAIN=astounddigital.com
 INITIAL_ADMINS=m.sheth@astounddigital.com
+AUTH_DISABLED=false
 ```
 
 The backend creates a SQLite DB at `${DATA_DIR}/users.db` on first boot. On
@@ -162,14 +172,17 @@ Fly the mounted volume keeps it persistent.
 Project Settings -> Environment Variables (set for **all** environments):
 
 ```
-AUTH_SECRET=<same value as backend NEXTAUTH_SECRET>
+AUTH_SECRET=<openssl rand -hex 32>            # encrypts the NextAuth session cookie
 NEXTAUTH_URL=https://sf-core-automation-umber.vercel.app
-GOOGLE_CLIENT_ID=<from console>
+GOOGLE_CLIENT_ID=<same value as backend>
 GOOGLE_CLIENT_SECRET=<from console>
 ALLOWED_EMAIL_DOMAIN=astounddigital.com
+NEXT_PUBLIC_AUTH_DISABLED=false
 ```
 
-Then **Redeploy** (Deployments -> latest -> ... -> Redeploy with cache off).
+`AUTH_SECRET` here is for NextAuth's own session-cookie encryption only -- the
+backend never sees it. Then **Redeploy** (Deployments -> latest -> ... ->
+Redeploy with cache off).
 
 ### 4d. Migrate existing data to the admin
 
@@ -182,18 +195,38 @@ docker compose exec backend python scripts/seed_admin_and_claim.py m.sheth@astou
 
 The script is idempotent and safe to re-run.
 
-### 4e. Things to know
+### 4e. Demo / pre-OAuth bypass
+
+While Google OAuth isn't yet wired, both sides ship a feature flag that
+disables the entire auth path:
+
+- Backend: `AUTH_DISABLED=true` in `.env` -> every request resolves to a
+  synthetic `dev@local` admin user.
+- Frontend: `NEXT_PUBLIC_AUTH_DISABLED=true` in Vercel env -> middleware
+  skips the `/login` redirect and the navbar hides the user menu.
+
+Flip both to `false` once 4a-4c are complete.
+
+### 4f. Things to know
 
 - **The first user to log in** becomes admin only if their email is listed in
   `INITIAL_ADMINS`. Otherwise they are a regular user (Phase 1 = sees only
   their own data).
-- **JWT lifetime is 1 hour.** The frontend silently refreshes the token by
-  re-fetching `/api/auth/jwt` whenever the backend returns 401.
+- **Google ID tokens last 1 hour.** When one expires, `/api/auth/jwt` returns
+  401, the frontend's `apiFetch` clears its cache and refetches; if NextAuth's
+  session is still alive it issues a fresh ID token transparently. If the
+  whole session has expired, the user is bounced to `/login`.
 - **SSE endpoints** (`/api/runs/execute/stream`, `/api/generate/mcp-stepwise/stream`)
-  accept the JWT via `?token=...` query param because EventSource cannot send
+  accept the token via `?token=...` query param because EventSource cannot send
   custom headers. Same for `/api/runs/.../file/...` and `/.../bundle.zip` --
   they're embedded in `<a href>` and `<img src>` so the helper appends the
   cached token to the URL.
+- **`POST /api/runs`, `/run/user-story/{id}`, `/run/tag/{name}`** restrict the
+  persona resolver to personas owned by the current user (or all, if admin),
+  so a logged-in user cannot trigger a run with someone else's encrypted SF
+  credentials by guessing a `persona_id`.
+- **`POST /personas`, `POST /orgs`, `POST /user-stories`** verify that the
+  caller owns the parent `project_id`; cross-user attachment returns 403.
 - **Run history is shared** across all logged-in users in Phase 1. Per-user
   filtering of runs lands in Phase 2 alongside project memberships.
 
@@ -203,7 +236,8 @@ The script is idempotent and safe to re-run.
 
 `ai_qa_portal/backend/main.py` allows:
 
-- Any `https://*.vercel.app` (production + previews).
+- This project's deployments only -- the regex matches `sf-core-automation*.vercel.app`,
+  not any random Vercel app on the internet.
 - `http(s)://localhost` and `http(s)://127.0.0.1` for dev.
 - Any origins listed in `CORS_ORIGINS` or `EXTRA_CORS_ORIGINS` (comma separated) for custom domains.
 
@@ -214,6 +248,9 @@ flyctl secrets set EXTRA_CORS_ORIGINS=https://qa.acme.com
 ```
 
 then `flyctl deploy`.
+
+If you ever rename the Vercel project, update the regex in `main.py` to match
+the new project slug.
 
 ---
 

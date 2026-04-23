@@ -48,8 +48,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         (profile as { hd?: string })?.hd === ALLOWED_DOMAIN;
       return okDomain;
     },
-    async jwt({ token, profile }) {
-      // Persist Google sub + display fields into the JWT we hand to the backend.
+    async jwt({ token, account, profile }) {
+      // Capture the raw Google id_token on the initial sign-in. The backend
+      // verifies this directly against Google's JWKS -- no shared secret with
+      // NextAuth required. `account` is only present on the first call after
+      // a successful OAuth flow; on subsequent calls we already have it on
+      // the token from a previous round.
+      if (account?.id_token) {
+        token.googleIdToken = account.id_token;
+        // `expires_at` is in seconds-since-epoch; we'll use it client-side to
+        // know when a refresh is due (Google ID tokens last 1h).
+        if (typeof account.expires_at === "number") {
+          token.googleIdTokenExpiresAt = account.expires_at;
+        }
+      }
       if (profile) {
         token.email = profile.email;
         token.name = profile.name;

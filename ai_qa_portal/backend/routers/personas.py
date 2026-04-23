@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ai_qa_portal.backend.config import settings
-from ai_qa_portal.backend.services.auth import get_current_user
+from ai_qa_portal.backend.services.auth import (
+    assert_user_owns_project,
+    get_current_user,
+)
 from ai_qa_portal.backend.services.db import User
 from ..models.persona import Persona, PersonaPublic
 from ..services.credential_service import CredentialService
@@ -84,6 +87,9 @@ def create_persona(
     body: PersonaCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # Block cross-user attachment: a non-admin must own the project_id (which
+    # implicitly governs the org_id, since orgs live under projects).
+    assert_user_owns_project(current_user, body.project_id)
     svc = _cred_svc()
     persona = Persona(
         project_id=body.project_id,

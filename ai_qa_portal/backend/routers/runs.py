@@ -20,8 +20,9 @@ from ..models.org import SalesforceOrg
 from ..models.persona import RunRequest, RunResponse
 from ..models.test_case import TestCase, TestCaseStatus
 from ..models.user_story import UserStory
-from ..routers.personas import load_all_personas
+from ..routers.personas import load_personas_for_user
 from ..services.auth import get_current_user
+from ..services.db import User
 from ..services.credential_service import CredentialService
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
@@ -63,8 +64,14 @@ def _get_org(org_id):
 
 
 @router.post("", response_model=RunResponse)
-async def trigger_run(body: RunRequest, background_tasks: BackgroundTasks):
-    all_personas = load_all_personas()
+async def trigger_run(
+    body: RunRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
+    # Restrict the resolver to personas this user is allowed to use, so
+    # nobody can trigger a run with somebody else's encrypted SF credentials.
+    all_personas = load_personas_for_user(current_user)
 
     try:
         persona, method = _resolver.resolve(
@@ -116,7 +123,11 @@ class RunTagBody(BaseModel):
 
 
 @router.post("/user-story/{story_id}", response_model=list[RunResponse])
-def run_tests_for_user_story(story_id: UUID, body: RunUserStoryBody):
+def run_tests_for_user_story(
+    story_id: UUID,
+    body: RunUserStoryBody,
+    current_user: User = Depends(get_current_user),
+):
     sid = story_id
     org_id = body.org_id
     persona_id = body.persona_id
@@ -139,7 +150,7 @@ def run_tests_for_user_story(story_id: UUID, body: RunUserStoryBody):
         raise HTTPException(404, f"Org {org_id} not found")
     org_model = SalesforceOrg(**org)
 
-    all_personas = load_all_personas()
+    all_personas = load_personas_for_user(current_user)
     prompt = f"Execute automated tests for user story: {story.title}"
     try:
         persona, method = _resolver.resolve(
@@ -181,7 +192,11 @@ def run_tests_for_user_story(story_id: UUID, body: RunUserStoryBody):
 
 
 @router.post("/tag/{tag_name}", response_model=list[RunResponse])
-def run_tests_for_tag(tag_name: str, body: RunTagBody):
+def run_tests_for_tag(
+    tag_name: str,
+    body: RunTagBody,
+    current_user: User = Depends(get_current_user),
+):
     project_id = body.project_id
     org_id = body.org_id
     persona_id = body.persona_id
@@ -196,7 +211,7 @@ def run_tests_for_tag(tag_name: str, body: RunTagBody):
         raise HTTPException(404, f"Org {org_id} not found")
     org_model = SalesforceOrg(**org)
 
-    all_personas = load_all_personas()
+    all_personas = load_personas_for_user(current_user)
     prompt = f"Run tests tagged {tag_name}"
     try:
         persona, method = _resolver.resolve(

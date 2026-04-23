@@ -5,7 +5,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from ai_qa_portal.backend.config import settings
-from ai_qa_portal.backend.services.auth import get_current_user
+from ai_qa_portal.backend.services.auth import (
+    assert_user_owns_project,
+    get_current_user,
+)
 from ai_qa_portal.backend.services.db import User
 from ..models.org import SalesforceOrg
 from ..storage.json_file_backend import JsonFileBackend
@@ -47,6 +50,8 @@ def list_orgs(
 
 @router.post("", response_model=SalesforceOrg, status_code=201)
 def create_org(body: SalesforceOrg, current_user: User = Depends(get_current_user)):
+    # Block creating an org under someone else's project.
+    assert_user_owns_project(current_user, body.project_id)
     body.owner_user_id = current_user.id
     items = _load()
     items.append(body.model_dump(mode="json"))

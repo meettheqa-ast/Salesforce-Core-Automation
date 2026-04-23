@@ -11,7 +11,7 @@ import StepwisePipeline, {
   type PipelinePhase,
   type PipelineStep,
 } from "@/components/generate/StepwisePipeline";
-import { api } from "@/lib/api";
+import { api, prepareAuth } from "@/lib/api";
 
 const TEMPLATES = [
   { label: "Create Lead", prompt: "Create a new Lead with auto-generated data and verify it was created" },
@@ -134,7 +134,17 @@ export default function GeneratePage() {
       test_name: testName.trim() || undefined,
       headless,
     };
+    // Pre-warm the auth token cache so we can attach the bearer header below.
+    // The query-string `?token=` fallback in stepwiseStreamUrl() is a belt-and-
+    // braces backup; the header path is the canonical one for POST + fetch.
+    await prepareAuth();
     const url = api.generate.stepwiseStreamUrl();
+    // Read the cached token directly so we can put it in the header. We can't
+    // import the cache from lib/api (private), so we re-fetch via /api/auth/jwt;
+    // the response is cached server-side with no-store but client-side this
+    // hits the in-memory cache `prepareAuth` just warmed.
+    const tokenResp = await fetch("/api/auth/jwt", { credentials: "include", cache: "no-store" });
+    const bearer = tokenResp.ok ? (await tokenResp.text()).trim() : "";
     return new Promise<void>((resolve, reject) => {
       let resolved = false;
       const finish = (err?: unknown) => {
@@ -148,7 +158,10 @@ export default function GeneratePage() {
       sourceRef.current = { close: () => ctrl.abort() };
       fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+        },
         body: JSON.stringify(payload),
         signal: ctrl.signal,
       }).then(async (resp) => {

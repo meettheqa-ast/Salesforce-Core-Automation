@@ -15,9 +15,15 @@ async function _fetchJwt(): Promise<string | null> {
   _inFlight = (async () => {
     try {
       const r = await fetch("/api/auth/jwt", { credentials: "include", cache: "no-store" });
-      if (!r.ok) return null;
+      if (!r.ok) {
+        // Do NOT cache null -- a 401 here usually means "not signed in yet" or
+        // "session refresh pending". Caching null would deny every subsequent
+        // call until the page reloads. Let the next caller retry.
+        return null;
+      }
       const text = (await r.text()).trim();
-      _cachedToken = text || null;
+      if (!text) return null;
+      _cachedToken = text;
       return _cachedToken;
     } catch {
       return null;
