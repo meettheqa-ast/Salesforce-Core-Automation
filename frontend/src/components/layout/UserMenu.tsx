@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { signOut, useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, clearAuthCache, type MeResponse } from "@/lib/api";
@@ -12,7 +13,15 @@ export default function UserMenu() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
+  // Two refs: the trigger button (to anchor + outside-click) and the dropdown
+  // (rendered through a portal so we can detect outside-click on it too).
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
+  // Anchor position in viewport coords; the dropdown uses `position: fixed` so
+  // it escapes the navbar's `overflow-x-auto` clip box. (CSS spec: when one
+  // overflow axis is non-visible, the other becomes auto too -- the previous
+  // `position: absolute` dropdown rendered as a 2px sliver because of this.)
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
 
   // Pull is_admin / canonical user id from the backend (NextAuth only knows what
   // Google handed us; the backend owns the source of truth for is_admin).
@@ -33,11 +42,31 @@ export default function UserMenu() {
     };
   }, [status]);
 
-  // Close on outside click.
+  // Recalculate coords on open + on viewport change so the dropdown stays
+  // glued to the button if the user resizes / scrolls the page.
+  useEffect(() => {
+    if (!open || !buttonRef.current) return;
+    const update = () => {
+      const r = buttonRef.current!.getBoundingClientRect();
+      // Anchor top-right of dropdown to bottom-right of button, plus a small gap.
+      setCoords({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
+  // Outside-click closes -- check both the trigger and the dropdown.
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (buttonRef.current?.contains(target)) return;
+      if (popupRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -65,13 +94,14 @@ export default function UserMenu() {
   }
 
   return (
-    <div ref={ref} className="relative shrink-0 ml-1">
+    <div className="shrink-0 ml-1">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-lg hover:bg-white/5 transition"
+        className="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-lg hover:bg-white/5 transition"
       >
         {picture ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -79,48 +109,59 @@ export default function UserMenu() {
             src={picture}
             alt=""
             referrerPolicy="no-referrer"
-            className="w-6 h-6 rounded-full ring-1 ring-white/20"
+            className="w-7 h-7 rounded-full ring-1 ring-white/20"
           />
         ) : (
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-cyan-400 flex items-center justify-center text-[10px] font-bold text-white">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-white">
             {initials}
           </div>
         )}
-        <span className="text-[12px] text-slate-300 max-w-[120px] truncate">
+        <span className="text-[13px] text-slate-300 max-w-[140px] truncate">
           {name.split(" ")[0]}
         </span>
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.12 }}
-            role="menu"
-            className="absolute right-0 mt-2 w-64 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-2xl py-2"
-          >
-            <div className="px-3 py-2 border-b border-white/5">
-              <div className="text-sm text-white font-medium truncate">{name}</div>
-              <div className="text-xs text-slate-400 truncate">{email}</div>
-              {isAdmin && (
-                <div className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-200 text-[10px] font-semibold uppercase tracking-wider">
-                  Admin
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && coords && (
+              <motion.div
+                ref={popupRef}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.12 }}
+                role="menu"
+                style={{
+                  position: "fixed",
+                  top: coords.top,
+                  right: coords.right,
+                  zIndex: 60,
+                }}
+                className="w-64 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-xl shadow-2xl py-2"
+              >
+                <div className="px-3 py-2 border-b border-white/5">
+                  <div className="text-sm text-white font-medium truncate">{name}</div>
+                  <div className="text-xs text-slate-400 truncate">{email}</div>
+                  {isAdmin && (
+                    <div className="mt-1 inline-flex items-center px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-200 text-[10px] font-semibold uppercase tracking-wider">
+                      Admin
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={handleSignOut}
-              className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-white/5 transition"
-            >
-              Sign out
-            </button>
-          </motion.div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleSignOut}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-white/5 transition"
+                >
+                  Sign out
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }

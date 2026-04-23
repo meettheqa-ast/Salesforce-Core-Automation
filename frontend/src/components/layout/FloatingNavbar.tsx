@@ -29,14 +29,14 @@ export default function FloatingNavbar() {
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       aria-label="Primary"
-      className="fixed top-3 left-1/2 -translate-x-1/2 z-50 nav-floating px-2 py-1.5 flex items-center gap-0.5 max-w-[calc(100vw-1.5rem)] overflow-x-auto"
+      className="fixed top-4 left-1/2 -translate-x-1/2 z-50 nav-floating px-3 py-2 flex items-center gap-1 max-w-[calc(100vw-1.5rem)] overflow-x-auto"
     >
-      <Link href="/" className="flex items-center gap-2 px-2.5 py-1 mr-1 shrink-0">
-        <div className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-purple-500 to-cyan-400 animate-pulse-glow" />
-        <span className="text-xs font-bold text-white tracking-tight whitespace-nowrap">AI QA Portal</span>
+      <Link href="/" className="flex items-center gap-2.5 px-3 py-1.5 mr-1 shrink-0">
+        <div className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-500 to-cyan-400 animate-pulse-glow" />
+        <span className="text-sm font-bold text-white tracking-tight whitespace-nowrap">AI QA Portal</span>
       </Link>
 
-      <div className="h-5 w-px bg-white/10 shrink-0" />
+      <div className="h-6 w-px bg-white/10 shrink-0" />
 
       {NAV_ITEMS.map((item) => {
         const isActive = pathname === item.href;
@@ -45,7 +45,7 @@ export default function FloatingNavbar() {
             <motion.div
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
-              className={`relative px-2.5 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 flex items-center gap-1.5 whitespace-nowrap ${
+              className={`relative px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-200 flex items-center gap-2 whitespace-nowrap ${
                 isActive ? "text-white" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -56,14 +56,14 @@ export default function FloatingNavbar() {
                   transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 />
               )}
-              <span className="relative z-10 text-[11px]">{item.icon}</span>
+              <span className="relative z-10 text-[13px]">{item.icon}</span>
               <span className="relative z-10">{item.label}</span>
             </motion.div>
           </Link>
         );
       })}
 
-      <div className="h-5 w-px bg-white/10 shrink-0 ml-1" />
+      <div className="h-6 w-px bg-white/10 shrink-0 ml-1" />
       <UserMenu />
     </motion.nav>
   );
