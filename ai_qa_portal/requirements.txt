@@ -5,3 +5,7 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 cryptography>=44.0.0
 python-Levenshtein>=0.26.0
+
+# Auth & RBAC (Phase 1+)
+PyJWT[crypto]>=2.9.0
+SQLAlchemy>=2.0.30

@@ -11,7 +11,7 @@ from queue import Empty, Queue
 from typing import Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from ..models.persona import RunRequest, RunResponse
 from ..models.test_case import TestCase, TestCaseStatus
 from ..models.user_story import UserStory
 from ..routers.personas import load_all_personas
+from ..services.auth import get_current_user
 from ..services.credential_service import CredentialService
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
@@ -34,8 +35,21 @@ from ..storage.json_file_backend import JsonFileBackend
 RESULTS_ROOT = Path(settings.results_dir)
 RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
 
-router = APIRouter(prefix="/run", tags=["runs"])
-exec_router = APIRouter(prefix="/api/runs", tags=["runs"])
+# Phase 1 isolation note: runs are stored as filesystem folders keyed only by
+# timestamp. We require auth on every endpoint but do NOT filter run history by
+# user yet -- every logged-in user sees all runs. Per-user run filtering will
+# be added in Phase 2 alongside project memberships (runs inherit project
+# membership). Tracked at the top of routers/runs.py.
+router = APIRouter(
+    prefix="/run",
+    tags=["runs"],
+    dependencies=[Depends(get_current_user)],
+)
+exec_router = APIRouter(
+    prefix="/api/runs",
+    tags=["runs"],
+    dependencies=[Depends(get_current_user)],
+)
 _resolver = PersonaResolver()
 _runner = ScriptRunner(settings.output_dir)
 _store = JsonFileBackend(settings.data_dir)

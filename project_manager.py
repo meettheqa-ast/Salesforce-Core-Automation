@@ -103,12 +103,20 @@ def delete_project(name: str) -> bool:
     return not proj_dir.exists()
 
 
-def create_project(name: str, description: str = "") -> Path:
+def create_project(
+    name: str,
+    description: str = "",
+    owner_user_id: str = "",
+) -> Path:
     """
     Create a new project at Saved_Projects/<slug>/ with Tests/ and Data/ subdirs.
 
     Returns the project root Path.
     Raises ValueError if name is blank or project already exists.
+
+    *owner_user_id* is stamped into ``project.json`` (Phase 1 isolation).
+    Empty string is allowed for backwards compatibility with non-auth callers
+    (e.g. legacy Streamlit) but the FastAPI router always passes a real value.
     """
     slug = _slugify(name)
     if not slug:
@@ -125,12 +133,22 @@ def create_project(name: str, description: str = "") -> Path:
         "display_name": name.strip(),
         "description": description.strip(),
         "created_at": datetime.now().isoformat(),
+        "owner_user_id": owner_user_id,
     }
     (proj_dir / "project.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     _write_full_config(slug, _default_full_config())
     return proj_dir
+
+
+def get_project_owner(name: str) -> str:
+    """Return the ``owner_user_id`` stamped on a project, or empty string for legacy/unowned."""
+    try:
+        meta = read_project_meta(name)
+    except FileNotFoundError:
+        return ""
+    return str(meta.get("owner_user_id") or "")
 
 
 def get_project_path(name: str) -> Path:

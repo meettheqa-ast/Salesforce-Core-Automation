@@ -11,13 +11,16 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState("");
   const [mcpStatus, setMcpStatus] = useState<any>(null);
   const [catalogStatus, setCatalogStatus] = useState("");
-  const [dxStatus, setDxStatus] = useState<any>(null);
+  // SF DX status hidden -- re-enable along with the UI card below.
+  // const [dxStatus, setDxStatus] = useState<any>(null);
 
   useEffect(() => {
     api.llm.providers().then((d) => setProviders(d.providers || [])).catch(() => {});
     api.mcp.health().then(setMcpStatus).catch(() => setMcpStatus({ running: false }));
-    fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/salesforce/dx/status`)
-      .then((r) => r.json()).then(setDxStatus).catch(() => setDxStatus({ available: false }));
+    // SF DX status fetch hidden along with its UI card -- re-enable when the
+    // SF DX feature is demo-ready.
+    // fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/salesforce/dx/status`)
+    //   .then((r) => r.json()).then(setDxStatus).catch(() => setDxStatus({ available: false }));
   }, []);
 
   const handleMCPToggle = async () => {
@@ -105,7 +108,7 @@ export default function SettingsPage() {
           )}
         </AnimatedCard>
 
-        {/* SF DX Status */}
+        {/* SF DX Status -- hidden along with the SF DX nav tab. Re-enable when ready.
         <AnimatedCard glow="purple" delay={0.3}>
           <h3 className="text-sm font-bold text-white mb-4">Salesforce DX</h3>
           <div className="flex items-center gap-3 mb-3">
@@ -114,6 +117,7 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs text-slate-500">{dxStatus?.summary || "SF DX CLI status unavailable"}</p>
         </AnimatedCard>
+        */}
       </div>
     </div>
   );

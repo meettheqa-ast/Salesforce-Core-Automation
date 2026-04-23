@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
+import UserMenu from "./UserMenu";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: "🏠" },
@@ -11,8 +12,10 @@ const NAV_ITEMS = [
   { href: "/projects", label: "Projects", icon: "📂" },
   { href: "/runs", label: "Runs", icon: "🏁" },
   { href: "/user-stories", label: "Stories", icon: "📖" },
-  { href: "/sfdx", label: "SF DX", icon: "🔍" },
-  { href: "/locators", label: "Locators", icon: "🔬" },
+  // Hidden from the demo nav -- routes still live at /sfdx and /locators if
+  // accessed directly. Re-enable once the features are demo-ready.
+  // { href: "/sfdx", label: "SF DX", icon: "🔍" },
+  // { href: "/locators", label: "Locators", icon: "🔬" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
   { href: "/about", label: "About", icon: "ℹ️" },
 ];
@@ -59,6 +62,9 @@ export default function FloatingNavbar() {
           </Link>
         );
       })}
+
+      <div className="h-5 w-px bg-white/10 shrink-0 ml-1" />
+      <UserMenu />
     </motion.nav>
   );
 }

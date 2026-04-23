@@ -6,19 +6,25 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 import project_manager
 from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.models.schemas import AnalyticsSummary, RunHistoryEntry
+from ai_qa_portal.backend.services.auth import get_current_user
+from ai_qa_portal.backend.services.db import User
 from ai_qa_portal.backend.services.robot_results import (
     parse_output_xml,
     parse_run_times,
 )
 
-router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+router = APIRouter(
+    prefix="/api/analytics",
+    tags=["analytics"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 def _scan_results_dir(results_dir: Path) -> list[RunHistoryEntry]:
@@ -49,7 +55,7 @@ def _scan_results_dir(results_dir: Path) -> list[RunHistoryEntry]:
 
 
 @router.get("/projects/{name}/summary", response_model=AnalyticsSummary)
-def get_analytics_summary(name: str):
+def get_analytics_summary(name: str, current_user: User = Depends(get_current_user)):
     """Aggregate Robot Framework runs for a project.
 
     Looks under ``Saved_Projects/<name>/Results/`` first; if the project has
@@ -58,6 +64,9 @@ def get_analytics_summary(name: str):
     """
     if not project_manager.project_exists(name):
         raise HTTPException(404, f"Project '{name}' not found")
+    owner = project_manager.get_project_owner(name)
+    if not current_user.is_admin and owner and owner != current_user.id:
+        raise HTTPException(403, "You do not have access to this project")
 
     proj_dir = project_manager.get_project_path(name)
     entries = _scan_results_dir(proj_dir / "Results")

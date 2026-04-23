@@ -15,6 +15,9 @@ class Persona(BaseModel):
     encrypted_password: str
     role_profile: Optional[str] = None
     is_default: bool = False
+    # Phase 1 isolation: stamped on create. Empty string for legacy records
+    # (claimed by the migration script, see scripts/seed_admin_and_claim.py).
+    owner_user_id: str = ""
 
 
 class PersonaPublic(BaseModel):
@@ -26,6 +29,7 @@ class PersonaPublic(BaseModel):
     username: str
     role_profile: Optional[str] = None
     is_default: bool = False
+    owner_user_id: str = ""
 
 
 class RunRequest(BaseModel):

@@ -24,6 +24,8 @@ class UserStory(BaseModel):
     prev_version_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+    # Phase 1 isolation: stamped on create. Empty string for legacy records.
+    owner_user_id: str = ""
 
 
 class UserStoryCreate(BaseModel):

@@ -7,6 +7,10 @@ ai_qa_portal/.env
 ai_qa_portal/data/
 ai_qa_portal/outputs/
 
+# Local docker compose volume mount -- contains runtime SQLite (users.db),
+# personas/orgs/user-stories JSON, generated test data. Never commit.
+_local_data/
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/

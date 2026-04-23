@@ -30,6 +30,18 @@ class Settings(BaseSettings):
     results_dir: str = str(REPO_ROOT / "Results")
     saved_projects_dir: str = str(REPO_ROOT / "Saved_Projects")
 
+    # --- Auth (Phase 1) ---
+    # Shared secret with the frontend's NextAuth instance. Same value must be set on both sides.
+    nextauth_secret: str = ""
+    # Only Google accounts in this Workspace domain may log in. Empty string disables the check
+    # (open to any Google account) -- not recommended for production.
+    allowed_email_domain: str = "astounddigital.com"
+    # Comma-separated list of emails that are auto-promoted to is_admin=True on first login.
+    # Always include at least one address for bootstrap, otherwise nobody can manage users later.
+    initial_admins: str = ""
+    # If true, allow unauthenticated access to all routes (dev / migration only). Defaults False.
+    auth_disabled: bool = False
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 

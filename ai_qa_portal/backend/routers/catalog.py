@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from ai_qa_portal.backend.config import CATALOG_PATH
 from ai_qa_portal.backend.models.schemas import CatalogResponse, KeywordEntry
+from ai_qa_portal.backend.services.auth import get_current_user
 
-router = APIRouter(prefix="/api/catalog", tags=["catalog"])
+router = APIRouter(
+    prefix="/api/catalog",
+    tags=["catalog"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/keywords", response_model=CatalogResponse)

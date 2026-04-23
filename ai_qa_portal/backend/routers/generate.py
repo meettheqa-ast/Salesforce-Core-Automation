@@ -8,15 +8,20 @@ import logging
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from ai_qa_portal.backend.config import GENERATED_SUITE
 from ai_qa_portal.backend.models.schemas import GenerateRequest, GenerateResponse
+from ai_qa_portal.backend.services.auth import get_current_user
 
-router = APIRouter(prefix="/api/generate", tags=["generate"])
+router = APIRouter(
+    prefix="/api/generate",
+    tags=["generate"],
+    dependencies=[Depends(get_current_user)],
+)
 logger = logging.getLogger("ai_qa_portal.generate")
 
 
@@ -237,7 +242,15 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
     import mcp_bridge
 
     def stream():
+        try:
+            yield from _stream_inner(body)
+        except Exception as exc:  # noqa: BLE001 -- outer safety net
+            logger.exception("mcp-stepwise stream crashed unexpectedly")
+            yield _sse("error", {"message": _format_generation_error(exc)})
+
+    def _stream_inner(body: GenerateRequest):
         notes: list[str] = []
+        logger.info("mcp-stepwise stream start; prompt_chars=%d", len(body.prompt))
 
         # Phase: mcp-init (start RF-MCP if needed)
         yield _sse("phase", {"name": "mcp-init"})
@@ -245,11 +258,13 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             if not mcp_bridge.is_server_running():
                 mcp_bridge.start_mcp_server()
         except Exception as exc:
+            logger.warning("RF-MCP unavailable: %s -- falling back to Quick Generate", exc)
             yield _sse("note", {"message": f"RF-MCP unavailable: {exc}. Falling back to Quick Generate."})
             yield _sse("phase", {"name": "fallback"})
             try:
                 resp = _quick_generate_fallback(body.prompt)
             except Exception as exc2:
+                logger.exception("quick-generate fallback failed (after RF-MCP unavailable)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
                 return
             yield _sse("result", resp.model_dump(mode="json"))
@@ -260,8 +275,10 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
         try:
             steps = break_prompt_into_steps(body.prompt)
         except Exception as exc:
+            logger.exception("step planning failed")
             yield _sse("error", {"message": _format_generation_error(exc)})
             return
+        logger.info("planned %d step(s)", len(steps))
         yield _sse("note", {"message": f"Planned {len(steps)} step(s)"})
 
         # Phase: session init
@@ -276,11 +293,13 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
                 label="MCP init_session",
             )
         except Exception as exc:
+            logger.warning("MCP init_session failed: %s -- falling back to Quick Generate", exc)
             yield _sse("note", {"message": f"MCP init failed: {exc}. Falling back to Quick Generate."})
             yield _sse("phase", {"name": "fallback"})
             try:
                 resp = _quick_generate_fallback(body.prompt)
             except Exception as exc2:
+                logger.exception("quick-generate fallback failed (after MCP init)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
                 return
             yield _sse("result", resp.model_dump(mode="json"))
@@ -336,40 +355,52 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             robot_code = _build_fallback_suite(step_results, suite_name)
 
         if not robot_code or not robot_code.strip():
+            logger.warning("MCP build_suite returned empty -- falling back to Quick Generate")
             yield _sse("note", {"message": "MCP returned empty suite. Falling back to Quick Generate."})
             yield _sse("phase", {"name": "fallback"})
             try:
                 resp = _quick_generate_fallback(body.prompt)
             except Exception as exc2:
+                logger.exception("quick-generate fallback failed (after empty MCP build)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
                 return
             resp.lint_errors = list(resp.lint_errors) + notes
             yield _sse("result", resp.model_dump(mode="json"))
             return
 
-        from ai_bridge import (
-            fix_misplaced_setup_teardown,
-            strip_credential_variable_overrides,
-            strip_llm_robot_garbage,
-            strip_hallucinated_csv_variables_from_suite,
-            format_robot_code,
-        )
-        robot_code = strip_credential_variable_overrides(robot_code)
-        robot_code = strip_llm_robot_garbage(robot_code)
-        robot_code = strip_hallucinated_csv_variables_from_suite(robot_code)
-        robot_code = fix_misplaced_setup_teardown(robot_code)
+        # Post-processing pipeline. Any failure here used to silently exit the
+        # generator -- now surfaced as a clear error event so the UI doesn't
+        # claim "Generation complete" with no script attached.
+        try:
+            from ai_bridge import (
+                fix_misplaced_setup_teardown,
+                strip_credential_variable_overrides,
+                strip_llm_robot_garbage,
+                strip_hallucinated_csv_variables_from_suite,
+                format_robot_code,
+            )
+            robot_code = strip_credential_variable_overrides(robot_code)
+            robot_code = strip_llm_robot_garbage(robot_code)
+            robot_code = strip_hallucinated_csv_variables_from_suite(robot_code)
+            robot_code = fix_misplaced_setup_teardown(robot_code)
 
-        final = robot_code.rstrip() + "\n"
-        GENERATED_SUITE.parent.mkdir(parents=True, exist_ok=True)
-        GENERATED_SUITE.write_text(final, encoding="utf-8")
-        with contextlib.suppress(Exception):
-            format_robot_code(GENERATED_SUITE)
+            final = robot_code.rstrip() + "\n"
+            GENERATED_SUITE.parent.mkdir(parents=True, exist_ok=True)
+            GENERATED_SUITE.write_text(final, encoding="utf-8")
+            with contextlib.suppress(Exception):
+                format_robot_code(GENERATED_SUITE)
 
-        resp = GenerateResponse(
-            robot_code=GENERATED_SUITE.read_text(encoding="utf-8"),
-            test_path=str(GENERATED_SUITE),
-            lint_errors=notes,
-        )
+            resp = GenerateResponse(
+                robot_code=GENERATED_SUITE.read_text(encoding="utf-8"),
+                test_path=str(GENERATED_SUITE),
+                lint_errors=notes,
+            )
+        except Exception as exc:
+            logger.exception("post-processing pipeline failed (suite path=%s)", GENERATED_SUITE)
+            yield _sse("error", {"message": f"Post-processing failed: {_format_generation_error(exc)}"})
+            return
+
+        logger.info("mcp-stepwise stream done; robot_chars=%d", len(resp.robot_code or ""))
         yield _sse("phase", {"name": "done"})
         yield _sse("result", resp.model_dump(mode="json"))
 

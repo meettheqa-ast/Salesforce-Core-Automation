@@ -99,7 +99,7 @@
   <h1>AI QA Portal</h1>
   <p class="tagline">Test Intelligence Platform &mdash; AI-Driven Test Automation for Salesforce</p>
   <p class="meta">
-    <span>Version 3.0</span> &middot;
+    <span>Version 3.1</span> &middot;
     <span>April 2026</span> &middot;
     <span>Astound Digital</span>
   </p>
@@ -121,12 +121,13 @@
     validates, and executes the automation script automatically.
   </p>
   <p>
-    The platform connects to live Salesforce sandbox environments, understands org-specific layouts 
-    and picklist values, and produces production-ready test suites that handle field validation, 
-    self-healing locators, and cross-org compatibility out of the box. Version 3.0 introduces a
-    dual-interface architecture: the production Streamlit dashboard alongside a next-generation 
-    <strong>React + Next.js frontend</strong> with 3D animations, glassmorphism UI, and a 
-    <strong>FastAPI REST backend</strong> (48 endpoints) for full programmatic access.
+    The platform connects to live Salesforce sandbox environments, understands org-specific layouts
+    and picklist values, and produces production-ready test suites that handle field validation,
+    self-healing locators, and cross-org compatibility out of the box. Version 3.1 ships the next-generation
+    <strong>React + Next.js frontend</strong> (deployed to <strong>Vercel</strong>) backed by a containerised
+    <strong>FastAPI REST backend</strong> (65+ endpoints across 12 routers), with a
+    <strong>structured user-story &rarr; test-case workflow</strong> and the foundation for
+    <strong>Google Workspace SSO</strong> and per-user data isolation.
   </p>
 
   <div class="highlight-box">
@@ -244,9 +245,9 @@
       <p>Connects to the Salesforce org via API to discover actual picklist values, required fields, and field types &mdash; injecting real data into the generation prompt.</p>
     </div>
     <div class="card">
-      <div class="card-icon">&#128680;</div>
-      <h3>Locator Health Scanner</h3>
-      <p>Scans GlobalLocators.robot against the live Salesforce DOM. Identifies stale locators after Salesforce releases before they cause test failures.</p>
+      <div class="card-icon">&#128214;</div>
+      <h3>User Stories &rarr; Test Cases</h3>
+      <p>Capture acceptance criteria as versioned user stories. AI generates candidate test cases for review and batch-approval. Approved cases run as Robot suites with one click and stale automatically when the underlying story changes.</p>
     </div>
     <div class="card">
       <div class="card-icon">&#128640;</div>
@@ -301,7 +302,17 @@
     <div class="card">
       <div class="card-icon">&#128268;</div>
       <h3>FastAPI REST Backend</h3>
-      <p>48 REST endpoints across 9 routers. Full programmatic access to generation, execution, projects, analytics, MCP, and Salesforce operations. Swagger docs included.</p>
+      <p>65+ REST endpoints across 12 routers. Full programmatic access to generation, execution, projects, user stories, runs, analytics, and MCP. Swagger docs at <code>/docs</code>.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#9729;</div>
+      <h3>Cloud Deployment</h3>
+      <p>Frontend ships to <strong>Vercel</strong> with auto-deploy from GitHub <code>main</code>. Backend runs as a Docker image (Python + Robot + Chromium) reachable through a Cloudflare tunnel today, with <strong>Fly.io Machines + Volumes</strong> as the production target.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128274;</div>
+      <h3>Workspace SSO &amp; RBAC <small style="color:#94a3b8;">(in progress)</small></h3>
+      <p>Google Workspace login restricted to a single domain (e.g. <code>@astounddigital.com</code>). Per-user data isolation, project memberships, and Admin / Project Manager / Team Lead / Team Member roles are landing in phased releases.</p>
     </div>
   </div>
 </section>
@@ -317,23 +328,27 @@
     <p style="font-weight:600; color:#334155; margin-bottom:20px;">Component Architecture &mdash; Dual Interface</p>
     <table style="max-width:800px; margin:0 auto;">
       <tr><th>Layer</th><th>Component</th><th>Technology</th></tr>
-      <tr><td><strong>UI (Production)</strong></td><td>Streamlit Dashboard</td><td>Python, Streamlit, streamlit-antd-components</td></tr>
-      <tr><td><strong>UI (Next-Gen)</strong></td><td>Futuristic React Frontend</td><td>Next.js 16, Tailwind, Framer Motion, Three.js</td></tr>
-      <tr><td><strong>API</strong></td><td>FastAPI REST Backend (48 endpoints)</td><td>FastAPI, Pydantic, Uvicorn, SSE streaming</td></tr>
+      <tr><td><strong>UI (Primary)</strong></td><td>Next-Gen React Frontend on Vercel</td><td>Next.js 16, Tailwind, Framer Motion, Three.js</td></tr>
+      <tr><td><strong>UI (Legacy)</strong></td><td>Streamlit Dashboard</td><td>Python, Streamlit, streamlit-antd-components</td></tr>
+      <tr><td><strong>Auth</strong></td><td>NextAuth + JWT verification</td><td>NextAuth v5 (Google), PyJWT, SQLAlchemy + SQLite</td></tr>
+      <tr><td><strong>API</strong></td><td>FastAPI REST Backend (65+ endpoints, 12 routers)</td><td>FastAPI, Pydantic, Uvicorn, SSE streaming</td></tr>
       <tr><td><strong>AI</strong></td><td>AI Bridge + System Prompt (600+ lines)</td><td>Gemini, GPT-4, Claude, Cohere APIs</td></tr>
       <tr><td><strong>Validation</strong></td><td>RF-MCP Server</td><td>rf-mcp (HTTP MCP protocol)</td></tr>
       <tr><td><strong>Post-Processing</strong></td><td>Auto-fix pipeline (5 stages)</td><td>Test Setup fix, credential strip, CSV inject, sanitize, format</td></tr>
       <tr><td><strong>Execution</strong></td><td>Robot Framework + Selenium</td><td>robotframework 7.4, SeleniumLibrary 6.8, ChromeDriver</td></tr>
       <tr><td><strong>Data</strong></td><td>API Seeding + Org Inspector</td><td>simple-salesforce, Salesforce REST API</td></tr>
-      <tr><td><strong>Infra</strong></td><td>Project Manager</td><td>File-based workspace (Saved_Projects/)</td></tr>
+      <tr><td><strong>Storage</strong></td><td>JSON file store + SQLite (users / RBAC)</td><td>File-based workspaces (Saved_Projects/), persistent volume on Fly.io</td></tr>
+      <tr><td><strong>Deployment</strong></td><td>Vercel (frontend) + Docker / Fly.io Machines (backend)</td><td>GitHub auto-deploy, Cloudflare tunnel for local dev</td></tr>
     </table>
   </div>
 
   <div class="highlight-box">
     <p>
-      <strong>FastAPI Backend (v3.0):</strong> All platform functionality is now accessible via 48 REST 
-      endpoints across 9 routers: projects, generate, runs, llm, mcp, salesforce, catalog, analytics, 
-      and locators. Interactive API docs available at <code>/docs</code> (Swagger) and <code>/redoc</code>.
+      <strong>FastAPI Backend (v3.1):</strong> All platform functionality is accessible via 65+ REST
+      endpoints across 12 routers: projects, generate, runs, user-stories, test-cases, tags, llm, mcp,
+      salesforce, catalog, analytics, personas, orgs, locators. Every protected route enforces a session
+      JWT signed by the frontend's NextAuth instance. Interactive API docs at <code>/docs</code> (Swagger)
+      and <code>/redoc</code>.
     </p>
   </div>
 
@@ -356,11 +371,13 @@
 
   <table>
     <tr><th>Category</th><th>Technology</th><th>Purpose</th></tr>
-    <tr><td>Backend Language</td><td>Python 3.11+</td><td>Core application logic, AI bridge, execution</td></tr>
-    <tr><td>Frontend Language</td><td>TypeScript + React 19</td><td>Next-gen futuristic UI</td></tr>
-    <tr><td>Dashboard (Production)</td><td>Streamlit 1.56</td><td>Interactive dashboard with AI agent panel</td></tr>
-    <tr><td>Frontend (Next-Gen)</td><td>Next.js 16 + Tailwind + Framer Motion</td><td>3D animated futuristic interface</td></tr>
-    <tr><td>REST API</td><td>FastAPI + Uvicorn</td><td>48 endpoints, SSE streaming, Swagger docs</td></tr>
+    <tr><td>Backend Language</td><td>Python 3.13</td><td>Core application logic, AI bridge, execution</td></tr>
+    <tr><td>Frontend Language</td><td>TypeScript + React 19</td><td>Next-gen production UI</td></tr>
+    <tr><td>Frontend (Primary)</td><td>Next.js 16 + Tailwind + Framer Motion</td><td>3D animated production interface</td></tr>
+    <tr><td>Dashboard (Legacy)</td><td>Streamlit 1.56</td><td>Original interactive dashboard with AI agent panel</td></tr>
+    <tr><td>REST API</td><td>FastAPI + Uvicorn</td><td>65+ endpoints, SSE streaming, Swagger docs</td></tr>
+    <tr><td>Auth (Frontend)</td><td>NextAuth v5 (Google provider)</td><td>Workspace SSO, JWT session signing</td></tr>
+    <tr><td>Auth (Backend)</td><td>PyJWT + SQLAlchemy + SQLite</td><td>JWT verification, user / RBAC store</td></tr>
     <tr><td>3D / Animation</td><td>Three.js + Framer Motion + Lottie</td><td>Particle effects, glassmorphism, micro-interactions</td></tr>
     <tr><td>Test Framework</td><td>Robot Framework 7.4</td><td>Test execution engine</td></tr>
     <tr><td>Browser Automation</td><td>Selenium 4.41 + SeleniumLibrary 6.8</td><td>Salesforce UI interaction</td></tr>
@@ -369,6 +386,9 @@
     <tr><td>Salesforce API</td><td>simple-salesforce 1.12</td><td>Data seeding, org inspection</td></tr>
     <tr><td>Data Generation</td><td>FakerLibrary</td><td>Realistic test data (names, emails, phones)</td></tr>
     <tr><td>Parallel Execution</td><td>Pabot 5.2</td><td>Multi-process test runs</td></tr>
+    <tr><td>Containerisation</td><td>Docker + docker-compose</td><td>Reproducible backend image (Python + Robot + Chromium + tini)</td></tr>
+    <tr><td>Frontend Hosting</td><td>Vercel</td><td>Production deployment, GitHub auto-deploy on <code>main</code></td></tr>
+    <tr><td>Backend Hosting</td><td>Cloudflare Tunnel today / Fly.io Machines target</td><td>Public HTTPS endpoint with persistent volume</td></tr>
     <tr><td>Version Control</td><td>Git + GitHub</td><td>Code management, collaboration</td></tr>
   </table>
 </section>
@@ -387,9 +407,9 @@
       <p>Full UI automation (Lightning Experience) and REST API integration. Supports sandbox and production orgs with MFA handling.</p>
     </div>
     <div class="card">
-      <div class="card-icon">&#128187;</div>
-      <h3>SF DX CLI</h3>
-      <p>SOQL query execution, Apex test runner, and org schema inspection directly from the platform UI.</p>
+      <div class="card-icon">&#128274;</div>
+      <h3>Google Workspace SSO <small style="color:#94a3b8;">(in progress)</small></h3>
+      <p>Single sign-on restricted to a configured Workspace domain via NextAuth + Google OAuth. Becomes the only sign-in path once Phase 1 of the auth model is enabled.</p>
     </div>
     <div class="card">
       <div class="card-icon">&#128232;</div>
@@ -399,7 +419,12 @@
     <div class="card">
       <div class="card-icon">&#128196;</div>
       <h3>GitHub</h3>
-      <p>Git-based project storage. Workspace sync for team collaboration across branches.</p>
+      <p>Source of truth for the codebase. Frontend deploys to Vercel automatically on push to <code>main</code>; PR branches get preview URLs.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128187;</div>
+      <h3>SF DX CLI <small style="color:#94a3b8;">(internal)</small></h3>
+      <p>SOQL queries and org schema inspection are wired internally for the script generator. Not surfaced to demo users until the feature is hardened.</p>
     </div>
     <div class="card">
       <div class="card-icon">&#128203;</div>
@@ -504,18 +529,46 @@
   <div class="roadmap-item">
     <div class="roadmap-dot done"></div>
     <div class="roadmap-content">
-      <h3>FastAPI REST Backend (48 Endpoints)</h3>
-      <p>Completed &mdash; Full API for projects, generation, runs, LLM, MCP, Salesforce, catalog, analytics, and locators. Swagger docs at /docs.</p>
+      <h3>FastAPI REST Backend (65+ Endpoints)</h3>
+      <p>Completed &mdash; Full API for projects, generation, runs, user stories, test cases, tags, LLM, MCP, Salesforce, catalog, analytics, personas, orgs. Swagger docs at <code>/docs</code>.</p>
     </div>
   </div>
   <div class="roadmap-item">
     <div class="roadmap-dot done"></div>
     <div class="roadmap-content">
       <h3>Next.js Futuristic Frontend</h3>
-      <p>Completed &mdash; React + Next.js 16 with Three.js 3D particles, Framer Motion animations, glassmorphism cards, neon gradient theme, and 6 animated pages.</p>
+      <p>Completed &mdash; React + Next.js 16 with Three.js 3D particles, Framer Motion animations, glassmorphism cards, neon gradient theme, and animated pages.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>User Stories &rarr; Test Case Workflow</h3>
+      <p>Completed &mdash; Versioned user stories, AI-generated candidate test cases, batch approval, tag library, run-by-story and run-by-tag.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot done"></div>
+    <div class="roadmap-content">
+      <h3>Production Deployment Pipeline</h3>
+      <p>Completed &mdash; Backend containerised (Docker, Python + Robot + Chromium); frontend on Vercel with GitHub auto-deploy from <code>main</code>. Cloudflare Tunnel covers the demo backend; Fly.io Machines + Volumes is the next target.</p>
     </div>
   </div>
 
+  <div class="roadmap-item">
+    <div class="roadmap-dot progress"></div>
+    <div class="roadmap-content">
+      <h3>Workspace SSO &amp; Per-User Isolation (Phase 1)</h3>
+      <p>In Progress &mdash; NextAuth Google OAuth restricted to a single Workspace domain, JWT verified by FastAPI, SQLite-backed user store, owner-stamped projects / personas / user stories. Behind a feature flag during the demo.</p>
+    </div>
+  </div>
+  <div class="roadmap-item">
+    <div class="roadmap-dot progress"></div>
+    <div class="roadmap-content">
+      <h3>Project Memberships &amp; RBAC (Phase 2-3)</h3>
+      <p>In Progress &mdash; Admin / Project Manager / Team Lead / Team Member roles with global Admin override, project membership management UI, persona privacy toggle (private vs project-shared).</p>
+    </div>
+  </div>
   <div class="roadmap-item">
     <div class="roadmap-dot progress"></div>
     <div class="roadmap-content">

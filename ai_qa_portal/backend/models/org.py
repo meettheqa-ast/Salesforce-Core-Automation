@@ -21,3 +21,5 @@ class SalesforceOrg(BaseModel):
     login_url: str
     org_type: OrgType
     default_persona_id: Optional[UUID] = None
+    # Phase 1 isolation: stamped on create. Empty string for legacy records.
+    owner_user_id: str = ""

@@ -8,7 +8,7 @@
 #   flyctl deploy
 
 app = "sf-core-automation-api"
-primary_region = "iad"
+primary_region = "bom"
 
 [build]
   dockerfile = "Dockerfile"

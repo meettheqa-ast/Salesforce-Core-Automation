@@ -378,9 +378,15 @@ export default function GeneratePage() {
                 Generated suite: <span className="font-mono text-cyan-200">{testPath}</span>
               </div>
             )}
-            {genComplete && (
+            {genComplete && robotCode && (
               <div className="text-xs text-emerald-300">
                 Generation complete — review the script below, then click Run or Discard.
+              </div>
+            )}
+            {genComplete && !robotCode && !error && (
+              <div className="text-xs text-amber-300">
+                The generation stream finished without returning a script. Check the
+                pipeline above for fallback notes, or try again with a more specific prompt.
               </div>
             )}
             {error && (

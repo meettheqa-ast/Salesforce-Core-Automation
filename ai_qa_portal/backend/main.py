@@ -5,11 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+from .services.auth import get_current_user
+from .services.db import User, init_db
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -81,6 +83,11 @@ results_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/results", StaticFiles(directory=str(results_dir)), name="results")
 
 
+@app.on_event("startup")
+def _on_startup() -> None:
+    init_db()
+
+
 @app.get("/")
 def root():
     return {"name": "AI QA Portal", "version": "3.0.0", "docs": "/docs"}
@@ -89,3 +96,10 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/me")
+def whoami(current_user: User = Depends(get_current_user)):
+    """Return the currently authenticated user. Frontend uses this to render the
+    profile menu and to detect 401/403 (unauthenticated / wrong domain)."""
+    return current_user.to_dict()

@@ -43,9 +43,10 @@ ENV CHROME_BIN=/usr/bin/chromium \
 # --- Python deps -----------------------------------------------------------
 WORKDIR /app
 
-COPY requirements.txt ai_qa_portal/requirements.txt ./_pip/
+COPY requirements.txt /app/_pip/requirements.txt
+COPY ai_qa_portal/requirements.txt /app/_pip/ai_qa_portal/requirements.txt
 RUN python -m pip install --upgrade pip \
- && pip install -r _pip/requirements.txt -r _pip/ai_qa_portal/requirements.txt
+ && pip install -r /app/_pip/requirements.txt -r /app/_pip/ai_qa_portal/requirements.txt
 
 # --- App source ------------------------------------------------------------
 COPY . /app

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI QA Portal &mdash; User Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; color: #1a1a2e; line-height: 1.7; background: #f8f9fb; }
+
+  /* Cover */
+  .cover { background: linear-gradient(135deg, #1F2A44 0%, #0f172a 100%); color: #fff; padding: 80px 40px 60px; text-align: center; }
+  .cover h1 { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .cover .tagline { font-size: 1.15rem; color: #94a3b8; font-weight: 400; margin-bottom: 32px; }
+  .cover .meta { font-size: 0.85rem; color: #64748b; }
+  .cover .meta span { margin: 0 12px; }
+  .cover .badge { display: inline-block; background: linear-gradient(135deg, #4F46E5, #6366F1); padding: 6px 20px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 24px; }
+
+  /* Layout */
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  section { padding: 48px 0; }
+  section + section { border-top: 1px solid #e5e7eb; }
+
+  /* Typography */
+  h2 { font-size: 1.6rem; font-weight: 700; color: #111827; margin-bottom: 8px; letter-spacing: -0.01em; }
+  h3 { font-size: 1.1rem; font-weight: 600; color: #1e293b; margin-bottom: 6px; }
+  h4 { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin: 20px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .section-sub { font-size: 0.9rem; color: #6b7280; margin-bottom: 28px; }
+  p { margin-bottom: 16px; color: #374151; }
+  ul, ol { padding-left: 22px; margin-bottom: 16px; }
+  li { margin-bottom: 8px; color: #374151; }
+  strong { color: #111827; }
+  code { background: #f1f5f9; color: #0f172a; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'Consolas', 'Monaco', monospace; }
+
+  /* Cards grid */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; margin-top: 8px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; transition: box-shadow 0.2s, border-color 0.2s; }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.06); border-color: #6366f1; }
+  .card-icon { font-size: 1.6rem; margin-bottom: 10px; }
+  .card h3 { margin-bottom: 8px; }
+  .card p { font-size: 0.88rem; color: #6b7280; margin-bottom: 0; }
+
+  /* Step list (numbered, big) */
+  .steps { counter-reset: step; list-style: none; padding-left: 0; margin: 16px 0 24px; }
+  .steps > li { counter-increment: step; position: relative; padding-left: 56px; padding-bottom: 18px; min-height: 40px; }
+  .steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #4F46E5, #6366F1); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+  .steps > li > strong { display: block; margin-bottom: 4px; color: #111827; }
+
+  /* Workflow walkthrough */
+  .walkthrough { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px 28px; margin: 16px 0 24px; }
+  .walkthrough h4:first-child { margin-top: 0; }
+
+  /* Key/value rows */
+  .kv { display: grid; grid-template-columns: 200px 1fr; gap: 8px 20px; margin: 12px 0 20px; font-size: 0.9rem; }
+  .kv dt { color: #475569; font-weight: 600; }
+  .kv dd { color: #374151; }
+
+  /* Tab tour table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 0.92rem; }
+  th { background: #f1f5f9; text-align: left; padding: 10px 14px; font-weight: 600; color: #334155; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; color: #475569; vertical-align: top; }
+  tr:hover td { background: #f8fafc; }
+
+  /* Highlight box */
+  .highlight-box { background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-left: 4px solid #4F46E5; border-radius: 0 10px 10px 0; padding: 20px 24px; margin: 24px 0; }
+  .highlight-box p { color: #3730a3; margin-bottom: 0; }
+  .tip-box { background: #f0fdf4; border-left: 4px solid #10b981; border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 16px 0; font-size: 0.9rem; }
+  .tip-box strong { color: #065f46; }
+  .warn-box { background: #fffbeb; border-left: 4px solid #f59e0b; border-radius: 0 10px 10px 0; padding: 16px 20px; margin: 16px 0; font-size: 0.9rem; }
+  .warn-box strong { color: #92400e; }
+
+  /* Footer */
+  .footer { background: #0f172a; color: #94a3b8; padding: 40px 24px; text-align: center; font-size: 0.85rem; }
+  .footer .heart { color: #ef4444; }
+
+  @media print {
+    .cover { padding: 40px 20px; }
+    section { padding: 24px 0; }
+    .card { break-inside: avoid; }
+    .walkthrough { break-inside: avoid; }
+  }
+  @media (max-width: 640px) {
+    .cover h1 { font-size: 1.8rem; }
+    .kv { grid-template-columns: 1fr; gap: 4px 0; }
+    .kv dd { margin-bottom: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="badge">User Guide</div>
+  <h1>AI QA Portal</h1>
+  <p class="tagline">What you can do with the tool &mdash; from your first script to a full test run</p>
+  <p class="meta">
+    <span>Version 3.1</span> &middot;
+    <span>April 2026</span> &middot;
+    <span>Astound Digital</span>
+  </p>
+</div>
+
+<div class="container">
+
+<!-- 1. WHAT YOU CAN DO -->
+<section>
+  <h2>What You Can Do</h2>
+  <p class="section-sub">A quick tour of the eight things this tool exists to make easy</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#129302;</div>
+      <h3>Generate scripts from prompts</h3>
+      <p>Type what you want to test in plain English. The AI writes the Robot Framework script for you, ready to run.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#9889;</div>
+      <h3>Verify step-by-step</h3>
+      <p>Use MCP Stepwise mode to watch each test action validated against a live keyword catalog before the script is finalised.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128193;</div>
+      <h3>Save your work in projects</h3>
+      <p>Group related tests under a named project. Each project keeps its own credentials, environments, personas, scripts, and CSV data.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128214;</div>
+      <h3>Plan with user stories</h3>
+      <p>Capture acceptance criteria as a story. The AI proposes a list of test cases. Approve the ones you want, drop the rest.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127919;</div>
+      <h3>Tag &amp; organise tests</h3>
+      <p>Attach tags like <code>smoke</code>, <code>regression</code>, or your own. Run only what you tagged for the current cycle.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127937;</div>
+      <h3>Run tests with one click</h3>
+      <p>Pick a script, hit Run, watch the live log stream. Choose headless for speed or visible mode if you want to see the browser.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128202;</div>
+      <h3>Read clear results</h3>
+      <p>Pass/fail counts, duration, per-test status, screenshots on failure, and the original Robot HTML log &mdash; all in one dashboard.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128230;</div>
+      <h3>Bundle &amp; share runs</h3>
+      <p>Download a single ZIP containing the log, report, and screenshots for any run. Drop it into Slack or Jira as evidence.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 2. QUICK START -->
+<section>
+  <h2>Five-Minute Quick Start</h2>
+  <p class="section-sub">From open browser to passing test in five steps</p>
+
+  <ol class="steps">
+    <li>
+      <strong>Open the portal</strong>
+      Sign in (or just open the demo URL during the preview phase). The home page lists what the platform can do; the navbar at the top is how you get around.
+    </li>
+    <li>
+      <strong>Create a project</strong>
+      Click <strong>Projects</strong> &rarr; <strong>New Project</strong>. Give it a name (e.g. <code>Acme Sandbox</code>) and a one-line description. This is the folder all your test work for that engagement lives in.
+    </li>
+    <li>
+      <strong>Add your sandbox credentials</strong>
+      Inside the project, open <strong>Settings</strong> for the project and add the sandbox URL, username, and password under the <strong>Dev</strong> environment, persona <strong>System Admin</strong>. You can add more environments and personas later.
+    </li>
+    <li>
+      <strong>Generate a script</strong>
+      Go to <strong>Generate</strong>, pick the project, type a prompt &mdash; e.g. <em>"Create a Lead with first name Alex, last name Wong, company Acme, state CA"</em>. Hit <strong>Quick Generate</strong>. A complete <code>.robot</code> file appears.
+    </li>
+    <li>
+      <strong>Run it</strong>
+      Click <strong>Run</strong> on the generated script. Choose <strong>Headless</strong> (faster) or visible mode. The live log streams in. When it finishes, jump to the <strong>Run Dashboard</strong> for a clean summary.
+    </li>
+  </ol>
+
+  <div class="highlight-box">
+    <p>
+      <strong>Five minutes is realistic.</strong> The longest part is typing a credible prompt &mdash; the AI does the rest. Most testers have their first green Robot run in under ten minutes from a cold start.
+    </p>
+  </div>
+</section>
+
+<!-- 3. THE NAVBAR -->
+<section>
+  <h2>The Navbar &mdash; Where Everything Lives</h2>
+  <p class="section-sub">Each tab corresponds to one thing you can do</p>
+
+  <table>
+    <tr><th>Tab</th><th>What it's for</th><th>When to use it</th></tr>
+    <tr>
+      <td><strong>Home</strong></td>
+      <td>Landing page with a feature tour.</td>
+      <td>First visit, or when showing a new teammate around.</td>
+    </tr>
+    <tr>
+      <td><strong>Generate</strong></td>
+      <td>Write a prompt, pick a project &amp; LLM, get a Robot script.</td>
+      <td>Every time you want a new test from scratch.</td>
+    </tr>
+    <tr>
+      <td><strong>Dashboard</strong></td>
+      <td>Cross-project metrics: latest runs, pass rates, duration trends.</td>
+      <td>Daily standup view, or when you need a quick health check.</td>
+    </tr>
+    <tr>
+      <td><strong>Projects</strong></td>
+      <td>Create, open, and manage projects (your test workspaces).</td>
+      <td>Starting a new client / engagement, or maintaining credentials.</td>
+    </tr>
+    <tr>
+      <td><strong>Runs</strong></td>
+      <td>Full history of every test run, with download links.</td>
+      <td>Looking back at a run from yesterday or last week.</td>
+    </tr>
+    <tr>
+      <td><strong>Stories</strong></td>
+      <td>User stories &rarr; AI-generated test cases &rarr; batch approval.</td>
+      <td>Planning sprint coverage from acceptance criteria.</td>
+    </tr>
+    <tr>
+      <td><strong>Settings</strong></td>
+      <td>Pick the LLM provider, manage MCP server, rebuild keyword catalog.</td>
+      <td>Switching from Gemini to GPT-4 or rotating an API key.</td>
+    </tr>
+    <tr>
+      <td><strong>About</strong></td>
+      <td>Platform info, version, credits.</td>
+      <td>Mostly informational.</td>
+    </tr>
+  </table>
+</section>
+
+<!-- 4. SCRIPT CREATION -->
+<section>
+  <h2>Creating a Script from a Prompt</h2>
+  <p class="section-sub">The bread and butter of the platform</p>
+
+  <p>
+    The <strong>Generate</strong> page is the main place you'll spend your time. You give it three things &mdash; a project, a prompt, and a generation mode &mdash; and it gives you a complete Robot Framework script.
+  </p>
+
+  <div class="walkthrough">
+    <h4>Step-by-step</h4>
+    <ol>
+      <li><strong>Pick a project.</strong> Determines which sandbox the script will target and which credentials get used.</li>
+      <li><strong>Pick an environment + persona.</strong> Defaults to Dev / System Admin. Switch to QA, UAT, or a different persona if needed.</li>
+      <li><strong>Write the prompt.</strong> Plain English. Mention object names, field values, and the action you want. Examples:
+        <ul>
+          <li><em>"Create an Account named Globex with billing state Texas. Verify it shows up in the recent items list."</em></li>
+          <li><em>"Open the existing Lead 'Sara Patel', change the company to Acme Corp, save, and check that the audit trail records the change."</em></li>
+          <li><em>"Convert the Lead 'Mike Rivera' to an Opportunity with stage Qualification."</em></li>
+        </ul>
+      </li>
+      <li><strong>Choose the generation mode</strong> &mdash; see the two cards below.</li>
+      <li><strong>Review the script.</strong> The Robot file appears in a code panel. You can edit it inline before saving.</li>
+      <li><strong>Save it to your project.</strong> Give it a test name (e.g. <code>create_account_globex</code>). It lands under <code>Tests/</code> in the project folder, ready to run.</li>
+    </ol>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#129502;</div>
+      <h3>Quick Generate</h3>
+      <p>One LLM call &mdash; fast (5-10 s) for simple to moderate scripts. Best when you know roughly what the test should look like and want to iterate quickly.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128268;</div>
+      <h3>MCP Stepwise</h3>
+      <p>Each action is validated step by step against the live keyword catalog. Slower (30-90 s) but produces the most reliable scripts for unfamiliar flows.</p>
+    </div>
+  </div>
+
+  <div class="tip-box">
+    <strong>Tip:</strong> Start with Quick Generate. If the script doesn't run cleanly the first time, regenerate using MCP Stepwise &mdash; it will catch invalid keywords and missing args before they become runtime errors.
+  </div>
+</section>
+
+<!-- 5. PROJECTS -->
+<section>
+  <h2>Projects &mdash; Your Test Workspaces</h2>
+  <p class="section-sub">Everything for one engagement lives in one project</p>
+
+  <p>
+    A project is a folder. It groups everything you'd want to keep together: which sandbox to run against, who to log in as, which scripts you've saved, and which CSV data files those scripts use. You typically have one project per client, sandbox cluster, or release.
+  </p>
+
+  <div class="walkthrough">
+    <h4>What lives inside a project</h4>
+    <dl class="kv">
+      <dt>Project name</dt>
+      <dd>Used everywhere as the workspace label (e.g. <code>Acme_Sandbox</code>).</dd>
+
+      <dt>Description</dt>
+      <dd>Free text &mdash; what's this project for, who owns it.</dd>
+
+      <dt>Environments</dt>
+      <dd>Dev, QA, UAT, Prod &mdash; or whatever you name. Each environment can hold its own sandbox URL.</dd>
+
+      <dt>Personas</dt>
+      <dd>Per environment: System Admin, Marketing User, Read-Only Auditor, etc. Each persona stores its own username + password (encrypted at rest).</dd>
+
+      <dt>Tests</dt>
+      <dd>The <code>.robot</code> scripts you've generated and saved.</dd>
+
+      <dt>Data</dt>
+      <dd>CSV files for data-driven tests. Auto-injected as Robot variables when present.</dd>
+
+      <dt>Project settings</dt>
+      <dd>Optional Jira/Zephyr settings for future integration with defect tracking.</dd>
+    </dl>
+  </div>
+
+  <h4>Common things you'll do here</h4>
+  <ul>
+    <li><strong>Create a project</strong> &mdash; new client, new sandbox refresh, or to separate experiments from production work.</li>
+    <li><strong>Add a new environment</strong> &mdash; e.g. when QA hands off to UAT; same project, different URL.</li>
+    <li><strong>Add a new persona</strong> &mdash; same environment, different role (Marketing User in addition to System Admin).</li>
+    <li><strong>Edit credentials</strong> &mdash; after a sandbox refresh or password rotation. The new password is encrypted and stored locally; nothing is exposed in generated scripts.</li>
+    <li><strong>Delete a project</strong> &mdash; archives the entire folder. Tests, scripts, and credentials all go.</li>
+  </ul>
+
+  <div class="warn-box">
+    <strong>Heads-up on credentials:</strong> Passwords are encrypted with a project-wide key (<code>FERNET_KEY</code>) before they touch disk. They never appear in generated <code>.robot</code> files &mdash; the script reads them at run time from secure variables.
+  </div>
+</section>
+
+<!-- 6. USER STORIES -->
+<section>
+  <h2>User Stories &rarr; Test Cases</h2>
+  <p class="section-sub">Plan a sprint's coverage from acceptance criteria</p>
+
+  <p>
+    The <strong>Stories</strong> tab is for when you want test design driven by what the product actually has to do, not by what someone happened to think of writing. Capture the acceptance criteria once, let the AI propose a full test matrix, and approve the cases you'd actually run.
+  </p>
+
+  <div class="walkthrough">
+    <h4>The flow</h4>
+    <ol>
+      <li><strong>Create a story.</strong> Title plus a short description that includes the acceptance criteria.
+        <em>Example: "As a Marketing user, I can convert a Lead to an Opportunity. AC: stage defaults to Qualification; the existing Account is reused if the company name matches; an audit entry is written."</em></li>
+      <li><strong>Generate test cases.</strong> The AI reads the story and proposes 4-12 candidate test cases &mdash; happy path, edge cases, validation failures, permission checks.</li>
+      <li><strong>Review &amp; approve.</strong> Tick the cases you want. Add tags (<code>smoke</code>, <code>regression</code>, custom). Reject the rest. Approved cases are saved as test cases attached to the story.</li>
+      <li><strong>Run by story or by tag.</strong> One click runs every approved case for the story. Or run every case carrying a specific tag (e.g. all <code>smoke</code> cases across the project).</li>
+      <li><strong>Update the story when requirements change.</strong> The platform versions stories. Test cases generated from the previous version are automatically marked <strong>stale</strong> so you know which ones to re-review.</li>
+    </ol>
+  </div>
+
+  <div class="tip-box">
+    <strong>Tip:</strong> Stories work best when the acceptance criteria are concrete. <em>"Should validate phone format"</em> &rarr; vague. <em>"Phone field rejects letters; accepts +1, +44, and 10-digit US formats; shows error message in red"</em> &rarr; the AI generates excellent cases.
+  </div>
+</section>
+
+<!-- 7. RUNNING TESTS -->
+<section>
+  <h2>Running Tests</h2>
+  <p class="section-sub">From "go" to results in one click</p>
+
+  <p>
+    Anywhere you see a saved script (Projects, Runs, Stories), there's a <strong>Run</strong> action. You'll choose how the run executes; the platform handles the rest.
+  </p>
+
+  <h4>Run options</h4>
+  <dl class="kv">
+    <dt>Headless</dt>
+    <dd>Browser runs in the background. Faster, lower CPU. Use for routine runs and CI-like flows. Default.</dd>
+
+    <dt>Visible</dt>
+    <dd>You see the Chromium window. Useful when debugging a flaky locator or showing a stakeholder what the test actually does.</dd>
+
+    <dt>Tag include / exclude</dt>
+    <dd>Run only cases carrying specific tags, or skip cases carrying others. Mirrors Robot's standard <code>--include</code> / <code>--exclude</code> flags.</dd>
+
+    <dt>Parallel (Pabot)</dt>
+    <dd>For full suites &mdash; runs cases in multiple processes. Cuts a 30-minute regression to ~10 minutes on a 4-core machine.</dd>
+  </dl>
+
+  <h4>What happens during a run</h4>
+  <ul>
+    <li><strong>Live log streams</strong> into the page in real time &mdash; you see each step as Robot executes it.</li>
+    <li><strong>Screenshots are captured automatically</strong> on failure (and on key checkpoints).</li>
+    <li>When the run finishes, you're sent to the <strong>Run Dashboard</strong> for that run.</li>
+  </ul>
+</section>
+
+<!-- 8. RUN DASHBOARD -->
+<section>
+  <h2>The Run Dashboard</h2>
+  <p class="section-sub">Everything you need to triage one run</p>
+
+  <p>
+    Click any row in <strong>Runs</strong> (or follow the link after a fresh run completes) to land on the dashboard for that run.
+  </p>
+
+  <h4>What you get</h4>
+  <ul>
+    <li><strong>Headline KPIs:</strong> total tests, passed, failed, skipped, total duration, pass rate.</li>
+    <li><strong>Per-suite breakdown:</strong> if your run had multiple suites, see each one's pass/fail counts side by side.</li>
+    <li><strong>Per-tag breakdown:</strong> useful when you ran by tag &mdash; "how did the smoke set do, how did the regression set do."</li>
+    <li><strong>Test list:</strong> every test case with status (PASS / FAIL / SKIP), duration, the failure message (if any), and tags.</li>
+    <li><strong>Screenshots gallery:</strong> click any screenshot to view full-size; useful for visual regression and for failure forensics.</li>
+    <li><strong>Robot artefacts:</strong> direct links to <code>log.html</code>, <code>report.html</code>, and the raw <code>output.xml</code> &mdash; everything Robot Framework produces, viewable inline or downloadable.</li>
+    <li><strong>Bundle .zip:</strong> a single archive containing log, report, screenshots, and source. Perfect for attaching to a Jira ticket or Slack thread.</li>
+  </ul>
+
+  <div class="tip-box">
+    <strong>Tip:</strong> If a test failed unexpectedly, open the Robot <code>log.html</code> from the dashboard. It shows the full keyword call tree with arguments &mdash; usually the first red keyword tells you exactly what broke.
+  </div>
+</section>
+
+<!-- 9. SETTINGS -->
+<section>
+  <h2>Settings</h2>
+  <p class="section-sub">A few knobs you'll touch occasionally</p>
+
+  <h4>What's on the Settings page</h4>
+  <ul>
+    <li><strong>LLM provider:</strong> switch between Gemini, GPT-4, Claude, Cohere, and others. Each provider needs its API key set in the environment; Settings shows you which providers are currently configured.</li>
+    <li><strong>RF-MCP server:</strong> start / stop the keyword validation server (used by MCP Stepwise generation). Normally auto-managed; manual control here for debugging.</li>
+    <li><strong>Keyword catalog:</strong> rebuild the catalog after you've added new custom keywords to the resource files &mdash; tells the AI about your new building blocks.</li>
+  </ul>
+</section>
+
+<!-- 10. TIPS -->
+<section>
+  <h2>Tips for Better Results</h2>
+  <p class="section-sub">Small habits that pay off</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon">&#128221;</div>
+      <h3>Be specific in prompts</h3>
+      <p>Name the object, name the fields, give example values. <em>"Create a Lead Alex Wong, company Acme, state CA"</em> beats <em>"Make a lead"</em> every time.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128194;</div>
+      <h3>One project per sandbox</h3>
+      <p>Don't mix QA and UAT in the same project. Separate projects keep credentials clean and let you run a release sweep with one click each.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#127919;</div>
+      <h3>Tag liberally</h3>
+      <p>Tag everything: <code>smoke</code>, <code>regression</code>, <code>release-2026.1</code>, <code>blocker</code>. Tags are how you'll slice runs later when "run all 800" isn't what you actually want.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128269;</div>
+      <h3>Use Stepwise on new flows</h3>
+      <p>For unfamiliar Salesforce screens, MCP Stepwise validates each action live &mdash; you'll catch a wrong keyword in 30 s instead of after a 4-minute failed run.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128279;</div>
+      <h3>Save bundles for evidence</h3>
+      <p>When closing a ticket, attach the bundle .zip rather than copy-pasting log lines. Reviewers can open the report locally and see the full picture.</p>
+    </div>
+    <div class="card">
+      <div class="card-icon">&#128308;</div>
+      <h3>Fail fast in headless</h3>
+      <p>Run the smoke set headless before every PR. Switch to visible mode only when you need to see what's happening.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 11. WHAT'S NOT YET IN THE DEMO -->
+<section>
+  <h2>Coming Soon</h2>
+  <p class="section-sub">Features in the codebase but not yet on the demo navbar</p>
+
+  <ul>
+    <li><strong>Workspace SSO &amp; per-user data isolation</strong> &mdash; Google sign-in restricted to a single Workspace domain, with each user only seeing their own projects, personas, and runs. The plumbing is in; the demo runs with auth disabled so the audience doesn't have to log in.</li>
+    <li><strong>Project memberships &amp; roles</strong> &mdash; Admin / Project Manager / Team Lead / Team Member, with the ability for PMs to invite team members to specific projects.</li>
+    <li><strong>Persona privacy toggle</strong> &mdash; mark personas as private (only you see them) or shared with project members.</li>
+    <li><strong>Locator Health Scanner</strong> &mdash; scan saved locators against the live Salesforce DOM to catch stale selectors before the next release breaks them.</li>
+    <li><strong>SF DX integration</strong> &mdash; SOQL queries, Apex test runner, and org schema inspection surfaced in the UI.</li>
+    <li><strong>CSV data-driven testing &amp; screenshot-based form analysis</strong> &mdash; both have working backends; UI integration is next.</li>
+    <li><strong>Jira / Zephyr links</strong> &mdash; attach test cases to stories, auto-create defects on failure.</li>
+  </ul>
+
+  <div class="highlight-box">
+    <p>
+      <strong>If you'd like one of these turned on for an upcoming demo, just ask.</strong> Most are a feature flag away.
+    </p>
+  </div>
+</section>
+
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <p style="margin-bottom:8px;">
+    <strong style="color:#e2e8f0;">AI QA Portal &mdash; User Guide</strong>
+  </p>
+  <p>Created with <span class="heart">&hearts;</span> by Meet</p>
+  <p style="margin-top:12px; font-size:0.78rem; color:#475569;">
+    Astound Digital &middot; April 2026 &middot; Confidential
+  </p>
+</div>
+
+</body>
+</html>

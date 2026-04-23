@@ -1,5 +1,76 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// --- Auth token plumbing -------------------------------------------------
+// Fetched lazily from /api/auth/jwt the first time `apiFetch` runs in the
+// browser, then cached. On 401 from the backend we drop the cache so the next
+// call refetches a fresh token (covers the 1h JWT lifetime + login flips).
+
+let _cachedToken: string | null = null;
+let _inFlight: Promise<string | null> | null = null;
+
+async function _fetchJwt(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  if (_cachedToken) return _cachedToken;
+  if (_inFlight) return _inFlight;
+  _inFlight = (async () => {
+    try {
+      const r = await fetch("/api/auth/jwt", { credentials: "include", cache: "no-store" });
+      if (!r.ok) return null;
+      const text = (await r.text()).trim();
+      _cachedToken = text || null;
+      return _cachedToken;
+    } catch {
+      return null;
+    } finally {
+      _inFlight = null;
+    }
+  })();
+  return _inFlight;
+}
+
+/** Build the canonical Authorization header value, or null if unauthenticated. */
+async function authHeader(): Promise<Record<string, string>> {
+  const tok = await _fetchJwt();
+  return tok ? { Authorization: `Bearer ${tok}` } : {};
+}
+
+/** Append `?token=<jwt>` to a URL that will be opened by EventSource / <img>
+ *  / direct download (anywhere we can't set a header). Synchronous: reads the
+ *  cached token only. Returns the URL unchanged if the cache is cold -- pages
+ *  that render such URLs at first paint should call `prepareAuth()` in a
+ *  top-level useEffect to warm the cache before mount.
+ *
+ *  An async retry happens via `apiFetch` whenever a JSON call gets 401, so
+ *  cold-cache renders self-heal on the next interaction.
+ */
+export function withAuthQuery(url: string): string {
+  if (!_cachedToken) {
+    // Fire-and-forget refill so the next render gets it.
+    if (typeof window !== "undefined") void _fetchJwt();
+    return url;
+  }
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}token=${encodeURIComponent(_cachedToken)}`;
+}
+
+/** Force a token refresh on next call (e.g. after sign-in / sign-out). */
+export function clearAuthCache(): void {
+  _cachedToken = null;
+}
+
+/** Pre-warm the token cache. Useful before rendering URLs that embed the
+ *  token in the query string (downloads, EventSource, <img>). Safe to call
+ *  multiple times -- in-flight requests are deduplicated. */
+export async function prepareAuth(): Promise<void> {
+  await _fetchJwt();
+}
+
+// Eagerly warm the cache on module load so the first React paint usually has
+// a token available for sync URL builders below.
+if (typeof window !== "undefined") {
+  void _fetchJwt();
+}
+
 export type RunStatus = "PASS" | "FAIL" | "EMPTY";
 
 export interface RunHistoryRow {
@@ -56,18 +127,44 @@ export interface RunSummary {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${API_BASE}${path}`, {
-      headers: { "Content-Type": "application/json", ...options?.headers },
+  const doFetch = async (): Promise<Response> => {
+    const auth = await authHeader();
+    return fetch(`${API_BASE}${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        ...auth,
+        ...options?.headers,
+      },
       ...options,
     });
+  };
+
+  let res: Response;
+  try {
+    res = await doFetch();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Network error";
     throw new Error(
       `${msg}. Is the API running at ${API_BASE}? (Set NEXT_PUBLIC_API_URL if needed.)`
     );
   }
+
+  // Token may have expired; refresh once and retry.
+  if (res.status === 401 && typeof window !== "undefined") {
+    clearAuthCache();
+    try {
+      res = await doFetch();
+    } catch {
+      // fall through to error path below
+    }
+  }
+
+  if (res.status === 401 && typeof window !== "undefined") {
+    // Still 401 after refresh -- bounce to the login page.
+    window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error("Not signed in");
+  }
+
   if (!res.ok) {
     const detail = await res.text();
     throw new Error(`API ${res.status}: ${detail}`);
@@ -82,7 +179,17 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export interface MeResponse {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  is_admin: boolean;
+  created_at: string | null;
+}
+
 export const api = {
+  me: () => apiFetch<MeResponse>("/api/me"),
   projects: {
     list: () => apiFetch<string[]>("/api/projects"),
     get: (name: string) => apiFetch<any>(`/api/projects/${name}`),
@@ -178,10 +285,12 @@ export const api = {
   generate: {
     quick: (data: any) => apiFetch<any>("/api/generate/robot-suite", { method: "POST", body: JSON.stringify(data) }),
     stepwise: (data: any) => apiFetch<any>("/api/generate/mcp-stepwise", { method: "POST", body: JSON.stringify(data) }),
-    stepwiseStreamUrl: () => `${API_BASE}/api/generate/mcp-stepwise/stream`,
+    /** SSE -- the JWT is embedded in the query string because EventSource cannot set headers. */
+    stepwiseStreamUrl: () => withAuthQuery(`${API_BASE}/api/generate/mcp-stepwise/stream`),
   },
   runs: {
     execute: (data: any) => apiFetch<any>("/api/runs/execute", { method: "POST", body: JSON.stringify(data) }),
+    /** SSE -- the JWT is embedded in the query string because EventSource cannot set headers. */
     executeStreamUrl: (data: {
       test_path: string;
       sandbox_url: string;
@@ -196,18 +305,22 @@ export const api = {
         password: data.password,
         headless: String(data.headless ?? true),
       });
-      return `${API_BASE}/api/runs/execute/stream?${q.toString()}`;
+      return withAuthQuery(`${API_BASE}/api/runs/execute/stream?${q.toString()}`);
     },
     latest: (limit = 50) =>
       apiFetch<{ runs: Array<RunHistoryRow> }>(`/api/runs/latest?limit=${limit}`),
     summary: (runFolder: string) =>
       apiFetch<RunSummary>(`/api/runs/${encodeURIComponent(runFolder)}/summary`),
+    /** Used by <a href> / <img src>; needs ?token= since browsers cannot
+     *  attach Authorization on those tags. Sync; reads cached token. */
     fileUrl: (runFolder: string, filename: string, opts?: { download?: boolean }) =>
-      `${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/file/${encodeURIComponent(filename)}${
-        opts?.download ? "?download=1" : ""
-      }`,
+      withAuthQuery(
+        `${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/file/${encodeURIComponent(filename)}${
+          opts?.download ? "?download=1" : ""
+        }`,
+      ),
     bundleUrl: (runFolder: string) =>
-      `${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/bundle.zip`,
+      withAuthQuery(`${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/bundle.zip`),
     userStory: (storyId: string, body: { org_id: string; persona_id?: string | null }) =>
       apiFetch<any[]>(`/run/user-story/${encodeURIComponent(storyId)}`, {
         method: "POST",

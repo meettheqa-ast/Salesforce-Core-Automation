@@ -123,7 +123,83 @@ Vercel auto-detects Next.js from `frontend/vercel.json`. Each push to `main` shi
 
 ---
 
-## 4. CORS gotchas
+## 4. Authentication (Google OAuth)
+
+Phase 1 of the auth model is now in. Every API endpoint except `/health` and `/`
+requires a valid NextAuth session JWT. Sign-in is restricted to a single Google
+Workspace domain (default `astounddigital.com`).
+
+### 4a. Google Cloud Console (one-time, ~3 min)
+
+1. Go to https://console.cloud.google.com/apis/credentials and pick (or create)
+   a project named e.g. `ai-qa-portal-prod`.
+2. **OAuth consent screen** -> User Type **Internal** (so only your Workspace
+   can sign in) -> fill App name, support email, dev contact -> Save.
+3. **Credentials** tab -> **+ Create Credentials** -> **OAuth client ID**:
+   - Application type: **Web application**
+   - Name: `AI QA Portal`
+   - **Authorized redirect URIs** -- add ALL of these (one per line):
+     - `http://localhost:3000/api/auth/callback/google` (local dev)
+     - `https://sf-core-automation-umber.vercel.app/api/auth/callback/google` (prod)
+     - Plus any preview / custom domains you want to support.
+4. **Create** -> copy the **Client ID** and **Client secret**.
+
+### 4b. Backend env vars
+
+Local `.env` (or `flyctl secrets set ...`):
+
+```
+NEXTAUTH_SECRET=<openssl rand -hex 32>
+ALLOWED_EMAIL_DOMAIN=astounddigital.com
+INITIAL_ADMINS=m.sheth@astounddigital.com
+```
+
+The backend creates a SQLite DB at `${DATA_DIR}/users.db` on first boot. On
+Fly the mounted volume keeps it persistent.
+
+### 4c. Frontend env vars (Vercel)
+
+Project Settings -> Environment Variables (set for **all** environments):
+
+```
+AUTH_SECRET=<same value as backend NEXTAUTH_SECRET>
+NEXTAUTH_URL=https://sf-core-automation-umber.vercel.app
+GOOGLE_CLIENT_ID=<from console>
+GOOGLE_CLIENT_SECRET=<from console>
+ALLOWED_EMAIL_DOMAIN=astounddigital.com
+```
+
+Then **Redeploy** (Deployments -> latest -> ... -> Redeploy with cache off).
+
+### 4d. Migrate existing data to the admin
+
+After deploying the auth changes, claim every existing project / persona /
+user-story for the bootstrap admin so they don't disappear from the UI:
+
+```
+docker compose exec backend python scripts/seed_admin_and_claim.py m.sheth@astounddigital.com
+```
+
+The script is idempotent and safe to re-run.
+
+### 4e. Things to know
+
+- **The first user to log in** becomes admin only if their email is listed in
+  `INITIAL_ADMINS`. Otherwise they are a regular user (Phase 1 = sees only
+  their own data).
+- **JWT lifetime is 1 hour.** The frontend silently refreshes the token by
+  re-fetching `/api/auth/jwt` whenever the backend returns 401.
+- **SSE endpoints** (`/api/runs/execute/stream`, `/api/generate/mcp-stepwise/stream`)
+  accept the JWT via `?token=...` query param because EventSource cannot send
+  custom headers. Same for `/api/runs/.../file/...` and `/.../bundle.zip` --
+  they're embedded in `<a href>` and `<img src>` so the helper appends the
+  cached token to the URL.
+- **Run history is shared** across all logged-in users in Phase 1. Per-user
+  filtering of runs lands in Phase 2 alongside project memberships.
+
+---
+
+## 5. CORS gotchas
 
 `ai_qa_portal/backend/main.py` allows:
 
@@ -141,7 +217,7 @@ then `flyctl deploy`.
 
 ---
 
-## 5. SSE behind proxies
+## 6. SSE behind proxies
 
 The two streaming endpoints (`/api/runs/execute/stream`, `/api/generate/mcp-stepwise/stream`) already send `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Fly's edge respects those. If you put a custom Nginx in front, also add:
 
@@ -152,7 +228,7 @@ proxy_read_timeout 1h;
 
 ---
 
-## 6. Smoke checklist after a fresh deploy
+## 7. Smoke checklist after a fresh deploy
 
 ```
 curl https://<fly-app>.fly.dev/health

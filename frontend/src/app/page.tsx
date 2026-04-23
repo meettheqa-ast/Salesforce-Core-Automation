@@ -13,7 +13,8 @@ const FEATURES = [
   { icon: "🔧", title: "Self-Healing", desc: "Smart keywords handle org differences, fix locators, and auto-heal missing fields.", color: "pink" as const },
   { icon: "🚀", title: "Parallel Execution", desc: "Run full suites with Pabot. Auto-retry flaky tests before reporting.", color: "purple" as const },
   { icon: "📊", title: "Analytics Dashboard", desc: "Track pass/fail trends, execution history, and test coverage across projects.", color: "cyan" as const },
-  { icon: "🔍", title: "Locator Scanner", desc: "Scan locators against the live DOM. Catch stale selectors before they fail.", color: "pink" as const },
+  // Hidden from the demo until Locator Scanner ships.
+  // { icon: "🔍", title: "Locator Scanner", desc: "Scan locators against the live DOM. Catch stale selectors before they fail.", color: "pink" as const },
 ];
 
 export default function LandingPage() {

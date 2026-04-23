@@ -5,13 +5,18 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from ai_qa_portal.backend.models.schemas import SchemaRequest, SchemaResponse, SOQLRequest, SOQLResponse
+from ai_qa_portal.backend.services.auth import get_current_user
 
-router = APIRouter(prefix="/api/salesforce", tags=["salesforce"])
+router = APIRouter(
+    prefix="/api/salesforce",
+    tags=["salesforce"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("/schema/context", response_model=SchemaResponse)
