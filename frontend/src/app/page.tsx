@@ -71,31 +71,10 @@ export default function LandingPage() {
           </div>
         </motion.div>
 
-        {/* Floating cards */}
-        <motion.div
-          className="absolute -right-10 top-1/3 glass p-4 rounded-2xl w-48 animate-float"
-          initial={{ opacity: 0, x: 100 }}
-          animate={{ opacity: 0.6, x: 0 }}
-          transition={{ delay: 1, duration: 1 }}
-        >
-          <div className="text-xs text-purple-300 font-semibold mb-1">Test Created</div>
-          <div className="text-sm text-slate-400">Lead_CRUD_Verify.robot</div>
-          <div className="text-xs text-emerald-400 mt-1">✓ PASSED</div>
-        </motion.div>
-
-        <motion.div
-          className="absolute -left-5 top-1/2 glass p-4 rounded-2xl w-44 animate-float"
-          style={{ animationDelay: "1s" }}
-          initial={{ opacity: 0, x: -100 }}
-          animate={{ opacity: 0.5, x: 0 }}
-          transition={{ delay: 1.3, duration: 1 }}
-        >
-          <div className="text-xs text-cyan-300 font-semibold mb-1">MCP Stepwise</div>
-          <div className="text-sm text-slate-400">Step 4/6 ✓</div>
-          <div className="w-full bg-slate-700 rounded-full h-1 mt-2">
-            <div className="bg-cyan-400 h-1 rounded-full w-2/3" />
-          </div>
-        </motion.div>
+        {/* Decorative floating cards previously hung off the hero edges
+            (a fake "Test Created / Lead_CRUD_Verify.robot PASSED" tile and an
+            "MCP Stepwise Step 4/6" progress tile). Removed for the demo --
+            they were hardcoded mock data and looked like real activity. */}
       </section>
 
       {/* Features Grid */}
