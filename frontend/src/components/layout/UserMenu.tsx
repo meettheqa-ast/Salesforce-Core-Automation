@@ -101,7 +101,7 @@ export default function UserMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-lg hover:bg-white/5 transition"
+        className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-lg hover:bg-white/5 transition"
       >
         {picture ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -109,14 +109,14 @@ export default function UserMenu() {
             src={picture}
             alt=""
             referrerPolicy="no-referrer"
-            className="w-7 h-7 rounded-full ring-1 ring-white/20"
+            className="w-8 h-8 rounded-full ring-1 ring-white/20"
           />
         ) : (
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-white">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-white">
             {initials}
           </div>
         )}
-        <span className="text-[13px] text-slate-300 max-w-[140px] truncate">
+        <span className="text-sm text-slate-300 max-w-[140px] truncate">
           {name.split(" ")[0]}
         </span>
       </button>
