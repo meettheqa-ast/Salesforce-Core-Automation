@@ -14,13 +14,17 @@ Pure Python — no Streamlit dependency.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-SAVED_PROJECTS_ROOT = ROOT / "Saved_Projects"
+# Honour SAVED_PROJECTS_DIR env so containers can mount a persistent volume.
+SAVED_PROJECTS_ROOT = Path(
+    os.environ.get("SAVED_PROJECTS_DIR", str(ROOT / "Saved_Projects"))
+)
 
 CONFIG_FILENAME = "config.json"
 DEFAULT_ENVIRONMENTS: list[str] = ["Dev", "QA", "UAT", "Prod"]

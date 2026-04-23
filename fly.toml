@@ -1,0 +1,50 @@
+# Fly.io deployment for the AI QA Portal backend.
+# Rename `app` to your own slug before the first deploy.
+#
+# Quick start:
+#   flyctl launch --no-deploy --copy-config
+#   flyctl volumes create data --size 3 --region iad
+#   flyctl secrets set FERNET_KEY=... GEMINI_API_KEY=... LLM_PROVIDER=gemini
+#   flyctl deploy
+
+app = "sf-core-automation-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+  RFMCP_HOST = "127.0.0.1"
+  RFMCP_PORT = "8765"
+  DATA_DIR = "/data/ai_qa_portal_data"
+  OUTPUT_DIR = "/data/ai_qa_portal_outputs"
+  RESULTS_DIR = "/data/Results"
+  SAVED_PROJECTS_DIR = "/data/Saved_Projects"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Stay always-on so the dashboard / SSE streams are responsive.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[vm]]
+  # Free tier: shared-cpu-1x with 256 MB.  Upgrade in one command:
+  #   flyctl scale vm shared-cpu-2x --memory 1024
+  cpu_kind = "shared"
+  cpus = 1
+  memory = "512mb"

@@ -20,13 +20,39 @@ from ai_qa_portal.backend.models.schemas import (
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 
+def _tcp_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    """Quick TCP probe: True if a socket connect succeeds."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 @router.get("/health", response_model=MCPStatus)
 def mcp_health():
+    """Report MCP as running when EITHER this worker owns the subprocess
+    OR the configured RFMCP_HOST:RFMCP_PORT accepts a TCP connection.
+
+    The TCP fallback keeps the dashboard accurate after a uvicorn reload,
+    when the long-lived RF-MCP subprocess is still bound but the in-process
+    handle has been forgotten.
+    """
     try:
         import mcp_bridge
-        return MCPStatus(running=mcp_bridge.is_server_running(), url=mcp_bridge.mcp_url())
     except ImportError:
         return MCPStatus(running=False)
+
+    url = mcp_bridge.mcp_url()
+    if mcp_bridge.is_server_running():
+        return MCPStatus(running=True, url=url)
+    try:
+        host, port = mcp_bridge._host_port()  # type: ignore[attr-defined]
+    except Exception:
+        return MCPStatus(running=False, url=url)
+    return MCPStatus(running=_tcp_open(host, port), url=url)
 
 
 @router.post("/server/start")

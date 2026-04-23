@@ -35,9 +35,26 @@ app = FastAPI(
     version="3.0.0",
 )
 
+# Allow:
+#   - any *.vercel.app deployment (production + preview branches)
+#   - localhost / 127.0.0.1 dev origins
+#   - any extra origins listed in CORS_ORIGINS or EXTRA_CORS_ORIGINS env vars
+_explicit_origins = sorted({
+    o.strip()
+    for raw in (settings.cors_origins, settings.extra_cors_origins)
+    for o in raw.split(",")
+    if o.strip()
+})
+_origin_regex = (
+    r"^(https?://localhost(:\d+)?"
+    r"|https?://127\.0\.0\.1(:\d+)?"
+    r"|https://([a-z0-9-]+\.)*vercel\.app)$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
+    allow_origins=_explicit_origins,
+    allow_origin_regex=_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,6 +64,7 @@ app.include_router(projects.router)
 app.include_router(orgs.router)
 app.include_router(personas.router)
 app.include_router(runs.router)
+app.include_router(runs.exec_router)
 app.include_router(generate.router)
 app.include_router(llm.router)
 app.include_router(mcp.router)
@@ -58,9 +76,9 @@ app.include_router(user_stories.router)
 app.include_router(user_stories.test_cases_router)
 app.include_router(user_stories.tags_router)
 
-results_dir = REPO_ROOT / "Results"
-if results_dir.exists():
-    app.mount("/results", StaticFiles(directory=str(results_dir)), name="results")
+results_dir = Path(settings.results_dir)
+results_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/results", StaticFiles(directory=str(results_dir)), name="results")
 
 
 @app.get("/")

@@ -22,7 +22,7 @@ export default function LandingPage() {
       <ParticleField />
 
       {/* Hero Section */}
-      <section className="relative z-10 flex flex-col items-center justify-center min-h-[85vh] px-6 text-center">
+      <section className="relative z-10 flex flex-col items-center justify-center min-h-[calc(85vh-6rem)] px-6 pt-8 pb-16 text-center">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}

@@ -1,5 +1,60 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+export type RunStatus = "PASS" | "FAIL" | "EMPTY";
+
+export interface RunHistoryRow {
+  run_name: string;
+  timestamp: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  status: RunStatus;
+  log_html: string | null;
+  report_html: string | null;
+}
+
+export interface RunStat {
+  name: string;
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+}
+
+export interface RunTestRow {
+  name: string;
+  suite: string;
+  status: "PASS" | "FAIL" | "SKIP";
+  duration_s: number;
+  message: string | null;
+  tags: string[];
+}
+
+export interface RunArtefacts {
+  log_html: string | null;
+  report_html: string | null;
+  output_xml: string | null;
+  screenshots: string[];
+}
+
+export interface RunSummary {
+  run_folder: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_s: number;
+  status: RunStatus;
+  passed: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  pass_rate: number;
+  by_tag: RunStat[];
+  by_suite: RunStat[];
+  tests: RunTestRow[];
+  artefacts: RunArtefacts;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   let res: Response;
   try {
@@ -123,10 +178,36 @@ export const api = {
   generate: {
     quick: (data: any) => apiFetch<any>("/api/generate/robot-suite", { method: "POST", body: JSON.stringify(data) }),
     stepwise: (data: any) => apiFetch<any>("/api/generate/mcp-stepwise", { method: "POST", body: JSON.stringify(data) }),
+    stepwiseStreamUrl: () => `${API_BASE}/api/generate/mcp-stepwise/stream`,
   },
   runs: {
-    execute: (data: any) => apiFetch<any>("/run", { method: "POST", body: JSON.stringify(data) }),
-    latest: () => apiFetch<any>("/api/runs/latest"),
+    execute: (data: any) => apiFetch<any>("/api/runs/execute", { method: "POST", body: JSON.stringify(data) }),
+    executeStreamUrl: (data: {
+      test_path: string;
+      sandbox_url: string;
+      username: string;
+      password: string;
+      headless?: boolean;
+    }) => {
+      const q = new URLSearchParams({
+        test_path: data.test_path,
+        sandbox_url: data.sandbox_url,
+        username: data.username,
+        password: data.password,
+        headless: String(data.headless ?? true),
+      });
+      return `${API_BASE}/api/runs/execute/stream?${q.toString()}`;
+    },
+    latest: (limit = 50) =>
+      apiFetch<{ runs: Array<RunHistoryRow> }>(`/api/runs/latest?limit=${limit}`),
+    summary: (runFolder: string) =>
+      apiFetch<RunSummary>(`/api/runs/${encodeURIComponent(runFolder)}/summary`),
+    fileUrl: (runFolder: string, filename: string, opts?: { download?: boolean }) =>
+      `${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/file/${encodeURIComponent(filename)}${
+        opts?.download ? "?download=1" : ""
+      }`,
+    bundleUrl: (runFolder: string) =>
+      `${API_BASE}/api/runs/${encodeURIComponent(runFolder)}/bundle.zip`,
     userStory: (storyId: string, body: { org_id: string; persona_id?: string | null }) =>
       apiFetch<any[]>(`/run/user-story/${encodeURIComponent(storyId)}`, {
         method: "POST",

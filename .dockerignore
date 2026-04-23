@@ -1,0 +1,58 @@
+.git
+.github
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+fly.toml
+
+# Frontend is built and served by Vercel, not by this image.
+frontend/
+
+# Local virtualenvs and caches
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local-only data; provided via the mounted volume in production.
+Saved_Projects/
+Results/
+ai_qa_portal/data/
+ai_qa_portal/outputs/
+_local_data/
+output/
+allure-report/
+
+# Generated tests are produced at runtime, not shipped in the image.
+Tests/Generated/
+
+# Robot default outputs at repo root
+log.html
+output.xml
+report.html
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# Secrets must NEVER be baked into the image.
+.env
+.env.*
+!.env.example
+ai_qa_portal/.env
+ai_qa_portal/.env.*
+!ai_qa_portal/.env.example
+frontend/.env*
+
+# Local plan / agent artefacts
+.cursor/
+agent-transcripts/

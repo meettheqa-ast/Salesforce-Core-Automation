@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import RunSummaryCard from "@/components/execution/RunSummaryCard";
 
 interface RunRequestData {
   test_path: string;
@@ -17,9 +18,11 @@ interface RunResult {
   passed: number;
   failed: number;
   skipped: number;
+  duration_s?: number;
   output_dir?: string;
-  log_html?: string;
-  report_html?: string;
+  log_html?: string | null;
+  report_html?: string | null;
+  exit_code?: number;
 }
 
 interface ExecutionLogStreamProps {
@@ -32,33 +35,80 @@ export default function ExecutionLogStream({ runRequest, onComplete }: Execution
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle");
   const [result, setResult] = useState<RunResult | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const sourceRef = useRef<EventSource | null>(null);
   const prevRequestRef = useRef<RunRequestData | null>(null);
   const onCompleteRef = useRef(onComplete);
   useEffect(() => { onCompleteRef.current = onComplete; });
 
-  const executeRun = useCallback(async (req: RunRequestData) => {
-    setLogs([]);
-    setStatus("running");
-    setResult(null);
-
-    try {
-      const res: RunResult = await api.runs.execute(req);
-      setResult(res);
-      setStatus(res.status === "PASS" ? "done" : "error");
-      setLogs((prev) => [...prev, `\n--- Run ${res.status} ---`, `Passed: ${res.passed}  Failed: ${res.failed}  Skipped: ${res.skipped}`]);
-      onCompleteRef.current?.(res);
-    } catch (err: unknown) {
-      setStatus("error");
-      const msg = err instanceof Error ? err.message : String(err);
-      setLogs((prev) => [...prev, `ERROR: ${msg}`]);
-    }
-  }, []);
-
   useEffect(() => {
     if (!runRequest || runRequest === prevRequestRef.current) return;
     prevRequestRef.current = runRequest;
-    executeRun(runRequest);
-  }, [runRequest, executeRun]);
+
+    sourceRef.current?.close();
+    setLogs([]);
+    setResult(null);
+    setStatus("running");
+
+    const url = api.runs.executeStreamUrl(runRequest);
+    const es = new EventSource(url);
+    sourceRef.current = es;
+
+    es.addEventListener("start", (ev) => {
+      try {
+        const d = JSON.parse((ev as MessageEvent).data);
+        setLogs((prev) => [...prev, `[ start ] output_dir=${d.output_dir} headless=${d.headless}`]);
+      } catch {
+        // ignore
+      }
+    });
+    es.addEventListener("log", (ev) => {
+      try {
+        const d = JSON.parse((ev as MessageEvent).data);
+        if (d.line != null) setLogs((prev) => [...prev, String(d.line)]);
+      } catch {
+        // ignore
+      }
+    });
+    es.addEventListener("done", (ev) => {
+      try {
+        const d: RunResult = JSON.parse((ev as MessageEvent).data);
+        setResult(d);
+        setStatus(d.status === "PASS" ? "done" : "error");
+        setLogs((prev) => [
+          ...prev,
+          `\n--- Run ${d.status} (exit ${d.exit_code ?? "?"}) ---`,
+          `Passed: ${d.passed}  Failed: ${d.failed}  Skipped: ${d.skipped}  Duration: ${d.duration_s ?? 0}s`,
+        ]);
+        onCompleteRef.current?.(d);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "parse error";
+        setLogs((prev) => [...prev, `ERROR parsing done event: ${msg}`]);
+      } finally {
+        es.close();
+        sourceRef.current = null;
+      }
+    });
+    es.addEventListener("error", (ev) => {
+      const data = (ev as MessageEvent).data;
+      let msg = "Stream error";
+      try {
+        if (data) msg = JSON.parse(data).message || msg;
+      } catch {
+        // ignore
+      }
+      setStatus("error");
+      setLogs((prev) => [...prev, `ERROR: ${msg}`]);
+      es.close();
+      sourceRef.current = null;
+    });
+  }, [runRequest]);
+
+  useEffect(() => {
+    return () => {
+      sourceRef.current?.close();
+      sourceRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -68,6 +118,7 @@ export default function ExecutionLogStream({ runRequest, onComplete }: Execution
 
   const statusColor = status === "done" ? "text-emerald-400" : status === "error" ? "text-red-400" : "text-cyan-400";
   const statusIcon = status === "done" ? "✓" : status === "error" ? "✗" : "⟳";
+  const runFolder = result?.output_dir?.split(/[/\\]/).pop();
 
   return (
     <motion.div
@@ -85,14 +136,27 @@ export default function ExecutionLogStream({ runRequest, onComplete }: Execution
         </span>
       </div>
 
-      <div className="bg-black/40 rounded-xl p-3 font-mono text-xs text-slate-400 max-h-64 overflow-y-auto">
+      <div className="bg-black/40 rounded-xl p-3 font-mono text-xs text-slate-400 max-h-72 overflow-y-auto">
         {logs.map((line, i) => (
-          <div key={i} className={line.includes("FAIL") || line.includes("ERROR") ? "text-red-400" : line.includes("PASS") ? "text-emerald-400" : ""}>
-            {line}
+          <div
+            key={i}
+            className={
+              /\bFAIL\b|ERROR/.test(line)
+                ? "text-red-400"
+                : /\bPASS\b/.test(line)
+                ? "text-emerald-400"
+                : ""
+            }
+          >
+            {line || " "}
           </div>
         ))}
         {status === "running" && (
-          <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }} className="text-cyan-400">
+          <motion.span
+            animate={{ opacity: [1, 0.3, 1] }}
+            transition={{ duration: 1, repeat: Infinity }}
+            className="text-cyan-400"
+          >
             ▌
           </motion.span>
         )}
@@ -100,21 +164,8 @@ export default function ExecutionLogStream({ runRequest, onComplete }: Execution
       </div>
 
       <AnimatePresence>
-        {result && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-3 flex gap-3">
-            {result.log_html && (
-              <a href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/results/${result.output_dir?.split(/[/\\]/).pop()}/log.html`}
-                target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 transition-colors">
-                View Log
-              </a>
-            )}
-            {result.report_html && (
-              <a href={`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/results/${result.output_dir?.split(/[/\\]/).pop()}/report.html`}
-                target="_blank" rel="noreferrer" className="text-xs px-3 py-1.5 bg-cyan-500/20 text-cyan-300 rounded-lg hover:bg-cyan-500/30 transition-colors">
-                View Report
-              </a>
-            )}
-          </motion.div>
+        {result && runFolder && (
+          <RunSummaryCard runFolder={runFolder} />
         )}
       </AnimatePresence>
     </motion.div>

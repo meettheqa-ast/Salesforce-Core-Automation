@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans bg-gradient-animated min-h-screen antialiased`}>
         <FloatingNavbar />
-        <main className="pt-20">{children}</main>
+        <main className="pt-24">{children}</main>
       </body>
     </html>
   );
