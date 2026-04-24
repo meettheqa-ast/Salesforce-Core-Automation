@@ -241,11 +241,19 @@ export default function ProjectDetailPage() {
         >
           ← Back to Projects
         </Link>
-        <h1 className="text-4xl font-bold mb-2">
-          <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-            {name}
-          </span>
-        </h1>
+        <div className="flex items-end justify-between gap-4 flex-wrap">
+          <h1 className="text-4xl font-bold mb-2">
+            <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              {name}
+            </span>
+          </h1>
+          <Link
+            href={`/projects/${encodeURIComponent(name)}/members`}
+            className="px-4 py-2 glass text-sm text-slate-300 hover:text-white rounded-xl transition-colors"
+          >
+            Manage members &rarr;
+          </Link>
+        </div>
       </motion.div>
 
       {/* Metrics */}

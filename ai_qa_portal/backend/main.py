@@ -24,6 +24,7 @@ from .routers import (
     llm,
     locators,
     mcp,
+    memberships,
     orgs,
     personas,
     projects,
@@ -68,6 +69,7 @@ app.add_middleware(
 )
 
 app.include_router(projects.router)
+app.include_router(memberships.router)
 app.include_router(orgs.router)
 app.include_router(personas.router)
 app.include_router(runs.router)

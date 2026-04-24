@@ -185,13 +185,34 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return JSON.parse(text) as T;
 }
 
+export interface MembershipRow {
+  id: string;
+  project_slug: string;
+  user_id: string;
+  role: "pm" | "lead" | "member";
+  created_at: string | null;
+}
+
 export interface MeResponse {
   id: string;
   email: string;
   name: string;
   picture: string;
   is_admin: boolean;
+  global_role: "admin" | "pm" | "tl" | "user";
+  is_active: boolean;
   created_at: string | null;
+  last_login_at: string | null;
+  memberships: MembershipRow[];
+}
+
+export interface MemberOut {
+  user_id: string;
+  email: string;
+  name: string;
+  picture: string;
+  role: "pm" | "lead" | "member";
+  joined_at: string | null;
 }
 
 export const api = {
@@ -240,6 +261,23 @@ export const api = {
       ),
     portalProjectId: (projectName: string) =>
       apiFetch<{ project_id: string; slug: string }>(`/api/projects/registry/${encodeURIComponent(projectName)}`),
+    members: (name: string) =>
+      apiFetch<MemberOut[]>(`/api/projects/${encodeURIComponent(name)}/members`),
+    addMember: (name: string, body: { email: string; role: "pm" | "lead" | "member" }) =>
+      apiFetch<MemberOut>(
+        `/api/projects/${encodeURIComponent(name)}/members`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    updateMemberRole: (name: string, userId: string, role: "pm" | "lead" | "member") =>
+      apiFetch<MemberOut>(
+        `/api/projects/${encodeURIComponent(name)}/members/${encodeURIComponent(userId)}`,
+        { method: "PATCH", body: JSON.stringify({ role }) },
+      ),
+    removeMember: (name: string, userId: string) =>
+      apiFetch<void>(
+        `/api/projects/${encodeURIComponent(name)}/members/${encodeURIComponent(userId)}`,
+        { method: "DELETE" },
+      ),
   },
   orgs: {
     list: (projectId?: string) =>

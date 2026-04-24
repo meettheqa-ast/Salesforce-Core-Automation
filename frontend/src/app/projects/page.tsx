@@ -6,14 +6,23 @@ import Link from "next/link";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { api } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
+import { useMe, membershipFor } from "@/lib/useMe";
+
+const AUTH_DISABLED =
+  (process.env.NEXT_PUBLIC_AUTH_DISABLED || "").toLowerCase() === "true";
 
 export default function ProjectsPage() {
+  const { me } = useMe();
   const [projects, setProjects] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", environment: "Dev", sandbox_url: "", username: "", password: "" });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+
+  // Anyone in the org can create a project (becomes PM of the new one).
+  // Phase 2c will add stricter "TM cannot create" toggle if you want.
+  const canCreateProject = AUTH_DISABLED || !!me;
 
   const loadProjects = () => {
     api.projects.list().then(setProjects).catch(() => {}).finally(() => setLoading(false));
@@ -48,10 +57,12 @@ export default function ProjectsPage() {
           </h1>
           <p className="text-slate-400">Manage test projects, environments, and credentials.</p>
         </div>
-        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)}
-          className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
-          + New Project
-        </motion.button>
+        {canCreateProject && (
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)}
+            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
+            + New Project
+          </motion.button>
+        )}
       </motion.div>
 
       {/* Create Modal */}
@@ -182,7 +193,13 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid md:grid-cols-3 gap-5">
           <AnimatePresence>
-            {projects.map((name, i) => (
+            {projects.map((name, i) => {
+              const role = membershipFor(me, name);
+              const isPm = role === "pm";
+              const roleLabel = role
+                ? role === "pm" ? "Project Manager" : role === "lead" ? "Team Lead" : "Team Member"
+                : null;
+              return (
               <motion.div key={name} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }} transition={{ delay: i * 0.08 }}>
                 <Link href={`/projects/${encodeURIComponent(name)}`}>
@@ -191,17 +208,28 @@ export default function ProjectsPage() {
                       <div>
                         <div className="text-2xl mb-2">📁</div>
                         <h3 className="text-lg font-bold text-white mb-1">{name}</h3>
+                        {roleLabel && (
+                          <span className="inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 font-semibold mb-1">
+                            {roleLabel}
+                          </span>
+                        )}
                         <p className="text-xs text-slate-500">Click to manage</p>
                       </div>
-                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(name); }}
-                        className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all text-sm p-1">
-                        ✕
-                      </button>
+                      {(isPm || AUTH_DISABLED) && (
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(name); }}
+                          title="Delete project (PM/Admin only)"
+                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all text-sm p-1"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   </AnimatedCard>
                 </Link>
               </motion.div>
-            ))}
+              );
+            })}
           </AnimatePresence>
         </div>
       )}

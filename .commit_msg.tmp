@@ -1,0 +1,31 @@
+feat(rbac): phase 2b -- project members management (UI + endpoints)
+
+Backend (new ai_qa_portal/backend/routers/memberships.py):
+- GET    /api/projects/{name}/members           any project member
+- POST   /api/projects/{name}/members            TL+ to add Member/Lead; PM+ to grant PM
+- PATCH  /api/projects/{name}/members/{user_id}  PM+ only; rejects role=pm if caller isn't PM
+- DELETE /api/projects/{name}/members/{user_id}  PM+ only
+- Last-PM constraint: refusing to remove or demote the only PM (409). Caller must
+  promote another PM first, or delete the project entirely.
+
+Frontend:
+- New page /projects/[name]/members:
+  * Member list grouped/sorted PM > Lead > Member, with avatar + email + role chip.
+  * Inline role dropdown (PM/Admin only) and Remove button (PM/Admin only).
+  * Add-member form (TL+) with email + role; only PMs can grant PM in the dropdown.
+  * "Your role on this project" header line.
+- Hooks: new lib/useMe.ts -- SWR-cached /api/me with helpers
+  membershipFor() and roleAtLeast() so any page can do role-aware UI without
+  refetching.
+- /projects page is now role-aware:
+  * Hides "+ New Project" if me is null (auth disabled bypass remains).
+  * Each project card shows the user's role chip (PM/Lead/Member).
+  * Delete X icon now only renders for PMs of that project.
+- /projects/[name] page gets a "Manage members ->" button next to the title.
+
+Side effect: any user listed in /api/me.memberships includes the project_slug
+they're a PM of, so future Phase 2c invitation UI can present "your projects"
+without an extra fetch.
+
+No destructive changes. AUTH_DISABLED=true users keep the synthetic-admin
+behaviour and see the full UI.
