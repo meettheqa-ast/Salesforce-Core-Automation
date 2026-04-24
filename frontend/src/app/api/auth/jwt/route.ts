@@ -8,9 +8,11 @@
  * trap of trying to verify NextAuth's encrypted session cookies (which use
  * A256CBC-HS512 JWE, not HS256 JWT).
  *
- * 401 is returned for unauthenticated callers or when the captured Google
- * token has expired (the client should refetch after a NextAuth session
- * refresh).
+ * Expiry is intentionally NOT checked here. The backend re-verifies via JWKS
+ * on every request (and returns 401 with a clear "Google ID token expired"
+ * message), and apiFetch handles that case by signing the user out + sending
+ * them to /login. Checking expiry here would just mean two layers reporting
+ * the same condition, which made the recovery flow harder to reason about.
  */
 
 import { auth } from "@/auth";
@@ -29,8 +31,6 @@ export async function GET(req: Request) {
     return new NextResponse("server misconfigured: AUTH_SECRET missing", { status: 500 });
   }
 
-  // Pull the decoded NextAuth session token; we stashed `googleIdToken` on it
-  // during the jwt() callback in src/auth.ts.
   const token = await getToken({
     req: req as unknown as Parameters<typeof getToken>[0]["req"],
     secret: SECRET,
@@ -44,17 +44,8 @@ export async function GET(req: Request) {
   const googleIdToken = token.googleIdToken as string | undefined;
   if (!googleIdToken) {
     // Older sessions issued before we started capturing the id_token won't
-    // have one. Force the client to sign in again to refresh the session.
+    // have one. Force the client to sign in again.
     return new NextResponse("session has no google id_token; sign in again", {
-      status: 401,
-    });
-  }
-
-  // Optional client-visible hint for when the token expires. The backend
-  // re-checks expiry on every request, so this is just a UX nicety.
-  const expiresAt = (token.googleIdTokenExpiresAt as number | undefined) ?? 0;
-  if (expiresAt && expiresAt * 1000 < Date.now()) {
-    return new NextResponse("google id_token expired; sign in again", {
       status: 401,
     });
   }

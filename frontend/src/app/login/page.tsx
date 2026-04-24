@@ -13,15 +13,25 @@ export default async function LoginPage({
   const session = await auth();
   const params = await searchParams;
 
-  if (session?.user) {
+  // The auto-redirect away from /login when a session exists is the second
+  // half of the historical refresh loop (apiFetch hits 401 -> bounces here ->
+  // we'd send the user straight back to the page that just 401'd). We now
+  // suppress the auto-redirect when the bouncer set ?reason=expired so the
+  // user actually gets to see the sign-in button and recover.
+  const reason = typeof params.reason === "string" ? params.reason : null;
+  if (session?.user && reason !== "expired") {
     const from = typeof params.from === "string" ? params.from : "/";
     redirect(from && from !== "/login" ? from : "/");
   }
 
   const errorParam = typeof params.error === "string" ? params.error : null;
   // NextAuth surfaces auth errors as `?error=AccessDenied` (e.g. wrong domain).
+  // ?reason=expired is set by lib/api.ts when /api/auth/jwt or any backend call
+  // returns 401 after a token refresh attempt.
   const errorMessage =
-    errorParam === "AccessDenied"
+    reason === "expired"
+      ? "Your session expired. Sign in again to continue."
+      : errorParam === "AccessDenied"
       ? `Sign-in is restricted to @${ALLOWED_DOMAIN} accounts.`
       : errorParam
       ? "Sign-in failed. Please try again."

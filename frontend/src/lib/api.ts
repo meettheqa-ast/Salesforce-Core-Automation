@@ -34,6 +34,31 @@ async function _fetchJwt(): Promise<string | null> {
   return _inFlight;
 }
 
+/** Recover from a stuck 401 loop: clear NextAuth's session cookie so /login
+ *  shows the sign-in button again instead of bouncing the user straight back
+ *  to a protected page. Then hard-navigate to /login so the new request is
+ *  evaluated by the (now-unauthenticated) middleware.
+ *
+ *  Guarded so we don't run it more than once per page load -- if multiple
+ *  in-flight requests all 401, we only initiate sign-out once. */
+let _signoutInFlight = false;
+async function _recoverFromStuckAuth(fromPath: string): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (_signoutInFlight) return;
+  _signoutInFlight = true;
+  try {
+    // Dynamic import so this server-incompatible call doesn't pull into SSR.
+    const { signOut } = await import("next-auth/react");
+    await signOut({ redirect: false });
+  } catch {
+    // If signOut blew up for any reason, fall through to the hard redirect
+    // anyway -- worst case the user lands on /login and sees the bouncer
+    // again, which is no worse than the current state.
+  }
+  clearAuthCache();
+  window.location.href = `/login?from=${encodeURIComponent(fromPath)}&reason=expired`;
+}
+
 /** Build the canonical Authorization header value, or null if unauthenticated. */
 async function authHeader(): Promise<Record<string, string>> {
   const tok = await _fetchJwt();
@@ -166,8 +191,10 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (res.status === 401 && typeof window !== "undefined") {
-    // Still 401 after refresh -- bounce to the login page.
-    window.location.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+    // Still 401 after a fresh-token retry. The NextAuth session cookie may
+    // still be present (so /login would auto-redirect us back here, causing
+    // a refresh loop), so clear it via signOut() before bouncing to /login.
+    void _recoverFromStuckAuth(window.location.pathname);
     throw new Error("Not signed in");
   }
 
