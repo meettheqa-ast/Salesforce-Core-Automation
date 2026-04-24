@@ -44,6 +44,34 @@ Vercel (Next.js)  --(NEXT_PUBLIC_API_URL, HTTPS)-->  Fly Machine (FastAPI :8000)
 
 ---
 
+## 0. When the demo breaks: tunnel recovery
+
+While we're on Cloudflare *quick* tunnels (no named tunnel yet), the URL dies a
+few times a day. Two helper scripts handle it:
+
+```powershell
+# 5-second non-destructive health check. Run this to confirm what's broken
+# before doing anything else.
+.\scripts\check-tunnel.ps1
+
+# Full recovery: kills the dead tunnel, starts a fresh one, updates Vercel's
+# NEXT_PUBLIC_API_URL, and redeploys production. Takes ~60 seconds.
+.\scripts\restore-tunnel.ps1
+```
+
+`restore-tunnel.ps1` is idempotent and safe to re-run. After it finishes, hard-
+refresh the Vercel page (`Ctrl+Shift+R`) and the demo is back.
+
+Symptom that means "run restore-tunnel.ps1":
+
+> **Failed to fetch. Is the API running at https://...trycloudflare.com? (Set
+> NEXT_PUBLIC_API_URL if needed.)**
+
+Once we move to a named tunnel (requires a domain on Cloudflare -- see
+"Permanent fix" at the bottom of this doc), this whole section becomes moot.
+
+---
+
 ## 1. Local prod-like (docker compose)
 
 This builds the same image that goes to Fly and runs it against a local volume mount, so you can validate before pushing.
