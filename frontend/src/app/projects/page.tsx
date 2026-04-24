@@ -62,11 +62,31 @@ export default function ProjectsPage() {
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
               className="glass-strong p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
               <h2 className="text-xl font-bold text-white mb-4">Create Project</h2>
-              <div className="space-y-3">
-                <input placeholder="Project Name" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500" />
-                <input placeholder="Description (optional)" value={form.description} onChange={(e) => setForm({...form, description: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500" />
+              {/* The autoComplete="new-password" + name="...-randomToken" pattern stops
+                  Chrome/Edge from autofilling the user's saved Google credentials into
+                  the Salesforce sandbox username/password fields. Plain `autoComplete="off"`
+                  is largely ignored by Chrome on credential-shaped inputs. */}
+              <form
+                onSubmit={(e) => { e.preventDefault(); handleCreate(); }}
+                autoComplete="off"
+                className="space-y-3"
+              >
+                <input
+                  name="project-name"
+                  autoComplete="off"
+                  placeholder="Project Name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
+                />
+                <input
+                  name="project-description"
+                  autoComplete="off"
+                  placeholder="Description (optional)"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
+                />
                 <GlassSelect
                   className="w-full"
                   value={form.environment}
@@ -74,15 +94,56 @@ export default function ProjectsPage() {
                   placeholder="Environment"
                   options={["Dev", "QA", "UAT", "Prod"].map((e) => ({ value: e, label: e }))}
                 />
-                <input placeholder="Sandbox URL" value={form.sandbox_url} onChange={(e) => setForm({...form, sandbox_url: e.target.value})}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500" />
+                <input
+                  name="sandbox-url"
+                  autoComplete="off"
+                  placeholder="Sandbox URL"
+                  value={form.sandbox_url}
+                  onChange={(e) => setForm({ ...form, sandbox_url: e.target.value })}
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
+                />
+                {/* Decoy fields hidden off-screen: Chrome ignores autoComplete="off"
+                    on credential-shaped inputs but WILL stop autofilling if it sees
+                    a "match" earlier in the form. These hidden inputs absorb the
+                    autofill instead of leaking it into the Salesforce fields below. */}
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+                  readOnly
+                />
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
+                  readOnly
+                />
                 <div className="grid grid-cols-2 gap-3">
-                  <input placeholder="Username" value={form.username} onChange={(e) => setForm({...form, username: e.target.value})}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500" />
-                  <input type="password" placeholder="Password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500" />
+                  <input
+                    name="sf-sandbox-username"
+                    autoComplete="off"
+                    placeholder="Sandbox Username"
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
+                  />
+                  <input
+                    type="password"
+                    name="sf-sandbox-password"
+                    autoComplete="new-password"
+                    placeholder="Sandbox Password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
+                  />
                 </div>
-              </div>
+              </form>
               {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
               <div className="flex gap-3 mt-5">
                 <motion.button whileTap={{ scale: 0.95 }} onClick={handleCreate} disabled={creating}
