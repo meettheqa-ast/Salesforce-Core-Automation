@@ -8,10 +8,11 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
 from .config import settings
 from .services.auth import get_current_user
-from .services.db import User, init_db
+from .services.db import User, get_db, init_db, list_memberships_for_user
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -103,7 +104,15 @@ def health():
 
 
 @app.get("/api/me")
-def whoami(current_user: User = Depends(get_current_user)):
-    """Return the currently authenticated user. Frontend uses this to render the
-    profile menu and to detect 401/403 (unauthenticated / wrong domain)."""
-    return current_user.to_dict()
+def whoami(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the currently authenticated user + their per-project memberships.
+    Frontend uses this to render the profile menu, gate role-aware UI, and
+    detect 401/403 (unauthenticated / wrong domain)."""
+    payload = current_user.to_dict()
+    payload["memberships"] = [
+        m.to_dict() for m in list_memberships_for_user(db, current_user.id)
+    ]
+    return payload

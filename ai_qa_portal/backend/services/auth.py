@@ -17,6 +17,7 @@ Auth model:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -26,7 +27,16 @@ from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
 from ai_qa_portal.backend.config import settings
-from .db import User, get_db, get_or_create_user
+from .db import (
+    GlobalRole,
+    ProjectMembership,
+    ProjectRole,
+    User,
+    get_db,
+    get_membership,
+    get_or_create_user,
+    project_role_at_least,
+)
 
 logger = logging.getLogger("ai_qa_portal.auth")
 
@@ -168,6 +178,26 @@ def get_current_user(
         name=str(payload.get("name") or ""),
         picture=str(payload.get("picture") or ""),
     )
+
+    # Phase 2a: respect deactivation + force-revoked sessions.
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Account is deactivated")
+    if user.session_revoked_at is not None:
+        iat = payload.get("iat")
+        if isinstance(iat, (int, float)):
+            iat_dt = datetime.fromtimestamp(int(iat), tz=timezone.utc)
+            if iat_dt < user.session_revoked_at:
+                raise HTTPException(
+                    status.HTTP_401_UNAUTHORIZED,
+                    "Session was revoked; please sign in again",
+                )
+
+    # Best-effort last_login_at refresh; don't fail the request if it errors.
+    try:
+        user.last_login_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        db.rollback()
     return user
 
 
@@ -207,3 +237,73 @@ def assert_user_owns_project(current_user: User, project_id: UUID | str) -> None
             status.HTTP_403_FORBIDDEN,
             "You do not have access to this project",
         )
+
+
+# --- Phase 2a: effective role resolver ------------------------------------
+
+def effective_project_role(
+    db: Session,
+    user: User,
+    project_slug: str,
+) -> ProjectRole | None:
+    """Return the user's effective role on this project, or None if no access.
+
+    Resolution order (per the locked architecture decision):
+      1. Global Admin -> implicit PM on every project (read+write+delete).
+      2. Otherwise, the per-project membership role if one exists.
+      3. Otherwise, None (caller treats as no access).
+
+    The project_slug is the filesystem slug (matching Saved_Projects/<slug>/).
+    """
+    if user.global_role == GlobalRole.admin.value or user.is_admin:
+        return ProjectRole.pm
+    membership = get_membership(db, project_slug=project_slug, user_id=user.id)
+    if membership is None:
+        return None
+    return ProjectRole(membership.role)
+
+
+def assert_project_role_at_least(
+    db: Session,
+    user: User,
+    project_slug: str,
+    required: ProjectRole,
+) -> None:
+    """Raise 403/404 unless the user has *at least* the required role on the project."""
+    actual = effective_project_role(db, user, project_slug)
+    if actual is None:
+        # 404 over 403 to avoid leaking project existence to non-members.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+    if not project_role_at_least(actual, required):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"This action requires at least the '{required.value}' role on the project",
+        )
+
+
+# Backwards-compat alias used by routers written before Phase 2a; still works
+# but routers should migrate to assert_project_role_at_least over time.
+def assert_user_can_view_project(
+    db: Session, user: User, project_slug: str,
+) -> None:
+    assert_project_role_at_least(db, user, project_slug, ProjectRole.member)
+
+
+def require_global_role(*allowed: GlobalRole | str):
+    """Build a FastAPI dependency that 403s unless the user's global_role is in `allowed`.
+
+    Admin is always implicitly allowed. Use as:
+        @router.post("/foo", dependencies=[Depends(require_global_role(GlobalRole.project_manager))])
+    """
+    allowed_set = {a.value if isinstance(a, GlobalRole) else a for a in allowed}
+    allowed_set.add(GlobalRole.admin.value)
+
+    def _dep(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.global_role not in allowed_set and not current_user.is_admin:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Requires one of these global roles: {sorted(allowed_set)}",
+            )
+        return current_user
+
+    return _dep

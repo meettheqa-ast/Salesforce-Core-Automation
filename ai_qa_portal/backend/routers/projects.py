@@ -6,12 +6,23 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 import project_manager
 
 from ai_qa_portal.backend.project_registry import ensure_project_uuid
-from ai_qa_portal.backend.services.auth import get_current_user
-from ai_qa_portal.backend.services.db import User
+from ai_qa_portal.backend.services.auth import (
+    assert_project_role_at_least,
+    effective_project_role,
+    get_current_user,
+)
+from ai_qa_portal.backend.services.db import (
+    ProjectRole,
+    User,
+    get_db,
+    list_memberships_for_user,
+    upsert_membership,
+)
 
 from ..models.schemas import ProjectCreate, ProjectMeta, TestInfo
 
@@ -37,40 +48,62 @@ def _ensure_project(name: str) -> None:
         raise HTTPException(404, f"Project '{name}' not found")
 
 
-def _ensure_can_access_project(name: str, user: User) -> None:
-    """Raise 404 if the project doesn't exist, 403 if it exists but the user
-    isn't its owner (and isn't admin). 404 over 403 on missing keeps URL
-    enumeration from leaking project names."""
+def _ensure_can_access_project(
+    name: str, user: User, db: Session, required: ProjectRole = ProjectRole.member,
+) -> None:
+    """Raise 404 if the project doesn't exist OR the user has no role on it
+    (404 over 403 to avoid leaking project existence). 403 if the user is a
+    member but with insufficient role for the action.
+    """
     if not project_manager.project_exists(name):
         raise HTTPException(404, f"Project '{name}' not found")
-    if user.is_admin:
-        return
-    owner = project_manager.get_project_owner(name)
-    if owner and owner != user.id:
-        raise HTTPException(403, "You do not have access to this project")
+    assert_project_role_at_least(db, user, name, required)
 
 
 @router.get("", response_model=list[str])
-def list_projects(current_user: User = Depends(get_current_user)):
+def list_projects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     all_names = project_manager.list_projects()
-    if current_user.is_admin:
+    if current_user.is_admin or current_user.global_role == "admin":
         return all_names
-    # Non-admins see only projects whose stamped owner matches them.
-    # Legacy unowned projects (empty owner_user_id) are admin-only until the
-    # seed-and-claim migration assigns them.
-    return [n for n in all_names if project_manager.get_project_owner(n) == current_user.id]
+    # Non-admins see projects they're a member of (any role) PLUS legacy
+    # owned-by-them projects from before Phase 2a (membership row gets
+    # created lazily on next access).
+    membership_slugs = {
+        m.project_slug for m in list_memberships_for_user(db, current_user.id)
+    }
+    visible = [
+        n for n in all_names
+        if n in membership_slugs
+        or project_manager.get_project_owner(n) == current_user.id
+    ]
+    # Lazy backfill: ensure a PM membership exists for any owned-but-unrostered project.
+    for n in visible:
+        if n not in membership_slugs and project_manager.get_project_owner(n) == current_user.id:
+            upsert_membership(db, project_slug=n, user_id=current_user.id, role=ProjectRole.pm)
+    return visible
 
 
 @router.get("/registry/{project_name}")
-def get_portal_project_id(project_name: str, current_user: User = Depends(get_current_user)):
+def get_portal_project_id(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Stable UUID for JSON-backed features (user stories, orgs). Additive; seeds static tags."""
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db)
     pid = ensure_project_uuid(project_name)
     return {"project_id": str(pid), "slug": project_name}
 
 
 @router.post("", status_code=201)
-def create_project(body: ProjectCreate, current_user: User = Depends(get_current_user)):
+def create_project(
+    body: ProjectCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     try:
         proj_dir = project_manager.create_project(
             body.name,
@@ -90,6 +123,8 @@ def create_project(body: ProjectCreate, current_user: User = Depends(get_current
         persona=project_manager.DEFAULT_PERSONA,
     )
     project_id = ensure_project_uuid(slug)
+    # Creator becomes PM of the project they created (Phase 2a).
+    upsert_membership(db, project_slug=slug, user_id=current_user.id, role=ProjectRole.pm)
     return {
         "name": slug,
         "display_name": body.name.strip(),
@@ -99,15 +134,24 @@ def create_project(body: ProjectCreate, current_user: User = Depends(get_current
 
 
 @router.delete("/{project_name}", status_code=204)
-def delete_project(project_name: str, current_user: User = Depends(get_current_user)):
-    _ensure_can_access_project(project_name, current_user)
+def delete_project(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # PM-of-this-project or admin only -- TL/TM cannot delete.
+    _ensure_can_access_project(project_name, current_user, db, ProjectRole.pm)
     if not project_manager.delete_project(project_name):
         raise HTTPException(404, f"Project '{project_name}' not found")
 
 
 @router.get("/{project_name}", response_model=ProjectMeta)
-def get_project_meta(project_name: str, current_user: User = Depends(get_current_user)):
-    _ensure_can_access_project(project_name, current_user)
+def get_project_meta(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_can_access_project(project_name, current_user, db)
     try:
         meta = project_manager.read_project_meta(project_name)
     except FileNotFoundError as exc:
@@ -122,14 +166,22 @@ def get_project_meta(project_name: str, current_user: User = Depends(get_current
 
 
 @router.get("/{project_name}/environments", response_model=list[str])
-def list_environments(project_name: str, current_user: User = Depends(get_current_user)):
-    _ensure_can_access_project(project_name, current_user)
+def list_environments(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_can_access_project(project_name, current_user, db)
     return project_manager.list_environments(project_name)
 
 
 @router.get("/{project_name}/tests", response_model=list[TestInfo])
-def list_tests(project_name: str, current_user: User = Depends(get_current_user)):
-    _ensure_can_access_project(project_name, current_user)
+def list_tests(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_can_access_project(project_name, current_user, db)
     rows = project_manager.list_project_tests(project_name)
     return [
         TestInfo(name=r["name"], path=str(Path(r["path"]).resolve()), modified=r["modified"])
@@ -142,8 +194,9 @@ def get_test_source(
     project_name: str,
     test_name: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db)
     try:
         source = project_manager.load_test_source(project_name, test_name)
     except FileNotFoundError as exc:
@@ -157,8 +210,9 @@ def get_project_config(
     environment: str = Query("Dev"),
     persona: str = Query("System Admin"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db)
     try:
         return project_manager.read_project_config(
             project_name, environment=environment, persona=persona
@@ -172,8 +226,9 @@ def list_personas_for_environment(
     project_name: str,
     environment: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db)
     return project_manager.list_personas(project_name, environment)
 
 
@@ -182,8 +237,10 @@ def save_credentials(
     project_name: str,
     body: CredentialsPayload,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    # Saving credentials requires Lead+ (Member is read-only).
+    _ensure_can_access_project(project_name, current_user, db, ProjectRole.lead)
     env = (body.environment or "Dev").strip() or "Dev"
     persona = (body.persona or project_manager.DEFAULT_PERSONA).strip() or project_manager.DEFAULT_PERSONA
     project_manager.write_project_credentials(
@@ -204,8 +261,9 @@ def delete_environment(
     project_name: str,
     environment: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db, ProjectRole.pm)
     if not project_manager.delete_environment(project_name, environment):
         raise HTTPException(404, f"Environment '{environment}' not found")
 
@@ -219,7 +277,8 @@ def delete_persona(
     environment: str,
     persona: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    _ensure_can_access_project(project_name, current_user)
+    _ensure_can_access_project(project_name, current_user, db, ProjectRole.pm)
     if not project_manager.delete_persona(project_name, environment, persona):
         raise HTTPException(404, f"Persona '{persona}' not found in '{environment}'")

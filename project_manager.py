@@ -33,6 +33,46 @@ _CREDENTIAL_KEYS: list[str] = [
     "sandbox_url", "username", "password", "security_token", "slack_webhook_url",
 ]
 
+# Fields whose values are encrypted at rest in config.json. Marker-prefixed so
+# legacy plaintext values continue to work and can be lazily upgraded.
+_ENCRYPTED_FIELDS: set[str] = {"password", "security_token"}
+_ENC_PREFIX = "enc::"
+
+
+def _credential_service():
+    """Return a CredentialService, or None if FERNET_KEY isn't configured.
+
+    Returning None lets the legacy Streamlit / no-key callers keep working
+    without raising. The FastAPI backend requires FERNET_KEY anyway.
+    """
+    try:
+        from ai_qa_portal.backend.services.credential_service import CredentialService
+        return CredentialService()
+    except Exception:
+        return None
+
+
+def _maybe_encrypt(value: str) -> str:
+    if not value or value.startswith(_ENC_PREFIX):
+        return value
+    svc = _credential_service()
+    if svc is None:
+        return value
+    return _ENC_PREFIX + svc.encrypt(value)
+
+
+def _maybe_decrypt(value: str) -> str:
+    if not value or not value.startswith(_ENC_PREFIX):
+        return value
+    svc = _credential_service()
+    if svc is None:
+        return value
+    try:
+        return svc.decrypt(value[len(_ENC_PREFIX):])
+    except Exception:
+        # Bad ciphertext or wrong key -- return empty rather than the marker.
+        return ""
+
 
 def _empty_cred_block() -> dict[str, str]:
     """Return a credential dict with all keys set to empty strings."""
@@ -151,6 +191,49 @@ def get_project_owner(name: str) -> str:
     return str(meta.get("owner_user_id") or "")
 
 
+def encrypt_plaintext_credentials_in_place() -> dict[str, int]:
+    """One-shot migration: walk every project's config.json and encrypt any
+    plaintext password / security_token entries (idempotent).
+
+    Returns a counter dict ``{projects_scanned, fields_encrypted, fields_skipped}``.
+    Safe to re-run; already-encrypted values (prefixed with ``enc::``) are skipped.
+    Requires FERNET_KEY -- raises RuntimeError if it's not set.
+    """
+    svc = _credential_service()
+    if svc is None:
+        raise RuntimeError(
+            "FERNET_KEY not configured -- cannot run credential encryption migration"
+        )
+    counter = {"projects_scanned": 0, "fields_encrypted": 0, "fields_skipped": 0}
+    for project_name in list_projects():
+        counter["projects_scanned"] += 1
+        try:
+            raw = _load_raw_config(project_name)
+        except (OSError, FileNotFoundError):
+            continue
+        changed = False
+        envs = raw.get("environments", {})
+        for env_name, env_block in envs.items():
+            if not isinstance(env_block, dict):
+                continue
+            personas = env_block.get("personas", {})
+            for persona_name, cred in personas.items():
+                if not isinstance(cred, dict):
+                    continue
+                for field in _ENCRYPTED_FIELDS:
+                    val = cred.get(field) or ""
+                    val = str(val).strip()
+                    if not val or val.startswith(_ENC_PREFIX):
+                        counter["fields_skipped"] += 1
+                        continue
+                    cred[field] = _maybe_encrypt(val)
+                    counter["fields_encrypted"] += 1
+                    changed = True
+        if changed:
+            _write_full_config(project_name, raw)
+    return counter
+
+
 def get_project_path(name: str) -> Path:
     """Return project root Path; raises FileNotFoundError if project doesn't exist."""
     proj_dir = _project_dir(name)
@@ -255,7 +338,8 @@ def read_project_config(
     """Load credentials for *environment* / *persona* from ``config.json``.
 
     Backward-compatible: flat (v1) and env-only (v2) configs are migrated
-    automatically on first read.
+    automatically on first read. Encrypted fields are transparently decrypted
+    here so callers always see plaintext.
     """
     raw = _load_raw_config(name)
     env_block = raw.get("environments", {}).get(environment, {})
@@ -264,7 +348,13 @@ def read_project_config(
     out = _empty_cred_block()
     for k in _CREDENTIAL_KEYS:
         val = cred.get(k)
-        out[k] = "" if val is None else str(val).strip()
+        if val is None:
+            out[k] = ""
+            continue
+        s = str(val).strip()
+        if k in _ENCRYPTED_FIELDS:
+            s = _maybe_decrypt(s)
+        out[k] = s
     return out
 
 
@@ -380,11 +470,14 @@ def write_project_credentials(
     envs = raw.setdefault("environments", {})
     env_block = envs.setdefault(environment, {"personas": {}})
     personas = env_block.setdefault("personas", {})
+    # Encrypt sensitive fields at rest (Fernet via _maybe_encrypt). Older
+    # plaintext entries continue to read until they're overwritten and lazily
+    # upgraded the next time they're saved.
     personas[persona] = {
         "sandbox_url": _clean(sandbox_url),
         "username": _clean(username),
-        "password": (password or "").strip(),
-        "security_token": _clean(security_token),
+        "password": _maybe_encrypt((password or "").strip()),
+        "security_token": _maybe_encrypt(_clean(security_token)),
         "slack_webhook_url": _clean(slack_webhook_url),
     }
     return _write_full_config(project_name, raw)
