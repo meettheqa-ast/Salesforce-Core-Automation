@@ -11,6 +11,10 @@ ai_qa_portal/outputs/
 # personas/orgs/user-stories JSON, generated test data. Never commit.
 _local_data/
 
+# Temporary commit message scratch file used by the agent for HEREDOC-style
+# multi-line commits on Windows (PowerShell doesn't support heredoc).
+.commit_msg.tmp
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/
