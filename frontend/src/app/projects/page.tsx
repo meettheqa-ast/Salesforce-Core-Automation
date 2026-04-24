@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import AnimatedCard from "@/components/cards/AnimatedCard";
-import { api } from "@/lib/api";
+import { api, type InvitationRow } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
 import { useMe, membershipFor } from "@/lib/useMe";
 
@@ -14,21 +14,70 @@ const AUTH_DISABLED =
 export default function ProjectsPage() {
   const { me } = useMe();
   const [projects, setProjects] = useState<string[]>([]);
+  const [otherProjects, setOtherProjects] = useState<Array<{ name: string; display_name: string; description: string; member_count: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: "", description: "", environment: "Dev", sandbox_url: "", username: "", password: "" });
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [requesting, setRequesting] = useState<string | null>(null);
+  const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
+  const [openInvites, setOpenInvites] = useState<InvitationRow[]>([]);
 
   // Anyone in the org can create a project (becomes PM of the new one).
   // Phase 2c will add stricter "TM cannot create" toggle if you want.
   const canCreateProject = AUTH_DISABLED || !!me;
 
   const loadProjects = () => {
-    api.projects.list().then(setProjects).catch(() => {}).finally(() => setLoading(false));
+    setLoading(true);
+    Promise.all([
+      api.projects.list().then(setProjects).catch(() => {}),
+      // Discoverable list -- only fetched when auth is on; in disabled mode
+      // the synthetic admin sees everything in `projects` already.
+      AUTH_DISABLED
+        ? Promise.resolve()
+        : api.projects.discoverable().then(setOtherProjects).catch(() => {}),
+      AUTH_DISABLED
+        ? Promise.resolve()
+        : api.invitations.mine().then(setOpenInvites).catch(() => {}),
+    ]).finally(() => setLoading(false));
   };
 
   useEffect(loadProjects, []);
+
+  const handleAcceptInvite = async (id: string) => {
+    try {
+      await api.invitations.accept(id);
+      setOpenInvites((prev) => prev.filter((i) => i.id !== id));
+      loadProjects();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to accept invitation");
+    }
+  };
+
+  const handleDeclineInvite = async (id: string) => {
+    if (!confirm("Decline this invitation?")) return;
+    try {
+      await api.invitations.reject(id);
+      setOpenInvites((prev) => prev.filter((i) => i.id !== id));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to decline");
+    }
+  };
+
+  const handleRequestAccess = async (slug: string) => {
+    setRequesting(slug); setError(""); setRequestSuccess(null);
+    try {
+      await api.projects.requestAccess(slug);
+      setRequestSuccess(`Access request sent to the project's PMs and Team Leads.`);
+      // Remove from "other" list since it's now in flight.
+      setOtherProjects((prev) => prev.filter((p) => p.name !== slug));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to request access");
+    } finally {
+      setRequesting(null);
+    }
+  };
 
   const handleCreate = async () => {
     if (!form.name.trim()) { setError("Name is required"); return; }
@@ -64,6 +113,36 @@ export default function ProjectsPage() {
           </motion.button>
         )}
       </motion.div>
+
+      {/* Pending invitations awaiting accept/decline */}
+      {openInvites.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {openInvites.map((inv) => (
+            <div
+              key={inv.id}
+              className="flex items-center gap-3 rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-3"
+            >
+              <div className="text-xl">📨</div>
+              <div className="flex-1 min-w-0 text-sm text-white">
+                You've been invited to <span className="font-semibold">{inv.project_slug}</span>
+                <span className="ml-2 text-[11px] text-slate-400">as {inv.role}</span>
+              </div>
+              <button
+                onClick={() => handleAcceptInvite(inv.id)}
+                className="text-xs px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-500"
+              >
+                Accept
+              </button>
+              <button
+                onClick={() => handleDeclineInvite(inv.id)}
+                className="text-xs px-3 py-1.5 rounded text-slate-400 hover:text-red-400"
+              >
+                Decline
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Create Modal */}
       <AnimatePresence>
@@ -231,6 +310,42 @@ export default function ProjectsPage() {
               );
             })}
           </AnimatePresence>
+        </div>
+      )}
+
+      {/* Other projects in the org (Phase 2c -- self-service access requests) */}
+      {!AUTH_DISABLED && otherProjects.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-sm uppercase tracking-wider text-slate-500 font-semibold mb-3">
+            Other projects in the org
+          </h2>
+          {requestSuccess && (
+            <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-200">
+              {requestSuccess}
+            </div>
+          )}
+          <div className="grid md:grid-cols-3 gap-5">
+            {otherProjects.map((p) => (
+              <AnimatedCard key={p.name}>
+                <div className="text-2xl mb-2">📁</div>
+                <h3 className="text-base font-bold text-white mb-1">{p.display_name || p.name}</h3>
+                {p.description && (
+                  <p className="text-xs text-slate-400 mb-3 line-clamp-2">{p.description}</p>
+                )}
+                <div className="text-[10px] text-slate-500 mb-3">
+                  {p.member_count} member{p.member_count === 1 ? "" : "s"}
+                </div>
+                <button
+                  type="button"
+                  disabled={requesting === p.name}
+                  onClick={() => handleRequestAccess(p.name)}
+                  className="w-full px-3 py-2 rounded-lg glass text-sm text-slate-200 hover:text-white hover:bg-purple-500/15 transition disabled:opacity-50"
+                >
+                  {requesting === p.name ? "Requesting..." : "Request access"}
+                </button>
+              </AnimatedCard>
+            ))}
+          </div>
         </div>
       )}
     </div>

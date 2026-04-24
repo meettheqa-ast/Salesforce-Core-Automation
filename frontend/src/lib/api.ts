@@ -215,10 +215,38 @@ export interface MemberOut {
   joined_at: string | null;
 }
 
+export interface InvitationRow {
+  id: string;
+  project_slug: string;
+  email: string;
+  role: "pm" | "lead" | "member";
+  direction: "invite" | "request";
+  status: "pending" | "requested" | "accepted" | "approved" | "rejected" | "revoked" | "expired";
+  invited_by_user_id: string | null;
+  expires_at: string | null;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  action_url: string;
+  read_at: string | null;
+  created_at: string | null;
+}
+
 export const api = {
   me: () => apiFetch<MeResponse>("/api/me"),
   projects: {
     list: () => apiFetch<string[]>("/api/projects"),
+    discoverable: () =>
+      apiFetch<Array<{ name: string; display_name: string; description: string; member_count: number }>>(
+        "/api/projects/discoverable",
+      ),
     get: (name: string) => apiFetch<any>(`/api/projects/${name}`),
     create: (data: any) => apiFetch<any>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
     delete: (name: string) => apiFetch<any>(`/api/projects/${name}`, { method: "DELETE" }),
@@ -278,6 +306,34 @@ export const api = {
         `/api/projects/${encodeURIComponent(name)}/members/${encodeURIComponent(userId)}`,
         { method: "DELETE" },
       ),
+    listInvitations: (name: string) =>
+      apiFetch<InvitationRow[]>(`/api/projects/${encodeURIComponent(name)}/invitations`),
+    invite: (name: string, body: { email: string; role: "pm" | "lead" | "member" }) =>
+      apiFetch<InvitationRow>(
+        `/api/projects/${encodeURIComponent(name)}/invitations`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    requestAccess: (name: string) =>
+      apiFetch<InvitationRow>(
+        `/api/projects/${encodeURIComponent(name)}/invitations/request-access`,
+        { method: "POST" },
+      ),
+  },
+  invitations: {
+    accept: (id: string) => apiFetch<InvitationRow>(`/api/invitations/${id}/accept`, { method: "POST" }),
+    reject: (id: string) => apiFetch<InvitationRow>(`/api/invitations/${id}/reject`, { method: "POST" }),
+    approve: (id: string) => apiFetch<InvitationRow>(`/api/invitations/${id}/approve`, { method: "POST" }),
+    revoke: (id: string) => apiFetch<InvitationRow>(`/api/invitations/${id}/revoke`, { method: "POST" }),
+    mine: () => apiFetch<InvitationRow[]>("/api/me/invitations"),
+  },
+  notifications: {
+    list: (unread = false) =>
+      apiFetch<NotificationRow[]>(`/api/me/notifications${unread ? "?unread=true" : ""}`),
+    unreadCount: () => apiFetch<{ count: number }>("/api/me/notifications/unread-count"),
+    markRead: (id: string) =>
+      apiFetch<NotificationRow>(`/api/me/notifications/${id}/read`, { method: "POST" }),
+    markAllRead: () =>
+      apiFetch<{ marked_read: number }>("/api/me/notifications/read-all", { method: "POST" }),
   },
   orgs: {
     list: (projectId?: string) =>

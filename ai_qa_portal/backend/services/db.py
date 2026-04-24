@@ -162,6 +162,114 @@ class ProjectMembership(Base):
         }
 
 
+# --- Phase 2c: invitations + notifications --------------------------------
+
+class InvitationDirection(str, enum.Enum):
+    invite = "invite"     # PM/TL -> user, awaiting user accept
+    request = "request"   # would-be member -> project, awaiting PM/TL approval
+
+
+class InvitationStatus(str, enum.Enum):
+    pending = "pending"      # invite waiting for user accept
+    requested = "requested"  # request waiting for PM/TL approval
+    accepted = "accepted"    # invitation accepted by user (terminal)
+    approved = "approved"    # request approved by PM/TL (terminal -- membership created)
+    rejected = "rejected"    # rejected by either side (terminal)
+    revoked = "revoked"      # invite/request cancelled by sender (terminal)
+    expired = "expired"      # passed expires_at without action (terminal)
+
+
+class ProjectInvitation(Base):
+    """Either an invite (PM/TL -> user) or a self-service request (user -> project).
+
+    The two directions share a table because the lifecycle and approval flow
+    are nearly identical -- distinguishing them via the `direction` column
+    avoids a second join everywhere we list "open invitations / requests for me".
+    """
+
+    __tablename__ = "project_invitations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_slug: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    # Email of the invited user (direction=invite) OR the requester (direction=request).
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), default=ProjectRole.member.value, nullable=False)
+    direction: Mapped[str] = mapped_column(
+        String(16), default=InvitationDirection.invite.value, nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default=InvitationStatus.pending.value, nullable=False, index=True,
+    )
+    # User who initiated this row. Null for self-requests where the user
+    # initiated themselves and we haven't created their User row yet.
+    invited_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    # Set when status moves to accepted/approved/rejected/revoked.
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None,
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "project_slug": self.project_slug,
+            "email": self.email,
+            "role": self.role,
+            "direction": self.direction,
+            "status": self.status,
+            "invited_by_user_id": self.invited_by_user_id,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+        }
+
+
+class Notification(Base):
+    """In-app notification. Phase 2c keeps these to invitations + approvals;
+    later phases (audit log, persona reveal alerts) can reuse the same table."""
+
+    __tablename__ = "notifications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id"), index=True, nullable=False,
+    )
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(String(1024), default="")
+    action_url: Mapped[str] = mapped_column(String(512), default="")
+    read_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "type": self.type,
+            "title": self.title,
+            "body": self.body,
+            "action_url": self.action_url,
+            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 # --- Init + tiny inline migrations ----------------------------------------
 
 def _ensure_user_columns() -> None:
@@ -286,6 +394,29 @@ def list_memberships_for_project(db: Session, project_slug: str) -> list[Project
         .filter(ProjectMembership.project_slug == project_slug)
         .all()
     )
+
+
+def push_notification(
+    db: Session,
+    *,
+    user_id: str,
+    type: str,
+    title: str,
+    body: str = "",
+    action_url: str = "",
+) -> Notification:
+    """Insert an in-app notification for a user. Caller commits."""
+    n = Notification(
+        user_id=str(user_id),
+        type=type,
+        title=title,
+        body=body,
+        action_url=action_url,
+    )
+    db.add(n)
+    db.commit()
+    db.refresh(n)
+    return n
 
 
 def upsert_membership(

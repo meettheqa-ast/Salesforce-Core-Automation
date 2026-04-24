@@ -65,6 +65,8 @@ def list_projects(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """The user's own projects. For discovering OTHER projects in the org
+    (Phase 2c), see GET /api/projects/discoverable."""
     all_names = project_manager.list_projects()
     if current_user.is_admin or current_user.global_role == "admin":
         return all_names
@@ -84,6 +86,44 @@ def list_projects(
         if n not in membership_slugs and project_manager.get_project_owner(n) == current_user.id:
             upsert_membership(db, project_slug=n, user_id=current_user.id, role=ProjectRole.pm)
     return visible
+
+
+@router.get("/discoverable")
+def list_discoverable_projects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Projects in the org the user is NOT a member of.
+
+    Each entry shows just enough metadata to decide whether to request access:
+    name, description, member_count. Per the locked architecture decision
+    (gap C5), these are visible to encourage collaboration; access still
+    requires a Request Access -> PM/TL approval handshake.
+    """
+    all_names = set(project_manager.list_projects())
+    membership_slugs = {
+        m.project_slug for m in list_memberships_for_user(db, current_user.id)
+    }
+    not_member = sorted(all_names - membership_slugs)
+    out = []
+    for slug in not_member:
+        # Skip legacy owned-by-them projects -- those show up under "My projects".
+        if project_manager.get_project_owner(slug) == current_user.id:
+            continue
+        try:
+            meta = project_manager.read_project_meta(slug)
+        except FileNotFoundError:
+            continue
+        # Member count (cheap; the membership table is small).
+        from ai_qa_portal.backend.services.db import list_memberships_for_project
+        members = list_memberships_for_project(db, slug)
+        out.append({
+            "name": slug,
+            "display_name": meta.get("display_name") or slug,
+            "description": meta.get("description") or "",
+            "member_count": len(members),
+        })
+    return out
 
 
 @router.get("/registry/{project_name}")

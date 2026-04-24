@@ -6,7 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
-import { api, type MemberOut } from "@/lib/api";
+import { api, type MemberOut, type InvitationRow } from "@/lib/api";
 import { useMe, membershipFor, roleAtLeast } from "@/lib/useMe";
 
 const ROLE_LABEL: Record<MemberOut["role"], string> = {
@@ -36,6 +36,9 @@ export default function ProjectMembersPage({
   const canManageMembers = roleAtLeast(myRole, "lead"); // TL can add, PM can add+change+remove
   const canChangeOrRemove = roleAtLeast(myRole, "pm");
   const canGrantPm = roleAtLeast(myRole, "pm");
+  const canSeeInvitations = roleAtLeast(myRole, "lead");
+
+  const [invitations, setInvitations] = useState<InvitationRow[]>([]);
 
   const load = () => {
     setLoading(true);
@@ -43,24 +46,63 @@ export default function ProjectMembersPage({
       .then((rows) => { setMembers(rows); setError(""); })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : "Failed to load members"))
       .finally(() => setLoading(false));
+    if (canSeeInvitations) {
+      api.projects.listInvitations(name).then(setInvitations).catch(() => {});
+    }
   };
 
   useEffect(() => {
     if (!me) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me, name]);
+  }, [me, name, canSeeInvitations]);
+
+  const handleApprove = async (id: string) => {
+    setError("");
+    try {
+      await api.invitations.approve(id);
+      load();
+      refresh();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to approve");
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!confirm("Reject this request/invite?")) return;
+    setError("");
+    try {
+      await api.invitations.reject(id);
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to reject");
+    }
+  };
+
+  const handleRevoke = async (id: string) => {
+    if (!confirm("Revoke this pending invite?")) return;
+    setError("");
+    try {
+      await api.invitations.revoke(id);
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to revoke");
+    }
+  };
 
   const handleAdd = async () => {
     if (!addEmail.trim()) { setError("Email is required"); return; }
     setAdding(true); setError("");
     try {
-      await api.projects.addMember(name, { email: addEmail.trim(), role: addRole });
+      // Send an invitation. If the user already exists they get an in-app
+      // notification; if not, the invite waits until they sign in for the
+      // first time and they auto-accept on first login.
+      await api.projects.invite(name, { email: addEmail.trim(), role: addRole });
       setAddEmail(""); setAddRole("member"); setShowAdd(false);
       load();
       refresh();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to add member");
+      setError(e instanceof Error ? e.message : "Failed to send invitation");
     } finally {
       setAdding(false);
     }
@@ -179,13 +221,55 @@ export default function ProjectMembersPage({
                 </div>
               </div>
               <p className="text-xs text-slate-500 mt-3">
-                The user must have signed in to the portal at least once before they can be added.
-                Email-invite for new users lands in the next phase.
+                Sends an invitation. If the invitee has already signed in, they get an in-app notification.
+                Otherwise, the invite is waiting and they'll be auto-added on their first login.
               </p>
             </AnimatedCard>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Pending invitations + access requests */}
+      {canSeeInvitations && invitations.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">
+            Pending invitations &amp; access requests
+          </h3>
+          <div className="space-y-2">
+            {invitations.map((inv) => {
+              const isRequest = inv.direction === "request";
+              return (
+                <AnimatedCard key={inv.id}>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white truncate">
+                        {inv.email}
+                        <span className="ml-2 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200">
+                          {isRequest ? "Requested access" : "Invited"}
+                        </span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-slate-300">
+                          {ROLE_LABEL[inv.role]}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Status: {inv.status}{inv.expires_at ? ` · expires ${new Date(inv.expires_at).toLocaleDateString()}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {isRequest ? (
+                        <button onClick={() => handleApprove(inv.id)} className="text-xs px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-500">Approve</button>
+                      ) : (
+                        <button onClick={() => handleRevoke(inv.id)} className="text-xs px-3 py-1.5 rounded glass text-slate-300 hover:text-white">Revoke</button>
+                      )}
+                      <button onClick={() => handleReject(inv.id)} className="text-xs px-3 py-1.5 rounded text-slate-400 hover:text-red-400">Reject</button>
+                    </div>
+                  </div>
+                </AnimatedCard>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {loading && !members ? (
         <div className="flex justify-center py-16">

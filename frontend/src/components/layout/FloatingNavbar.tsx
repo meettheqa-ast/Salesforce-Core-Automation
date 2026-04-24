@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import UserMenu from "./UserMenu";
+import NotificationsBell from "./NotificationsBell";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: "🏠" },
@@ -64,6 +65,7 @@ export default function FloatingNavbar() {
       })}
 
       <div className="h-7 w-px bg-white/10 shrink-0 ml-1" />
+      <NotificationsBell />
       <UserMenu />
     </motion.nav>
   );
