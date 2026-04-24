@@ -233,6 +233,81 @@ class ProjectInvitation(Base):
         }
 
 
+class RunRecord(Base):
+    """One row per Robot Framework execution. The actual artefacts (log.html,
+    report.html, output.xml, screenshots) still live on disk under Results/;
+    this table is the index plus attribution."""
+
+    __tablename__ = "runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_slug: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    run_folder: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    triggered_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True,
+    )
+    persona_used_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    persona_owner_at_time: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="started", nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None,
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "project_slug": self.project_slug,
+            "run_folder": self.run_folder,
+            "triggered_by_user_id": self.triggered_by_user_id,
+            "persona_used_id": self.persona_used_id,
+            "persona_owner_at_time": self.persona_owner_at_time,
+            "status": self.status,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
+
+
+class AuditLog(Base):
+    """Append-only audit trail for security-relevant actions.
+
+    Used by the Admin Console (Phase 2f) and is implicitly populated by
+    helpers across the backend (`log_action()` in services/audit.py).
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True,
+    )
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_id: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    metadata_json: Mapped[str] = mapped_column(String(2048), default="")
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "action": self.action,
+            "target_type": self.target_type,
+            "target_id": self.target_id,
+            "metadata_json": self.metadata_json,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
 class Notification(Base):
     """In-app notification. Phase 2c keeps these to invitations + approvals;
     later phases (audit log, persona reveal alerts) can reuse the same table."""

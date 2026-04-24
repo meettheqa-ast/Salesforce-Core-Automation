@@ -21,8 +21,14 @@ from ..models.persona import RunRequest, RunResponse
 from ..models.test_case import TestCase, TestCaseStatus
 from ..models.user_story import UserStory
 from ..routers.personas import load_personas_for_user
+from ..services.audit import log_action
 from ..services.auth import get_current_user
-from ..services.db import User
+from ..services.db import (
+    RunRecord,
+    User,
+    get_db,
+    list_memberships_for_user,
+)
 from ..services.credential_service import CredentialService
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
@@ -293,8 +299,22 @@ def _parse_output_xml_with_duration(output_xml: Path) -> tuple[int, int, int, fl
     return _shared_parse_output_xml(output_xml)
 
 
+def _extract_project_slug_from_test_path(test_path: Path) -> str | None:
+    """Best-effort: pull the project slug out of a Saved_Projects/<slug>/Tests/... path."""
+    parts = test_path.resolve().parts
+    if "Saved_Projects" in parts:
+        i = parts.index("Saved_Projects")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return None
+
+
 @exec_router.post("/execute", response_model=ExecuteResponse)
-def execute_robot(body: ExecuteRequest):
+def execute_robot(
+    body: ExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
     """Run a single Robot suite synchronously and return parsed results."""
     test_path = Path(body.test_path)
     if not test_path.is_file():
@@ -310,6 +330,29 @@ def execute_robot(body: ExecuteRequest):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = RESULTS_ROOT / f"ui_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Phase 2e: stamp a RunRecord before launching so the run shows up in the
+    # project's filtered run history. project_slug derived from test_path.
+    project_slug = _extract_project_slug_from_test_path(test_path) or ""
+    run_record = RunRecord(
+        project_slug=project_slug,
+        run_folder=out_dir.name,
+        triggered_by_user_id=current_user.id,
+        status="started",
+    )
+    try:
+        db.add(run_record)
+        db.commit()
+        db.refresh(run_record)
+    except Exception:
+        db.rollback()
+        run_record = None
+
+    log_action(
+        db, user=current_user,
+        action="run_started", target_type="run", target_id=out_dir.name,
+        metadata={"project_slug": project_slug, "test": test_path.name},
+    )
 
     cmd = [
         sys.executable, "-m", "robot",
@@ -352,6 +395,20 @@ def execute_robot(body: ExecuteRequest):
     report_html = out_dir / "report.html"
     passed, failed, skipped = _parse_output_xml(output_xml)
     status = "PASS" if completed.returncode == 0 and failed == 0 else "FAIL"
+
+    # Update the RunRecord with terminal status + finished_at.
+    if run_record is not None:
+        try:
+            run_record.status = status
+            run_record.finished_at = datetime.now()
+            db.commit()
+        except Exception:
+            db.rollback()
+    log_action(
+        db, user=current_user,
+        action="run_finished", target_type="run", target_id=out_dir.name,
+        metadata={"status": status, "passed": passed, "failed": failed, "duration_s": duration},
+    )
 
     error_message = None
     if completed.returncode != 0 and not output_xml.exists():
@@ -504,17 +561,57 @@ def execute_robot_stream(
 
 
 @exec_router.get("/latest")
-def latest_runs(limit: int = Query(50, ge=1, le=500)):
-    """Return recent UI run summaries from the configured RESULTS_DIR."""
+def latest_runs(
+    limit: int = Query(50, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db),
+):
+    """Return recent UI run summaries from the configured RESULTS_DIR.
+
+    Phase 2e: scoped by project membership.
+      - Admin sees all runs (RunRecord-tagged or legacy on-disk-only).
+      - Project members see runs in projects they're a member of.
+      - Legacy on-disk runs without a RunRecord row are admin-only (they
+        were created before the SQL run table existed; nothing in their
+        on-disk metadata identifies which project they belong to).
+    """
     results_root = RESULTS_ROOT
     if not results_root.is_dir():
         return {"runs": []}
+
+    is_admin = current_user.is_admin or current_user.global_role == "admin"
+    member_slugs = (
+        None  # placeholder; only computed for non-admins
+        if is_admin
+        else {m.project_slug for m in list_memberships_for_user(db, current_user.id)}
+    )
+
+    # Index of run_folder -> RunRecord (only the slugs we care about).
+    record_index: dict[str, RunRecord] = {
+        r.run_folder: r
+        for r in db.query(RunRecord)
+        .order_by(RunRecord.started_at.desc())
+        .limit(2000)
+        .all()
+    }
+
     rows = []
     for run_dir in sorted(
         (p for p in results_root.iterdir() if p.is_dir()),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
-    )[:limit]:
+    ):
+        if len(rows) >= limit:
+            break
+
+        rec = record_index.get(run_dir.name)
+        if not is_admin:
+            # Membership-scoped filter for non-admins.
+            if rec is None:
+                continue
+            if rec.project_slug not in (member_slugs or set()):
+                continue
+
         passed, failed, skipped, duration_s = _shared_parse_output_xml(run_dir / "output.xml")
         total = passed + failed + skipped
         status = "PASS" if total > 0 and failed == 0 else ("FAIL" if failed > 0 else "EMPTY")
@@ -529,6 +626,8 @@ def latest_runs(limit: int = Query(50, ge=1, le=500)):
             "status": status,
             "log_html": str(run_dir / "log.html") if (run_dir / "log.html").is_file() else None,
             "report_html": str(run_dir / "report.html") if (run_dir / "report.html").is_file() else None,
+            "project_slug": rec.project_slug if rec else None,
+            "triggered_by_user_id": rec.triggered_by_user_id if rec else None,
         })
     return {"runs": rows}
 
