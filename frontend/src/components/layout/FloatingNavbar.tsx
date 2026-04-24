@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import UserMenu from "./UserMenu";
 import NotificationsBell from "./NotificationsBell";
+import { useMe } from "@/lib/useMe";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: "🏠" },
@@ -21,8 +22,13 @@ const NAV_ITEMS = [
   { href: "/about", label: "About", icon: "ℹ️" },
 ];
 
+const ADMIN_ITEM = { href: "/admin", label: "Admin", icon: "🛡️" };
+
 export default function FloatingNavbar() {
   const pathname = usePathname();
+  const { me } = useMe();
+  const showAdmin = !!me?.is_admin;
+  const items = showAdmin ? [...NAV_ITEMS, ADMIN_ITEM] : NAV_ITEMS;
 
   return (
     <motion.nav
@@ -39,7 +45,7 @@ export default function FloatingNavbar() {
 
       <div className="h-7 w-px bg-white/10 shrink-0" />
 
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const isActive = pathname === item.href;
         return (
           <Link key={item.href} href={item.href} className="shrink-0">

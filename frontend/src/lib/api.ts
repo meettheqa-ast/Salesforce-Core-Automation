@@ -256,6 +256,50 @@ export interface PersonaPublic {
   can_view_username: boolean;
 }
 
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  is_admin: boolean;
+  global_role: "admin" | "pm" | "tl" | "user";
+  is_active: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+  membership_count: number;
+}
+
+export interface AdminUserDetail extends AdminUser {
+  memberships: Array<{
+    id: string;
+    project_slug: string;
+    user_id: string;
+    role: "pm" | "lead" | "member";
+    created_at: string | null;
+  }>;
+}
+
+export interface AdminProject {
+  name: string;
+  display_name: string;
+  description: string;
+  member_count: number;
+  pm_count: number;
+  pms: Array<{ user_id: string; email: string; name: string }>;
+}
+
+export interface AuditLogRow {
+  id: string;
+  user_id: string | null;
+  user_email?: string;
+  user_name?: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  metadata_json: string;
+  timestamp: string | null;
+}
+
 export const api = {
   me: () => apiFetch<MeResponse>("/api/me"),
   projects: {
@@ -351,6 +395,41 @@ export const api = {
       apiFetch<NotificationRow>(`/api/me/notifications/${id}/read`, { method: "POST" }),
     markAllRead: () =>
       apiFetch<{ marked_read: number }>("/api/me/notifications/read-all", { method: "POST" }),
+  },
+  admin: {
+    listUsers: (q?: string) =>
+      apiFetch<AdminUser[]>(`/api/admin/users${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+    getUser: (id: string) =>
+      apiFetch<AdminUserDetail>(`/api/admin/users/${encodeURIComponent(id)}`),
+    patchUser: (id: string, body: { global_role?: string; is_active?: boolean }) =>
+      apiFetch<AdminUser>(`/api/admin/users/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    revokeSession: (id: string) =>
+      apiFetch<{ user_id: string; session_revoked_at: string }>(
+        `/api/admin/users/${encodeURIComponent(id)}/revoke-session`,
+        { method: "POST" },
+      ),
+    transferProjects: (id: string, toUserId: string) =>
+      apiFetch<{ transferred: string[]; count: number }>(
+        `/api/admin/users/${encodeURIComponent(id)}/transfer-projects`,
+        { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) },
+      ),
+    listProjects: () => apiFetch<AdminProject[]>("/api/admin/projects"),
+    membershipMatrix: () =>
+      apiFetch<Array<{ user_id: string; email: string; name: string; project_slug: string; role: string }>>(
+        "/api/admin/membership-matrix",
+      ),
+    audit: (params?: { user_id?: string; action?: string; target_type?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.user_id) q.set("user_id", params.user_id);
+      if (params?.action) q.set("action", params.action);
+      if (params?.target_type) q.set("target_type", params.target_type);
+      if (params?.limit) q.set("limit", String(params.limit));
+      const s = q.toString();
+      return apiFetch<AuditLogRow[]>(`/api/admin/audit${s ? `?${s}` : ""}`);
+    },
   },
   orgs: {
     list: (projectId?: string) =>

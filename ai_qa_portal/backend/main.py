@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from .routers import (
+    admin,
     analytics,
     catalog,
     generate,
@@ -90,6 +91,7 @@ app.include_router(locators.router)
 app.include_router(user_stories.router)
 app.include_router(user_stories.test_cases_router)
 app.include_router(user_stories.tags_router)
+app.include_router(admin.router)
 
 results_dir = Path(settings.results_dir)
 results_dir.mkdir(parents=True, exist_ok=True)
