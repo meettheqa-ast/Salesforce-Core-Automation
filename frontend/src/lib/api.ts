@@ -239,6 +239,23 @@ export interface NotificationRow {
   created_at: string | null;
 }
 
+export interface PersonaPublic {
+  id: string;
+  project_id: string;
+  org_id: string;
+  name: string;
+  username: string;            // empty string if you don't have view rights
+  role_profile: string | null;
+  is_default: boolean;
+  creator_user_id: string;
+  visibility: "private" | "public";
+  credential_version: number;
+  credentials_updated_at: string | null;
+  is_mine: boolean;
+  can_edit_credentials: boolean;
+  can_view_username: boolean;
+}
+
 export const api = {
   me: () => apiFetch<MeResponse>("/api/me"),
   projects: {
@@ -345,8 +362,39 @@ export const api = {
       if (projectId) q.set("project_id", projectId);
       if (orgId) q.set("org_id", orgId);
       const s = q.toString();
-      return apiFetch<any[]>(`/personas${s ? `?${s}` : ""}`);
+      return apiFetch<PersonaPublic[]>(`/personas${s ? `?${s}` : ""}`);
     },
+    get: (id: string) => apiFetch<PersonaPublic>(`/personas/${encodeURIComponent(id)}`),
+    create: (body: {
+      project_id: string;
+      org_id: string;
+      name: string;
+      username: string;
+      password: string;
+      role_profile?: string;
+      is_default?: boolean;
+      visibility?: "private" | "public";
+    }) =>
+      apiFetch<PersonaPublic>("/personas", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; role_profile?: string; is_default?: boolean; visibility?: "private" | "public" }) =>
+      apiFetch<PersonaPublic>(`/personas/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    rotate: (id: string, body: { username: string; password: string }) =>
+      apiFetch<PersonaPublic>(`/personas/${encodeURIComponent(id)}/rotate`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    /** Reveal plaintext credentials. Caller must obtain a fresh Google ID token
+     *  via NextAuth.signIn("google", { prompt: "login" }) and pass it here. */
+    reveal: (id: string, reAuthToken: string) =>
+      apiFetch<{ username: string; password: string; revealed_at: string }>(
+        `/personas/${encodeURIComponent(id)}/reveal`,
+        { method: "POST", body: JSON.stringify({ re_auth_token: reAuthToken }) },
+      ),
+    delete: (id: string) =>
+      apiFetch<void>(`/personas/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   userStories: {
     create: (data: { project_id: string; title: string; description: string }) =>
