@@ -34,10 +34,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libxkbcommon0 \
       libpangocairo-1.0-0 \
       libasound2 \
+      libtk8.6 \
+      libtcl8.6 \
    && rm -rf /var/lib/apt/lists/*
 
+# BACKEND_IN_CONTAINER lets runs.py force --headless=new + --no-sandbox even
+# when the caller asks for headed mode (no display inside the container).
+# CONTAINER_BROWSER_BINARY is read by Resources/Common/GlobalKeywords.robot to
+# point Selenium at the system chromium binary (the default search misses it).
+# SE_OFFLINE keeps Selenium Manager from trying to download chromedriver from
+# googlechromelabs.github.io -- we already have /usr/bin/chromedriver.
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROMEDRIVER_PATH=/usr/bin/chromedriver \
+    BACKEND_IN_CONTAINER=1 \
+    CONTAINER_BROWSER_BINARY=/usr/bin/chromium \
+    SE_OFFLINE=true \
     WDM_LOCAL=1
 
 # --- Python deps -----------------------------------------------------------

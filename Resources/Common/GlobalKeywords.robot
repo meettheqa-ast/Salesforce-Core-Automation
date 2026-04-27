@@ -18,13 +18,22 @@ ${MFA_PAUSE_FOR_MANUAL_COMPLETION}=    ${FALSE}
 
 *** Keywords ***
 Begin Web Test
-    [Documentation]    The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs.
+    [Documentation]    The Begin Web Test setup initializes the testing environment by opening a blank page in the Chrome browser, maximizing the browser window for better visibility, and configuring Selenium with a 10-second timeout and implicit wait to ensure proper handling of element loading and interactions. Pass variable headless=true (e.g. robot -v headless:true) to run Chrome in headless mode for CI or background runs. When run inside the backend Docker image (BACKEND_IN_CONTAINER=1), runs.py forces headless=true and injects CONTAINER_BROWSER_BINARY=/usr/bin/chromium so Selenium can find the Debian chromium binary.
     [Tags]    setup
     ${headless_raw}=    Get Variable Value    ${headless}    false
     ${headless_lc}=    Convert To Lower Case    ${headless_raw}
     ${headless_lc}=    Strip String    ${headless_lc}
+    ${browser_bin}=    Get Variable Value    ${CONTAINER_BROWSER_BINARY}    ${EMPTY}
     IF    '${headless_lc}' == 'true'
-        Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
+        IF    '${browser_bin}' != '${EMPTY}'
+            # Containerized run: point Selenium at the Debian chromium binary
+            # and add --no-sandbox / --disable-dev-shm-usage. Without these,
+            # Chrome inside the container immediately crashes with
+            # "session not created: Chrome instance exited".
+            Open Browser    about:blank    chrome    options=binary_location=r'${browser_bin}';add_argument("--headless=new");add_argument("--no-sandbox");add_argument("--disable-dev-shm-usage");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
+        ELSE
+            Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
+        END
         Set Window Size    1920    1080
     ELSE
         Open Browser    about:blank    chrome    options=add_argument("--disable-notifications")
