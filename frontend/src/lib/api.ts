@@ -15,12 +15,7 @@ async function _fetchJwt(): Promise<string | null> {
   _inFlight = (async () => {
     try {
       const r = await fetch("/api/auth/jwt", { credentials: "include", cache: "no-store" });
-      if (!r.ok) {
-        // Do NOT cache null -- a 401 here usually means "not signed in yet" or
-        // "session refresh pending". Caching null would deny every subsequent
-        // call until the page reloads. Let the next caller retry.
-        return null;
-      }
+      if (!r.ok) return null;
       const text = (await r.text()).trim();
       if (!text) return null;
       _cachedToken = text;
@@ -45,15 +40,25 @@ let _signoutInFlight = false;
 async function _recoverFromStuckAuth(fromPath: string): Promise<void> {
   if (typeof window === "undefined") return;
   if (_signoutInFlight) return;
+
+  // CRITICAL: never trigger the recovery flow when we're already on /login.
+  // Without this guard, the navbar's useMe() fires api.me() on every page
+  // (including /login itself) -> gets 401 -> we'd redirect to /login ->
+  // navbar mounts again -> useMe() fires -> infinite loop.
+  // Anything that 401s on /login should just fail silently; the user is
+  // already in the right place to recover by clicking Sign in.
+  if (fromPath.startsWith("/login")) {
+    clearAuthCache();
+    return;
+  }
+
   _signoutInFlight = true;
   try {
-    // Dynamic import so this server-incompatible call doesn't pull into SSR.
     const { signOut } = await import("next-auth/react");
     await signOut({ redirect: false });
   } catch {
-    // If signOut blew up for any reason, fall through to the hard redirect
-    // anyway -- worst case the user lands on /login and sees the bouncer
-    // again, which is no worse than the current state.
+    // If signOut blew up, fall through and bounce anyway -- worst case
+    // /login renders the bouncer once, which is no worse than current state.
   }
   clearAuthCache();
   window.location.href = `/login?from=${encodeURIComponent(fromPath)}&reason=expired`;
@@ -512,8 +517,24 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(data),
       }),
+    /** AI-generates draft test cases AND persists them as status=draft.
+     *  Frontend should refetch testCases.list(id) afterwards to get the
+     *  canonical rows with their server-assigned ids. */
     generate: (id: string) =>
       apiFetch<any>(`/user-stories/${encodeURIComponent(id)}/generate`, {
+        method: "POST",
+        body: "{}",
+      }),
+    /** Materialises one Robot script per approved non-stale test case under
+     *  Saved_Projects/<slug>/Tests/Generated/story_<short>/. */
+    buildScripts: (id: string) =>
+      apiFetch<{
+        story_id: string;
+        project_slug: string | null;
+        output_dir: string;
+        built: Array<{ test_case_id: string; script_path: string; bytes_written: number }>;
+        skipped: Array<{ test_case_id: string; title: string; reason: string }>;
+      }>(`/user-stories/${encodeURIComponent(id)}/build-scripts`, {
         method: "POST",
         body: "{}",
       }),
@@ -521,6 +542,20 @@ export const api = {
   testCases: {
     list: (userStoryId: string) =>
       apiFetch<any[]>(`/test-cases?user_story_id=${encodeURIComponent(userStoryId)}`),
+    /** Per-case status flip: "approved" | "rejected" | "draft". */
+    patch: (id: string, body: { status: "approved" | "rejected" | "draft" }) =>
+      apiFetch<any>(`/test-cases/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    /** Returns the saved Robot script content (404 if not built yet). */
+    script: (id: string) =>
+      apiFetch<{
+        test_case_id: string;
+        path: string;
+        content: string;
+        built_at: string | null;
+      }>(`/test-cases/${encodeURIComponent(id)}/script`),
     batchApprove: (data: {
       user_story_id: string;
       approved: Array<{

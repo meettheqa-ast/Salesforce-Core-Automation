@@ -1,15 +1,29 @@
 "use client";
 
 import useSWR from "swr";
+import { useSession } from "next-auth/react";
 import { api, type MeResponse, type MembershipRow } from "@/lib/api";
 
 const AUTH_DISABLED =
   (process.env.NEXT_PUBLIC_AUTH_DISABLED || "").toLowerCase() === "true";
 
-/** Cached fetch of /api/me. Returns the current user + memberships. */
+/** Cached fetch of /api/me. Returns the current user + memberships.
+ *
+ *  Gated on NextAuth session status to avoid firing api.me() (and the
+ *  apiFetch -> 401 -> recovery cascade) on pages where we're not signed in
+ *  yet (most importantly /login, which mounts the navbar). */
 export function useMe() {
+  const { status } = useSession();
+
+  // SWR `key=null` short-circuits the fetcher entirely.
+  const key = AUTH_DISABLED
+    ? "me-auth-disabled"
+    : status === "authenticated"
+      ? "me"
+      : null;
+
   const { data, error, isLoading, mutate } = useSWR<MeResponse>(
-    AUTH_DISABLED ? "me-auth-disabled" : "me",
+    key,
     () => api.me(),
     {
       revalidateOnFocus: false,

@@ -43,8 +43,6 @@ export async function GET(req: Request) {
 
   const googleIdToken = token.googleIdToken as string | undefined;
   if (!googleIdToken) {
-    // Older sessions issued before we started capturing the id_token won't
-    // have one. Force the client to sign in again.
     return new NextResponse("session has no google id_token; sign in again", {
       status: 401,
     });

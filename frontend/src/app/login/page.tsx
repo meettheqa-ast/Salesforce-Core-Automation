@@ -19,6 +19,7 @@ export default async function LoginPage({
   // suppress the auto-redirect when the bouncer set ?reason=expired so the
   // user actually gets to see the sign-in button and recover.
   const reason = typeof params.reason === "string" ? params.reason : null;
+
   if (session?.user && reason !== "expired") {
     const from = typeof params.from === "string" ? params.from : "/";
     redirect(from && from !== "/login" ? from : "/");
