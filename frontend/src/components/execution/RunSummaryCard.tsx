@@ -38,10 +38,12 @@ export default function RunSummaryCard({ runFolder }: RunSummaryCardProps) {
   }
 
   const arts = summary.artefacts;
+  // NOTE: the key MUST include `download` because each artifact is rendered
+  // twice (View + Download), so a key built only from label+filename collides.
   const link = (filename: string | null, label: string, download: boolean) =>
     filename ? (
       <a
-        key={`${label}-${filename}`}
+        key={`${download ? "dl" : "view"}-${label}-${filename}`}
         href={api.runs.fileUrl(runFolder, filename, { download })}
         target={download ? undefined : "_blank"}
         rel={download ? undefined : "noreferrer"}
