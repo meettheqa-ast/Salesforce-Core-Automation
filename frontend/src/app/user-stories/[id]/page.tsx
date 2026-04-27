@@ -1,21 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 
-type CardState = "pending" | "approved" | "rejected";
-
-type ReviewCard = {
-  test_case_id: string;
+type TestCaseRow = {
+  id: string;
+  user_story_id: string;
+  project_id: string;
   title: string;
   steps: string[];
   expected_result: string;
-  preconditions: string;
+  preconditions: string | null;
+  status: "draft" | "approved" | "rejected";
+  stale: boolean;
   tags: string[];
-  state: CardState;
+  created_at: string;
+  script_path?: string | null;
+  script_built_at?: string | null;
 };
 
 export default function UserStoryDetailPage() {
@@ -23,10 +27,12 @@ export default function UserStoryDetailPage() {
   const id = decodeURIComponent(params.id as string);
 
   const [story, setStory] = useState<any>(null);
-  const [tcs, setTcs] = useState<any[]>([]);
-  const [tags, setTags] = useState<any[]>([]);
+  const [tcs, setTcs] = useState<TestCaseRow[]>([]);
   const [genLoading, setGenLoading] = useState(false);
-  const [cards, setCards] = useState<ReviewCard[]>([]);
+  const [buildLoading, setBuildLoading] = useState(false);
+  const [statusBusy, setStatusBusy] = useState<Record<string, boolean>>({});
+  const [scriptOpen, setScriptOpen] = useState<Record<string, string>>({});
+  const [scriptLoading, setScriptLoading] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [editOpen, setEditOpen] = useState(false);
@@ -42,10 +48,14 @@ export default function UserStoryDetailPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (!story?.project_id) return;
-    api.tags.list(story.project_id).then(setTags).catch(() => setTags([]));
-  }, [story?.project_id]);
+  const counts = useMemo(() => {
+    const draft = tcs.filter((t) => t.status === "draft" && !t.stale).length;
+    const approved = tcs.filter((t) => t.status === "approved" && !t.stale).length;
+    const rejected = tcs.filter((t) => t.status === "rejected").length;
+    const stale = tcs.filter((t) => t.stale).length;
+    const built = tcs.filter((t) => !!t.script_path).length;
+    return { draft, approved, rejected, stale, built, total: tcs.length };
+  }, [tcs]);
 
   const generate = async () => {
     setGenLoading(true);
@@ -53,17 +63,9 @@ export default function UserStoryDetailPage() {
     setMsg("");
     try {
       const res = await api.userStories.generate(id);
-      const next: ReviewCard[] = (res.generated || []).map((g: any) => ({
-        test_case_id: crypto.randomUUID(),
-        title: g.title,
-        steps: [...(g.steps || [])],
-        expected_result: g.expected_result || "",
-        preconditions: g.preconditions || "",
-        tags: [...(g.suggested_tags || [])],
-        state: "pending" as CardState,
-      }));
-      setCards(next);
-      setMsg(`Generated ${next.length} draft test case(s). Review and approve below.`);
+      const fresh = await api.testCases.list(id);
+      setTcs(fresh);
+      setMsg(`Generated ${(res.generated || []).length} draft test case(s). Review and approve below.`);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Generation failed");
     } finally {
@@ -71,27 +73,57 @@ export default function UserStoryDetailPage() {
     }
   };
 
-  const submitApproved = async () => {
-    const approved = cards.filter((c) => c.state === "approved");
-    if (!approved.length) return;
+  const setCaseStatus = async (
+    tcId: string,
+    status: "approved" | "rejected" | "draft",
+  ) => {
+    setStatusBusy((s) => ({ ...s, [tcId]: true }));
     setErr("");
     try {
-      await api.testCases.batchApprove({
-        user_story_id: id,
-        approved: approved.map((c) => ({
-          test_case_id: c.test_case_id,
-          title: c.title,
-          steps: c.steps,
-          expected_result: c.expected_result,
-          preconditions: c.preconditions || null,
-          tags: c.tags,
-        })),
-      });
-      setCards([]);
-      setMsg("Saved approved test cases.");
-      load();
+      const updated = await api.testCases.patch(tcId, { status });
+      setTcs((prev) => prev.map((t) => (t.id === tcId ? { ...t, ...updated } : t)));
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Save failed");
+      setErr(e instanceof Error ? e.message : "Status update failed");
+    } finally {
+      setStatusBusy((s) => ({ ...s, [tcId]: false }));
+    }
+  };
+
+  const buildScripts = async () => {
+    setBuildLoading(true);
+    setErr("");
+    setMsg("");
+    try {
+      const res = await api.userStories.buildScripts(id);
+      const fresh = await api.testCases.list(id);
+      setTcs(fresh);
+      const skippedNote = res.skipped.length ? ` ${res.skipped.length} skipped.` : "";
+      setMsg(`Built ${res.built.length} script(s) under ${res.output_dir}.${skippedNote}`);
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Build failed");
+    } finally {
+      setBuildLoading(false);
+    }
+  };
+
+  const toggleScript = async (tcId: string) => {
+    if (scriptOpen[tcId] !== undefined) {
+      setScriptOpen((s) => {
+        const n = { ...s };
+        delete n[tcId];
+        return n;
+      });
+      return;
+    }
+    setScriptLoading((s) => ({ ...s, [tcId]: true }));
+    setErr("");
+    try {
+      const r = await api.testCases.script(tcId);
+      setScriptOpen((s) => ({ ...s, [tcId]: r.content }));
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not load script");
+    } finally {
+      setScriptLoading((s) => ({ ...s, [tcId]: false }));
     }
   };
 
@@ -119,9 +151,6 @@ export default function UserStoryDetailPage() {
     );
   }
 
-  const staleCount = tcs.filter((t) => t.stale).length;
-  const approvedCount = cards.filter((c) => c.state === "approved").length;
-
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       <Link href="/user-stories" className="text-sm text-slate-500 hover:text-purple-400 mb-4 inline-block">
@@ -133,12 +162,23 @@ export default function UserStoryDetailPage() {
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">{story.title}</h1>
             <p className="text-slate-400 whitespace-pre-wrap">{story.description}</p>
-            <div className="flex gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-3">
               <span className="text-xs px-2 py-0.5 rounded bg-purple-600/30 text-purple-200">v{story.version}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{story.status}</span>
-              {staleCount > 0 && (
+              {counts.stale > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded bg-amber-600/30 text-amber-200" title="Parent story was updated">
-                  {staleCount} stale TC(s)
+                  {counts.stale} stale
+                </span>
+              )}
+              <span className="text-xs px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-200">
+                {counts.approved} approved
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded bg-slate-700/40 text-slate-300">
+                {counts.draft} draft
+              </span>
+              {counts.built > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-200">
+                  {counts.built} script(s) built
                 </span>
               )}
             </div>
@@ -158,6 +198,15 @@ export default function UserStoryDetailPage() {
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 text-white text-sm font-semibold disabled:opacity-50"
             >
               {genLoading ? "Generating…" : "Generate test cases"}
+            </button>
+            <button
+              type="button"
+              disabled={buildLoading || counts.approved === 0}
+              onClick={buildScripts}
+              title={counts.approved === 0 ? "Approve at least one test case first" : "Materialise a Robot script per approved case"}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white text-sm font-semibold disabled:opacity-40"
+            >
+              {buildLoading ? "Building…" : `Generate scripts (${counts.approved})`}
             </button>
           </div>
         </div>
@@ -205,200 +254,167 @@ export default function UserStoryDetailPage() {
         )}
       </AnimatePresence>
 
-      {cards.length > 0 && (
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider">Review drafts</h2>
-          <button
-            type="button"
-            disabled={!approvedCount}
-            onClick={submitApproved}
-            className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40"
-          >
-            Submit approved ({approvedCount})
-          </button>
+      <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-3">
+        Test cases ({counts.total})
+      </h2>
+
+      {tcs.length === 0 ? (
+        <div className="glass p-6 text-sm text-slate-400 rounded-xl">
+          No test cases yet. Click <span className="text-purple-300">Generate test cases</span> to create drafts from the
+          story description. Drafts are saved automatically; you can approve, reject, or revise each one below.
+        </div>
+      ) : (
+        <div className="space-y-3 mb-10">
+          {tcs.map((t) => {
+            const busy = !!statusBusy[t.id];
+            const scriptShown = scriptOpen[t.id] !== undefined;
+            const borderClass =
+              t.status === "approved"
+                ? "border-emerald-500/40"
+                : t.status === "rejected"
+                  ? "border-red-500/30 opacity-60"
+                  : "border-white/10";
+            return (
+              <motion.div
+                key={t.id}
+                layout
+                className={`glass p-4 border-2 rounded-xl ${borderClass}`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-white text-sm font-semibold break-words">
+                      {t.title}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wide ${
+                          t.status === "approved"
+                            ? "bg-emerald-600/25 text-emerald-200"
+                            : t.status === "rejected"
+                              ? "bg-red-600/25 text-red-200"
+                              : "bg-slate-700/50 text-slate-300"
+                        }`}
+                      >
+                        {t.status}
+                      </span>
+                      {t.stale && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-600/25 text-amber-200">
+                          stale
+                        </span>
+                      )}
+                      {t.tags.map((x) => (
+                        <span
+                          key={x}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600/25 text-purple-200"
+                        >
+                          {x}
+                        </span>
+                      ))}
+                      {t.script_path && (
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-600/20 text-cyan-200"
+                          title={t.script_path}
+                        >
+                          script ready
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {t.status !== "approved" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setCaseStatus(t.id, "approved")}
+                        className="px-2.5 py-1 text-xs rounded bg-emerald-600 text-white disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {t.status !== "rejected" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setCaseStatus(t.id, "rejected")}
+                        className="px-2.5 py-1 text-xs rounded border border-red-400/40 text-red-300 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    )}
+                    {t.status !== "draft" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setCaseStatus(t.id, "draft")}
+                        title="Move back to draft"
+                        className="px-2.5 py-1 text-xs rounded glass text-slate-300 disabled:opacity-50"
+                      >
+                        Re-draft
+                      </button>
+                    )}
+                    {t.script_path && (
+                      <button
+                        type="button"
+                        disabled={!!scriptLoading[t.id]}
+                        onClick={() => toggleScript(t.id)}
+                        className="px-2.5 py-1 text-xs rounded bg-cyan-600/40 text-cyan-100 disabled:opacity-50"
+                      >
+                        {scriptLoading[t.id]
+                          ? "Loading…"
+                          : scriptShown
+                            ? "Hide script"
+                            : "View script"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {(t.preconditions || t.steps.length > 0 || t.expected_result) && (
+                  <details className="mt-2 text-xs text-slate-300">
+                    <summary className="cursor-pointer text-slate-500 hover:text-slate-300 select-none">
+                      Steps ({t.steps.length}) / Expected
+                    </summary>
+                    <div className="mt-2 pl-2 space-y-2">
+                      {t.preconditions && (
+                        <div>
+                          <span className="text-slate-500">Preconditions:</span>{" "}
+                          <span className="text-slate-300 whitespace-pre-wrap">{t.preconditions}</span>
+                        </div>
+                      )}
+                      {t.steps.length > 0 && (
+                        <ol className="list-decimal pl-5 space-y-1">
+                          {t.steps.map((s, i) => (
+                            <li key={i} className="text-slate-300">{s}</li>
+                          ))}
+                        </ol>
+                      )}
+                      {t.expected_result && (
+                        <div>
+                          <span className="text-slate-500">Expected:</span>{" "}
+                          <span className="text-slate-300 whitespace-pre-wrap">{t.expected_result}</span>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+
+                <AnimatePresence>
+                  {scriptShown && (
+                    <motion.pre
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="mt-3 bg-black/40 border border-cyan-900/40 rounded p-3 text-[11px] text-cyan-100 overflow-x-auto whitespace-pre"
+                    >
+                      {scriptOpen[t.id]}
+                    </motion.pre>
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            );
+          })}
         </div>
       )}
-
-      <div className="space-y-4 mb-10">
-        {cards.map((c, idx) => (
-          <motion.div
-            key={c.test_case_id}
-            layout
-            className={`glass p-4 border-2 rounded-xl ${
-              c.state === "approved"
-                ? "border-emerald-500/50"
-                : c.state === "rejected"
-                  ? "border-red-500/30 opacity-60 line-through"
-                  : "border-white/10"
-            }`}
-          >
-            <div className="flex justify-between gap-2 mb-2">
-              <input
-                className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white font-semibold"
-                value={c.title}
-                onChange={(e) => {
-                  const n = [...cards];
-                  n[idx] = { ...c, title: e.target.value };
-                  setCards(n);
-                }}
-              />
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  className="px-2 py-1 text-xs rounded border border-red-400/50 text-red-300"
-                  onClick={() => {
-                    const n = [...cards];
-                    n[idx] = { ...c, state: "rejected" };
-                    setCards(n);
-                  }}
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  className="px-2 py-1 text-xs rounded bg-emerald-600 text-white"
-                  onClick={() => {
-                    const n = [...cards];
-                    n[idx] = { ...c, state: "approved" };
-                    setCards(n);
-                  }}
-                >
-                  Approve
-                </button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              {c.steps.map((step, si) => (
-                <div key={si} className="flex gap-2">
-                  <span className="text-xs text-slate-500 w-6 pt-2">{si + 1}</span>
-                  <input
-                    className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-200"
-                    value={step}
-                    onChange={(e) => {
-                      const n = [...cards];
-                      const steps = [...n[idx].steps];
-                      steps[si] = e.target.value;
-                      n[idx] = { ...c, steps };
-                      setCards(n);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-xs text-slate-500 px-1"
-                    onClick={() => {
-                      const n = [...cards];
-                      const steps = n[idx].steps.filter((_, j) => j !== si);
-                      n[idx] = { ...c, steps };
-                      setCards(n);
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="text-xs text-purple-400"
-                onClick={() => {
-                  const n = [...cards];
-                  n[idx] = { ...c, steps: [...c.steps, ""] };
-                  setCards(n);
-                }}
-              >
-                + Step
-              </button>
-            </div>
-            <label className="block text-xs text-slate-500 mt-2">Expected result</label>
-            <textarea
-              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-200 min-h-[60px]"
-              value={c.expected_result}
-              onChange={(e) => {
-                const n = [...cards];
-                n[idx] = { ...c, expected_result: e.target.value };
-                setCards(n);
-              }}
-            />
-            <label className="block text-xs text-slate-500 mt-2">Preconditions</label>
-            <textarea
-              className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-200 min-h-[40px]"
-              value={c.preconditions}
-              onChange={(e) => {
-                const n = [...cards];
-                n[idx] = { ...c, preconditions: e.target.value };
-                setCards(n);
-              }}
-            />
-            <div className="mt-2 flex flex-wrap gap-2">
-              {tags.map((t) => {
-                const on = c.tags.includes(t.name);
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      const n = [...cards];
-                      const set = new Set(n[idx].tags);
-                      if (set.has(t.name)) set.delete(t.name);
-                      else set.add(t.name);
-                      n[idx] = { ...c, tags: [...set] };
-                      setCards(n);
-                    }}
-                    className={`text-xs px-2 py-1 rounded-full border ${
-                      on ? "border-purple-400 bg-purple-600/30 text-white" : "border-white/10 text-slate-400"
-                    }`}
-                  >
-                    {t.name}
-                  </button>
-                );
-              })}
-            </div>
-            <input
-              className="mt-2 w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-300"
-              placeholder="Add tags (comma-separated)"
-              onBlur={(e) => {
-                const extra = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                if (!extra.length) return;
-                const n = [...cards];
-                const set = new Set([...n[idx].tags, ...extra]);
-                n[idx] = { ...c, tags: [...set] };
-                setCards(n);
-                e.target.value = "";
-              }}
-            />
-          </motion.div>
-        ))}
-      </div>
-
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Saved test cases</h2>
-      <div className="overflow-x-auto glass rounded-xl">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-500 uppercase border-b border-white/10">
-            <tr>
-              <th className="p-3">Title</th>
-              <th className="p-3">Tags</th>
-              <th className="p-3">Status</th>
-              <th className="p-3">Stale</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tcs.map((t) => (
-              <tr key={t.id} className={t.stale ? "bg-amber-900/20" : ""} title={t.stale ? "Parent story was updated" : ""}>
-                <td className="p-3 text-slate-200">{t.title}</td>
-                <td className="p-3">
-                  <div className="flex flex-wrap gap-1">
-                    {(t.tags || []).map((x: string) => (
-                      <span key={x} className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600/25 text-purple-200">{x}</span>
-                    ))}
-                  </div>
-                </td>
-                <td className="p-3 text-slate-400">{t.status}</td>
-                <td className="p-3">{t.stale ? "Yes" : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {tcs.length === 0 && <p className="p-4 text-slate-500 text-sm">No saved test cases yet.</p>}
-      </div>
     </div>
   );
 }

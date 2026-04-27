@@ -26,6 +26,12 @@ class TestCase(BaseModel):
     stale: bool = False
     tags: list[str] = Field(default_factory=list)
     created_at: datetime
+    # Path (relative to repo root) to a saved Robot Framework script for this case.
+    # Populated by POST /user-stories/{id}/build-scripts; nullable so legacy rows
+    # and never-built cases stay valid. Run-by-story prefers this when present
+    # and falls back to building inline.
+    script_path: Optional[str] = None
+    script_built_at: Optional[datetime] = None
 
 
 class TestCaseApprove(BaseModel):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -67,6 +68,36 @@ logger = logging.getLogger("ai_qa_portal.runs")
 def _get_org(org_id):
     orgs = _store.read("orgs").get("items", [])
     return next((o for o in orgs if str(o["id"]) == str(org_id)), None)
+
+
+def _resolve_or_build_script(
+    tc: TestCase,
+    persona,
+    org_model: SalesforceOrg,
+    fallback_dir: Path,
+) -> Path:
+    """Pick a `.robot` file to run for this test case.
+
+    Order of preference:
+      1. `tc.script_path` materialised by /user-stories/{id}/build-scripts --
+         user has already inspected it, no LLM cost on every run.
+      2. Inline build via `TestCaseScriptBuilder` (legacy behaviour) written
+         under `fallback_dir`.
+
+    The saved script is always preferred when present and inside the repo.
+    """
+    if tc.script_path:
+        candidate = (REPO_ROOT / tc.script_path).resolve()
+        try:
+            candidate.relative_to(REPO_ROOT.resolve())
+        except ValueError:
+            candidate = None
+        if candidate and candidate.is_file():
+            return candidate
+    robot = _script_builder.build_robot_script(tc, persona, org_model)
+    path = fallback_dir / f"story_{tc.id.hex[:12]}.robot"
+    path.write_text(robot, encoding="utf-8")
+    return path
 
 
 @router.post("", response_model=RunResponse)
@@ -176,9 +207,7 @@ def run_tests_for_user_story(
     gen_dir = REPO_ROOT / "Tests" / "Generated"
     gen_dir.mkdir(parents=True, exist_ok=True)
     for tc in tcs:
-        robot = _script_builder.build_robot_script(tc, persona, org_model)
-        path = gen_dir / f"story_{tc.id.hex[:12]}.robot"
-        path.write_text(robot, encoding="utf-8")
+        path = _resolve_or_build_script(tc, persona, org_model, gen_dir)
         run_id, _log = _runner.run(
             str(path.resolve()),
             persona.username,
@@ -237,9 +266,7 @@ def run_tests_for_tag(
     gen_dir = REPO_ROOT / "Tests" / "Generated"
     gen_dir.mkdir(parents=True, exist_ok=True)
     for tc in tcs:
-        robot = _script_builder.build_robot_script(tc, persona, org_model)
-        path = gen_dir / f"story_{tc.id.hex[:12]}.robot"
-        path.write_text(robot, encoding="utf-8")
+        path = _resolve_or_build_script(tc, persona, org_model, gen_dir)
         run_id, _log = _runner.run(
             str(path.resolve()),
             persona.username,
@@ -361,8 +388,9 @@ def execute_robot(
         "--variable", f"sandboxUserNameInput:{body.username}",
         "--variable", f"sandboxPasswordInput:{body.password}",
     ]
-    if body.headless:
+    if _effective_headless(body.headless):
         cmd.extend(["--variable", "headless:true"])
+    cmd.extend(_container_browser_overrides())
     if body.include_tags:
         for tag in [t.strip() for t in body.include_tags.split(",") if t.strip()]:
             cmd.extend(["--include", tag])
@@ -435,6 +463,30 @@ def _sse(event: str, data: dict | str) -> str:
     return f"event: {event}\ndata: {safe}\n\n"
 
 
+def _is_in_container() -> bool:
+    """True when the backend is running inside our Docker image.
+
+    Set by the Dockerfile. Used to override caller-supplied headless=False
+    (Chrome can't open a window with no display) and to point Selenium at the
+    system chromium binary."""
+    return os.getenv("BACKEND_IN_CONTAINER", "").strip() not in ("", "0", "false", "False")
+
+
+def _container_browser_overrides() -> list[str]:
+    """Extra `--variable` args that GlobalKeywords.robot uses to reach the
+    in-container chromium binary. Returns [] when not in a container."""
+    if not _is_in_container():
+        return []
+    binary = os.getenv("CONTAINER_BROWSER_BINARY", "/usr/bin/chromium").strip()
+    return ["--variable", f"CONTAINER_BROWSER_BINARY:{binary}"]
+
+
+def _effective_headless(requested: bool) -> bool:
+    """Containerized backend has no display, so headed Chrome dies on launch.
+    Force headless regardless of what the caller asked for."""
+    return True if _is_in_container() else requested
+
+
 def _build_robot_cmd(
     test_path: Path,
     out_dir: Path,
@@ -452,8 +504,9 @@ def _build_robot_cmd(
         "--variable", f"sandboxUserNameInput:{username}",
         "--variable", f"sandboxPasswordInput:{password}",
     ]
-    if headless:
+    if _effective_headless(headless):
         cmd.extend(["--variable", "headless:true"])
+    cmd.extend(_container_browser_overrides())
     for tag in [t.strip() for t in include_tags.split(",") if t.strip()]:
         cmd.extend(["--include", tag])
     for tag in [t.strip() for t in exclude_tags.split(",") if t.strip()]:

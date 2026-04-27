@@ -55,6 +55,7 @@ from ai_qa_portal.backend.services.db import (
 )
 from ..models.persona import Persona, PersonaPublic, PersonaVisibility
 from ..services.credential_service import CredentialService
+from ..services.legacy_creds_sync import sync_project_from_config
 from ..storage.json_file_backend import JsonFileBackend
 
 router = APIRouter(
@@ -187,6 +188,15 @@ def list_personas(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Same legacy -> portal mirror as /orgs uses; ensures the bulk panel's
+    # persona dropdown populates after the user picks an org synthesised
+    # from config.json.
+    if project_id is not None:
+        try:
+            sync_project_from_config(project_id, current_user)
+        # pylint: disable-next=broad-exception-caught
+        except Exception:
+            pass  # never block a list call on a sync hiccup
     items = [Persona(**p) for p in _load()]
     items = [p for p in items if _can_see_persona_metadata(p, current_user, db)]
     if project_id:

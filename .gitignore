@@ -20,6 +20,9 @@ _local_data/
 .ruff_cache/
 .mypy_cache/
 
+# Cursor IDE workspace-local state (plans, agent transcripts)
+.cursor/
+
 # Runtime Salesforce credentials (written by run_test.py / app)
 Resources/TestData/EnvData.robot
 

@@ -11,6 +11,7 @@ from ai_qa_portal.backend.services.auth import (
 )
 from ai_qa_portal.backend.services.db import User
 from ..models.org import SalesforceOrg
+from ..services.legacy_creds_sync import sync_project_from_config
 from ..storage.json_file_backend import JsonFileBackend
 
 router = APIRouter(
@@ -41,6 +42,16 @@ def list_orgs(
     project_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
 ):
+    # Lazily mirror legacy Saved_Projects/<slug>/config.json envs into portal
+    # SalesforceOrg + Persona rows. The bulk-execution panel only reads the
+    # portal store, so without this sync a project configured the "normal"
+    # way (Workspace bar at top of Generate) shows an empty Org dropdown.
+    if project_id is not None:
+        try:
+            sync_project_from_config(project_id, current_user)
+        # pylint: disable-next=broad-exception-caught
+        except Exception:
+            pass  # never block a list call on a sync hiccup
     items = [SalesforceOrg(**o) for o in _load()]
     items = [o for o in items if _user_can_see(o, current_user)]
     if project_id:

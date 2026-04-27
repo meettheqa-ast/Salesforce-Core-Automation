@@ -1,16 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
+
+type StoryRow = {
+  id: string;
+  title: string;
+  version: number;
+};
+
+type CountsByStory = Record<string, { approved: number; total: number }>;
 
 export default function StoryExecutionPanel() {
   const [projects, setProjects] = useState<string[]>([]);
   const [projectId, setProjectId] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [stories, setStories] = useState<any[]>([]);
+  const [stories, setStories] = useState<StoryRow[]>([]);
   const [storyId, setStoryId] = useState("");
+  const [storyCounts, setStoryCounts] = useState<CountsByStory>({});
   const [tags, setTags] = useState<any[]>([]);
   const [tagName, setTagName] = useState("");
   const [orgs, setOrgs] = useState<any[]>([]);
@@ -18,7 +28,7 @@ export default function StoryExecutionPanel() {
   const [personas, setPersonas] = useState<any[]>([]);
   const [personaId, setPersonaId] = useState("");
   const [msg, setMsg] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useState<{ text: string; storyId?: string } | null>(null);
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => {});
@@ -38,10 +48,37 @@ export default function StoryExecutionPanel() {
         setStories([]);
         setTags([]);
         setOrgs([]);
+        setStoryCounts({});
       });
       return;
     }
-    api.userStories.list(projectId).then(setStories).catch(() => setStories([]));
+    api.userStories.list(projectId).then((rows: any[]) => {
+      const trimmed: StoryRow[] = rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        version: r.version,
+      }));
+      setStories(trimmed);
+      // Fetch test-case counts in parallel so the dropdown can show
+      // "(N approved)" -- saves the user a round-trip into each story
+      // just to find out which ones are runnable.
+      Promise.all(
+        trimmed.map((s) =>
+          api.testCases.list(s.id).then(
+            (tcs: any[]) => ({
+              id: s.id,
+              approved: tcs.filter((t: any) => t.status === "approved" && !t.stale).length,
+              total: tcs.length,
+            }),
+            () => ({ id: s.id, approved: 0, total: 0 }),
+          ),
+        ),
+      ).then((rows2) => {
+        const next: CountsByStory = {};
+        rows2.forEach((c) => { next[c.id] = { approved: c.approved, total: c.total }; });
+        setStoryCounts(next);
+      });
+    }).catch(() => setStories([]));
     api.tags.list(projectId).then(setTags).catch(() => setTags([]));
     api.orgs.list(projectId).then(setOrgs).catch(() => setOrgs([]));
   }, [projectId]);
@@ -54,9 +91,23 @@ export default function StoryExecutionPanel() {
     api.personas.list(projectId, orgId).then(setPersonas).catch(() => setPersonas([]));
   }, [projectId, orgId]);
 
+  const selectedStoryApproved = useMemo(() => {
+    if (!storyId) return undefined;
+    return storyCounts[storyId]?.approved;
+  }, [storyId, storyCounts]);
+
   const runStory = async () => {
-    setErr("");
+    setErr(null);
     setMsg("");
+    // Pre-flight: if we already know the story has 0 approved, surface the
+    // friendly message + deep link instead of round-tripping for a 400.
+    if (selectedStoryApproved === 0) {
+      setErr({
+        text: "This story has 0 approved test cases yet. Approve some, then come back.",
+        storyId,
+      });
+      return;
+    }
     try {
       const res = await api.runs.userStory(storyId, {
         org_id: orgId,
@@ -64,12 +115,16 @@ export default function StoryExecutionPanel() {
       });
       setMsg(`Started ${res.length} run(s).`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Run failed");
+      const text = e instanceof Error ? e.message : "Run failed";
+      // Backend's "No approved non-stale test cases" comes through verbatim;
+      // wrap it with a deep-link to the story so the user can fix it in one click.
+      const looksLikeNoApproved = /no approved/i.test(text);
+      setErr({ text, storyId: looksLikeNoApproved ? storyId : undefined });
     }
   };
 
   const runTag = async () => {
-    setErr("");
+    setErr(null);
     setMsg("");
     if (!tagName || !projectId) return;
     try {
@@ -80,7 +135,8 @@ export default function StoryExecutionPanel() {
       });
       setMsg(`Started ${res.length} run(s) for tag ${tagName}.`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : "Run failed");
+      const text = e instanceof Error ? e.message : "Run failed";
+      setErr({ text });
     }
   };
 
@@ -106,12 +162,25 @@ export default function StoryExecutionPanel() {
               disabled={!projectId}
               options={[
                 { value: "", label: "Select story…" },
-                ...stories.map((s: any) => ({
-                  value: s.id,
-                  label: `${s.title} (v${s.version})`,
-                })),
+                ...stories.map((s) => {
+                  const c = storyCounts[s.id];
+                  const suffix = c
+                    ? ` -- ${c.approved} approved / ${c.total} total`
+                    : "";
+                  return {
+                    value: s.id,
+                    label: `${s.title} (v${s.version})${suffix}`,
+                  };
+                }),
               ]}
             />
+            {selectedStoryApproved !== undefined && (
+              <p className={`text-xs ${selectedStoryApproved === 0 ? "text-amber-300" : "text-slate-500"}`}>
+                {selectedStoryApproved === 0
+                  ? "0 approved test cases -- nothing will run."
+                  : `${selectedStoryApproved} test case(s) will run.`}
+              </p>
+            )}
             <GlassSelect
               className="w-full"
               value={orgId}
@@ -173,7 +242,19 @@ export default function StoryExecutionPanel() {
         </div>
       </div>
       {msg && <p className="text-emerald-400 text-sm mt-3">{msg}</p>}
-      {err && <p className="text-red-400 text-sm mt-3">{err}</p>}
+      {err && (
+        <div className="text-red-300 text-sm mt-3 flex flex-wrap gap-2 items-center">
+          <span>{err.text}</span>
+          {err.storyId && (
+            <Link
+              href={`/user-stories/${encodeURIComponent(err.storyId)}`}
+              className="px-2 py-0.5 rounded bg-purple-600/40 text-purple-100 text-xs hover:bg-purple-600/60"
+            >
+              Open story to approve
+            </Link>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
