@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
+import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
 
 type StoryRow = {
   id: string;
@@ -13,6 +14,12 @@ type StoryRow = {
 };
 
 type CountsByStory = Record<string, { approved: number; total: number }>;
+
+type SprintRow = {
+  id: string;
+  name: string;
+  state: "planned" | "active" | "completed" | "cancelled";
+};
 
 export default function StoryExecutionPanel() {
   const [projects, setProjects] = useState<string[]>([]);
@@ -23,12 +30,20 @@ export default function StoryExecutionPanel() {
   const [storyCounts, setStoryCounts] = useState<CountsByStory>({});
   const [tags, setTags] = useState<any[]>([]);
   const [tagName, setTagName] = useState("");
+  const [sprints, setSprints] = useState<SprintRow[]>([]);
+  const [sprintId, setSprintId] = useState("");
+  const [sprintApprovedCount, setSprintApprovedCount] = useState<Record<string, number>>({});
   const [orgs, setOrgs] = useState<any[]>([]);
   const [orgId, setOrgId] = useState("");
   const [personas, setPersonas] = useState<any[]>([]);
   const [personaId, setPersonaId] = useState("");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState<{ text: string; storyId?: string } | null>(null);
+  // SSE URL passed to the live bulk-run panel. Set on Run, cleared on Close.
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  // When checked, failed tests are healed by the LLM (1 retry) before the
+  // bulk run reports their outcome. Defaults OFF so the user picks in.
+  const [autoHeal, setAutoHeal] = useState(false);
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => {});
@@ -49,9 +64,29 @@ export default function StoryExecutionPanel() {
         setTags([]);
         setOrgs([]);
         setStoryCounts({});
+        setSprints([]);
+        setSprintApprovedCount({});
       });
       return;
     }
+    // Sprints + per-sprint approved test count for the third column.
+    api.sprints.list(projectId).then(async (rows: any[]) => {
+      const trimmed: SprintRow[] = rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        state: r.state,
+      }));
+      setSprints(trimmed);
+      const counts: Record<string, number> = {};
+      await Promise.all(
+        trimmed.map((sp) =>
+          api.sprints.testCases(sp.id)
+            .then((tc) => { counts[sp.id] = tc.by_status.approved; })
+            .catch(() => { counts[sp.id] = 0; }),
+        ),
+      );
+      setSprintApprovedCount(counts);
+    }).catch(() => setSprints([]));
     api.userStories.list(projectId).then((rows: any[]) => {
       const trimmed: StoryRow[] = rows.map((r) => ({
         id: r.id,
@@ -96,11 +131,11 @@ export default function StoryExecutionPanel() {
     return storyCounts[storyId]?.approved;
   }, [storyId, storyCounts]);
 
-  const runStory = async () => {
+  const runStory = () => {
     setErr(null);
     setMsg("");
     // Pre-flight: if we already know the story has 0 approved, surface the
-    // friendly message + deep link instead of round-tripping for a 400.
+    // friendly message + deep link instead of opening an SSE that will 400.
     if (selectedStoryApproved === 0) {
       setErr({
         text: "This story has 0 approved test cases yet. Approve some, then come back.",
@@ -108,52 +143,159 @@ export default function StoryExecutionPanel() {
       });
       return;
     }
-    try {
-      const res = await api.runs.userStory(storyId, {
-        org_id: orgId,
-        persona_id: personaId || null,
-      });
-      setMsg(`Started ${res.length} run(s).`);
-    } catch (e: unknown) {
-      const text = e instanceof Error ? e.message : "Run failed";
-      // Backend's "No approved non-stale test cases" comes through verbatim;
-      // wrap it with a deep-link to the story so the user can fix it in one click.
-      const looksLikeNoApproved = /no approved/i.test(text);
-      setErr({ text, storyId: looksLikeNoApproved ? storyId : undefined });
-    }
+    if (!storyId || !orgId) return;
+    // Building the URL is sync (just appends ?token=); the SSE actually opens
+    // when BulkExecutionStream receives a non-null streamUrl prop. Setting
+    // null first makes the component reset state on consecutive runs.
+    setStreamUrl(null);
+    setTimeout(() => {
+      setStreamUrl(
+        api.runs.userStoryStreamUrl(storyId, {
+          org_id: orgId,
+          persona_id: personaId || null,
+          auto_heal: autoHeal,
+        }),
+      );
+    }, 0);
   };
 
-  const runTag = async () => {
+  const runTag = () => {
     setErr(null);
     setMsg("");
-    if (!tagName || !projectId) return;
-    try {
-      const res = await api.runs.byTag(tagName, {
-        project_id: projectId,
-        org_id: orgId,
-        persona_id: personaId || null,
+    if (!tagName || !projectId || !orgId) return;
+    setStreamUrl(null);
+    setTimeout(() => {
+      setStreamUrl(
+        api.runs.byTagStreamUrl(tagName, {
+          project_id: projectId,
+          org_id: orgId,
+          persona_id: personaId || null,
+          auto_heal: autoHeal,
+        }),
+      );
+    }, 0);
+  };
+
+  const runSprint = () => {
+    setErr(null);
+    setMsg("");
+    if (!sprintId || !orgId) return;
+    if ((sprintApprovedCount[sprintId] ?? 0) === 0) {
+      setErr({
+        text: "This sprint has 0 approved test cases across its stories. Approve some first.",
       });
-      setMsg(`Started ${res.length} run(s) for tag ${tagName}.`);
-    } catch (e: unknown) {
-      const text = e instanceof Error ? e.message : "Run failed";
-      setErr({ text });
+      return;
     }
+    setStreamUrl(null);
+    setTimeout(() => {
+      setStreamUrl(
+        api.runs.sprintStreamUrl(sprintId, {
+          org_id: orgId,
+          persona_id: personaId || null,
+          auto_heal: autoHeal,
+        }),
+      );
+    }, 0);
   };
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass p-5 mt-8 mb-6">
       <h3 className="text-sm font-semibold text-purple-300 mb-4 uppercase tracking-wider">Bulk execution</h3>
-      <div className="grid md:grid-cols-2 gap-6">
+
+      {/* Shared selectors -- project / org / persona / auto-heal apply to
+          all three "Run by ..." columns below. Pulled out of the columns
+          so the user picks them once. */}
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5 pb-4 border-b border-white/10">
+        <GlassSelect
+          className="w-full"
+          value={projectName}
+          placeholder="Project…"
+          onChange={(v) => { setProjectName(v); setStoryId(""); setSprintId(""); setTagName(""); setOrgId(""); }}
+          options={[{ value: "", label: "Select project…" }, ...projects.map((p) => ({ value: p, label: p }))]}
+        />
+        <GlassSelect
+          className="w-full"
+          value={orgId}
+          placeholder="Org…"
+          onChange={setOrgId}
+          disabled={!projectId}
+          options={[
+            { value: "", label: "Select org…" },
+            ...orgs.map((o: any) => ({ value: o.id, label: o.name || o.id })),
+          ]}
+        />
+        <GlassSelect
+          className="w-full"
+          value={personaId}
+          placeholder="Persona (optional)"
+          onChange={setPersonaId}
+          disabled={!orgId}
+          options={[
+            { value: "", label: "Default resolution" },
+            ...personas.map((p: any) => ({ value: p.id, label: p.name })),
+          ]}
+        />
+        <label className="flex items-start gap-2 text-xs text-slate-300 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-fuchsia-500"
+            checked={autoHeal}
+            onChange={(e) => setAutoHeal(e.target.checked)}
+          />
+          <span>
+            <span className="text-slate-200 font-medium">Auto-heal failures</span>
+            <span className="text-slate-500"> -- on failure, feed output.xml + screenshot back to the LLM, rewrite the script, retry once.</span>
+          </span>
+        </label>
+      </div>
+
+      <div className="grid md:grid-cols-3 gap-5">
+        {/* Column 1: Run by sprint */}
         <div>
-          <p className="text-xs text-slate-500 mb-2">Run by user story</p>
+          <p className="text-xs text-slate-500 mb-2">Run by sprint</p>
           <div className="space-y-2">
             <GlassSelect
               className="w-full"
-              value={projectName}
-              placeholder="Project…"
-              onChange={(v) => { setProjectName(v); setStoryId(""); setOrgId(""); }}
-              options={[{ value: "", label: "Select project…" }, ...projects.map((p) => ({ value: p, label: p }))]}
+              value={sprintId}
+              placeholder="Sprint…"
+              onChange={setSprintId}
+              disabled={!projectId}
+              options={[
+                { value: "", label: "Select sprint…" },
+                ...sprints
+                  .filter((sp) => sp.state !== "cancelled")
+                  .map((sp) => ({
+                    value: sp.id,
+                    label: `${sp.name} (${sp.state})${
+                      sprintApprovedCount[sp.id] !== undefined
+                        ? ` -- ${sprintApprovedCount[sp.id]} approved`
+                        : ""
+                    }`,
+                  })),
+              ]}
             />
+            {sprintId && sprintApprovedCount[sprintId] !== undefined && (
+              <p className={`text-xs ${sprintApprovedCount[sprintId] === 0 ? "text-amber-300" : "text-slate-500"}`}>
+                {sprintApprovedCount[sprintId] === 0
+                  ? "0 approved test cases across this sprint."
+                  : `${sprintApprovedCount[sprintId]} test case(s) will run.`}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={runSprint}
+              disabled={!sprintId || !orgId}
+              className="w-full py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-cyan-600 text-white text-sm font-semibold disabled:opacity-40"
+            >
+              Run sprint{autoHeal ? " (with auto-heal)" : ""}
+            </button>
+          </div>
+        </div>
+
+        {/* Column 2: Run by user story */}
+        <div>
+          <p className="text-xs text-slate-500 mb-2">Run by user story</p>
+          <div className="space-y-2">
             <GlassSelect
               className="w-full"
               value={storyId}
@@ -181,35 +323,13 @@ export default function StoryExecutionPanel() {
                   : `${selectedStoryApproved} test case(s) will run.`}
               </p>
             )}
-            <GlassSelect
-              className="w-full"
-              value={orgId}
-              placeholder="Org…"
-              onChange={setOrgId}
-              disabled={!projectId}
-              options={[
-                { value: "", label: "Select org…" },
-                ...orgs.map((o: any) => ({ value: o.id, label: o.name || o.id })),
-              ]}
-            />
-            <GlassSelect
-              className="w-full"
-              value={personaId}
-              placeholder="Persona (optional)"
-              onChange={setPersonaId}
-              disabled={!orgId}
-              options={[
-                { value: "", label: "Default resolution" },
-                ...personas.map((p: any) => ({ value: p.id, label: p.name })),
-              ]}
-            />
             <button
               type="button"
               onClick={runStory}
               disabled={!storyId || !orgId}
               className="w-full py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 text-white text-sm font-semibold disabled:opacity-40"
             >
-              Run all approved test cases
+              Run story{autoHeal ? " (with auto-heal)" : ""}
             </button>
           </div>
         </div>
@@ -228,7 +348,7 @@ export default function StoryExecutionPanel() {
               ]}
             />
             <p className="text-xs text-slate-500">
-              Uses the same org and persona selections as the left panel.
+              Tip: pick the <span className="text-slate-300">Smoke</span> tag to run the project's smoke suite.
             </p>
             <button
               type="button"
@@ -236,7 +356,7 @@ export default function StoryExecutionPanel() {
               disabled={!tagName || !orgId || !projectId}
               className="w-full py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold disabled:opacity-40"
             >
-              Run by tag
+              Run tag{autoHeal ? " (with auto-heal)" : ""}
             </button>
           </div>
         </div>
@@ -255,6 +375,12 @@ export default function StoryExecutionPanel() {
           )}
         </div>
       )}
+
+      <BulkExecutionStream
+        streamUrl={streamUrl}
+        onClose={() => setStreamUrl(null)}
+        healContext={orgId ? { org_id: orgId, persona_id: personaId || null } : undefined}
+      />
     </motion.div>
   );
 }

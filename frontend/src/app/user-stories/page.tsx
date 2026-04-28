@@ -17,6 +17,11 @@ export default function UserStoriesPage() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState("");
+  // Optional sprint to assign the new story to. Empty string = backlog.
+  // Only sprints in active or planned state are shown so you can't drop
+  // a fresh story into a completed sprint by accident.
+  const [sprintOptions, setSprintOptions] = useState<Array<{ id: string; name: string; state: string }>>([]);
+  const [selectedSprintId, setSelectedSprintId] = useState("");
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => {}).finally(() => setLoading(false));
@@ -32,6 +37,11 @@ export default function UserStoriesPage() {
     }
     api.projects.portalProjectId(projectName).then((r) => {
       setProjectId(r.project_id);
+      // Fetch active+planned sprints for the picker. Two requests in
+      // parallel; we don't gate stories on sprints loading.
+      api.sprints.list(r.project_id).then((rows) =>
+        setSprintOptions(rows.filter((s: any) => s.state === "active" || s.state === "planned")),
+      ).catch(() => setSprintOptions([]));
       return api.userStories.list(r.project_id);
     }).then(setStories).catch(() => setStories([]));
   }, [projectName]);
@@ -48,9 +58,11 @@ export default function UserStoriesPage() {
         project_id: projectId,
         title: title.trim(),
         description: description.trim(),
+        sprint_id: selectedSprintId || undefined,
       });
       setTitle("");
       setDescription("");
+      setSelectedSprintId("");
       window.location.href = `/user-stories/${encodeURIComponent(s.id)}`;
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Create failed");
@@ -80,6 +92,20 @@ export default function UserStoriesPage() {
               placeholder="Project…"
               onChange={setProjectName}
               options={[{ value: "", label: "Select project…" }, ...projects.map((p) => ({ value: p, label: p }))]}
+            />
+            <GlassSelect
+              className="w-full"
+              value={selectedSprintId}
+              placeholder="Sprint (optional)"
+              onChange={setSelectedSprintId}
+              disabled={!projectId}
+              options={[
+                { value: "", label: "No sprint (backlog)" },
+                ...sprintOptions.map((s) => ({
+                  value: s.id,
+                  label: `${s.name} (${s.state})`,
+                })),
+              ]}
             />
             <input
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200"

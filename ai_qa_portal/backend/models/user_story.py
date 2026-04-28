@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -26,12 +26,26 @@ class UserStory(BaseModel):
     updated_at: datetime
     # Phase 1 isolation: stamped on create. Empty string for legacy records.
     owner_user_id: str = ""
+    # Sprint hierarchy. Optional: a story may live in a sprint OR in the
+    # backlog (sprint_id = None). Existing rows pre-date this field, so
+    # the default keeps them valid without migration.
+    sprint_id: Optional[UUID] = None
+    # External-system passthrough fields (future Jira / Azure DevOps).
+    # Today these stay null; the local-only flow never reads or writes
+    # them. See `models/sprint.py` for the rationale.
+    external_id: Optional[str] = None
+    external_source: Optional[str] = None
+    external_url: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
+    external_payload: Optional[dict[str, Any]] = None
 
 
 class UserStoryCreate(BaseModel):
     project_id: UUID
     title: str
     description: str
+    # Optional sprint to drop the new story into. Omit for backlog.
+    sprint_id: Optional[UUID] = None
 
 
 class UserStoryUpdate(BaseModel):

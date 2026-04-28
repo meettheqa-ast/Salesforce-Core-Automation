@@ -1111,6 +1111,121 @@ Select State Or Province
         END
     END
 
+# ===========================================================================
+# High-leverage AI-friendly composite keywords (Phase 2 of the AI brain plan).
+# These wrap existing primitives with explicit signatures so the LLM can
+# reach for them by name instead of inventing raw Click Element chains.
+# Each one composes keywords already in this file and is safe to call from
+# any Salesforce flow.
+# ===========================================================================
+
+Set Picklist Field
+    [Documentation]    Sets a Salesforce Lightning picklist (combobox) field to an EXACT value.
+    ...                Wraps ``Open Dropdown`` then ``Select Dropdown Option``. Use this for
+    ...                "Set Lead Source to Web" / "Set Status to Working" -- never raw Click
+    ...                Element on the combobox arrow. Tolerates whitespace and case differences
+    ...                via the same tiered selectors used by ``Select Dropdown Option`` itself,
+    ...                with a final fallback to a random valid option (logs a warning) so flaky
+    ...                tests don't dead-stop on org-specific picklist values.
+    [Tags]    interaction    pick list
+    [Arguments]    ${field_label}    ${value}
+    Open Dropdown    ${field_label}
+    Select Dropdown Option    ${field_label}    ${value}
+
+Set Lookup Field
+    [Documentation]    Resolves a Salesforce lookup field (e.g. Account Name, Contact, Owner)
+    ...                by typing ``${search_term}`` into the lookup input and clicking the
+    ...                first matching suggestion in the popover. Use this for "Set Account
+    ...                Name to Acme" / "Choose Contact John Doe". Wraps ``Enter Into Search
+    ...                Field`` -- the existing keyword that already drives the
+    ...                uiInput--lookup pattern. ``${exact_match}`` is reserved for a future
+    ...                stricter mode; today the keyword always picks the first suggestion to
+    ...                match how Salesforce's autocomplete behaves.
+    [Tags]    interaction    lookup
+    [Arguments]    ${field_label}    ${search_term}    ${exact_match}=${TRUE}
+    Enter Into Search Field    ${field_label}    ${search_term}
+
+Click Custom Header Button
+    [Documentation]    Clicks a named action on the record detail page header. Handles both
+    ...                top-level header buttons (visible directly on the page) and ones tucked
+    ...                under the overflow ``▼`` menu. Wraps ``Perform Action On Record Details
+    ...                Page Header`` so the AI doesn't need to remember the object label as a
+    ...                separate argument -- pass the button label only and the underlying
+    ...                keyword discovers the object from the breadcrumb. Use for "Click the
+    ...                Approve button" / "Click custom button XYZ".
+    [Tags]    interaction    custom-button    record-detail
+    [Arguments]    ${button_label}    ${object_label}=${EMPTY}
+    ${obj}=    Run Keyword If    '${object_label}' == '${EMPTY}'
+    ...    Get Text    //span[@class='breadcrumbDetail slds-truncate']/..//ancestor::nav//li[1]//span
+    ...    ELSE
+    ...    Set Variable    ${object_label}
+    Perform Action On Record Details Page Header    ${obj}    ${button_label}
+
+Click List View Row Action
+    [Documentation]    Opens the row-level action dropdown for a record on a list view (the
+    ...                small ``▼`` at the end of each row) and clicks the named action. Use
+    ...                for "From the Leads list, click the Edit action on lead XYZ" without
+    ...                having to navigate into the record first. ``${record_identifier}`` is
+    ...                matched against the visible cell text of the row.
+    [Tags]    interaction    list-view    row-action
+    [Arguments]    ${record_identifier}    ${action_label}
+    ${row}=    Set Variable    //tr[.//a[normalize-space()='${record_identifier}'] or .//td[normalize-space()='${record_identifier}']]
+    Wait Until Element Is Visible    ${row}    timeout=10s
+    Scroll Element Into View With Fallback    ${row}
+    Click Element    ${row}//button[contains(@class,'slds-button_icon-border-filled') or contains(@title,'Show More') or contains(@aria-haspopup,'true')]
+    Wait Until Element Is Visible    //div[contains(@class,'slds-popover')]//*[normalize-space()='${action_label}']    timeout=8s
+    Click Element    //div[contains(@class,'slds-popover')]//*[normalize-space()='${action_label}']
+
+Open Quick Action
+    [Documentation]    Clicks a Salesforce Quick Action on the record detail page (Log a Call,
+    ...                New Note, Send Email, etc.). Looks for the action by visible label both
+    ...                in the top-level row and in the overflow menu so it works regardless of
+    ...                how many actions the layout exposes. Use for "Log a Call" / "Add a Note"
+    ...                / any custom Quick Action.
+    [Tags]    interaction    quick-action
+    [Arguments]    ${action_label}
+    ${top}=    Set Variable    //ul[contains(@class,'slds-button-group-list')]//*[normalize-space()='${action_label}']
+    ${overflow}=    Set Variable    //div[contains(@class,'slds-popover')]//*[normalize-space()='${action_label}']
+    ${visible_top}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${top}    timeout=4s
+    IF    ${visible_top}
+        Scroll Element Into View With Fallback    ${top}
+        Click Element    ${top}
+        RETURN
+    END
+    # Open the overflow ("More") menu and try again.
+    Click Element    //button[contains(@title,'More Actions') or contains(@title,'Show more actions')]
+    Wait Until Element Is Visible    ${overflow}    timeout=8s
+    Click Element    ${overflow}
+
+Verify Field Value On Detail Page
+    [Documentation]    Asserts that ``${field_label}`` on the current record detail page shows
+    ...                ``${expected_value}``. Tolerates output cell variants (read-only span vs
+    ...                lightning-formatted-text vs anchor for lookup references). Use for
+    ...                "Verify Lead Source is Web on the detail page". Comparison is exact
+    ...                after trimming surrounding whitespace; pass the value as it appears in
+    ...                the UI.
+    [Tags]    verification    detail-page
+    [Arguments]    ${field_label}    ${expected_value}
+    @{candidates}=    Create List
+    ...    //records-record-layout-item[.//*[normalize-space()='${field_label}']]//*[contains(@class,'slds-form-element__static') or self::lightning-formatted-text or self::a]
+    ...    //div[contains(@class,'slds-form-element')][.//span[normalize-space()='${field_label}']]//*[contains(@class,'slds-form-element__static') or self::lightning-formatted-text or self::a]
+    ...    //*[contains(@class,'test-id__field-label')][normalize-space()='${field_label}']/following::*[contains(@class,'test-id__field-value')][1]
+    ${found}=    Set Variable    ${FALSE}
+    FOR    ${loc}    IN    @{candidates}
+        ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc}    timeout=4s
+        IF    ${ok}
+            ${actual}=    Get Text    ${loc}
+            ${actual}=    Strip String    ${actual}
+            Should Be Equal As Strings    ${actual}    ${expected_value}
+            ...    msg=Field "${field_label}" expected "${expected_value}" but got "${actual}"
+            ${found}=    Set Variable    ${TRUE}
+            Exit For Loop
+        END
+    END
+    IF    not ${found}
+        Fail    Could not locate "${field_label}" output cell on the detail page.
+    END
+
 # Use Modal
 #    [Arguments]    ${state}
 #    IF    '${state}' == 'on'

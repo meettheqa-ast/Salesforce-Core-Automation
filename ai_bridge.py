@@ -904,8 +904,44 @@ def break_prompt_into_steps(
     Returns a list of dicts: [{"keyword": "...", "args": ["...", ...]}, ...]
     """
     hydrate_llm_env()
-    if catalog_json is None:
-        catalog_json = _load_catalog_compact()
+
+    # Prefer the assembler-built system prompt (Salesforce playbook + stepwise
+    # tail) over the legacy inline string. Live catalog supersedes static
+    # JSON when the scanner is available.
+    try:
+        from ai_qa_portal.backend.prompts import assembler as _assembler
+        from ai_qa_portal.backend.services import keyword_catalog as _kw_catalog
+        system = _assembler.build_system_prompt("stepwise")
+        if catalog_json is None:
+            catalog_json = _kw_catalog.compact_json()
+    except Exception:  # pylint: disable=broad-exception-caught
+        if catalog_json is None:
+            catalog_json = _load_catalog_compact()
+        system = (
+            "You are a Robot Framework step planner. Given a user prompt and keyword catalog, "
+            "break the prompt into an ordered list of Robot Framework keyword calls. "
+            "Each step must use a keyword from the catalog (prefer GlobalKeywords.* and SalesPO.* prefixes). "
+            "Return ONLY a JSON array where each element is an object with 'keyword' (string) and "
+            "'args' (array of strings, may be empty). No markdown fences, no explanation — just the JSON array.\n\n"
+            "CRITICAL FORMAT RULES:\n"
+            "- 'keyword' must be ONLY the keyword name — NEVER include 'with args' or arguments in the keyword string.\n"
+            "- 'args' is a separate array of argument values.\n"
+            "- For SalesPO.Create A New Lead, pass ZERO args (it reads from suite variables) or three "
+            "plain string args: [\"John\", \"Doe\", \"Acme Corp\"]. NEVER pass named args like "
+            "\"${leadFirstName}=${EMPTY}\".\n\n"
+            "EXAMPLE (correct):\n"
+            '[{"keyword": "GlobalKeywords.Login To Sandbox", '
+            '"args": ["${globalSandboxTestUrl}", "${sandboxUserNameInput}", "${sandboxPasswordInput}"]},\n'
+            '{"keyword": "SalesPO.Open New Lead From Sales App", "args": []},\n'
+            '{"keyword": "SalesPO.Create A New Lead", "args": []},\n'
+            '{"keyword": "SalesPO.Verify Lead Created Successfully", "args": []}]\n\n'
+            "WORKFLOW RULES:\n"
+            "1. Always start with GlobalKeywords.Login To Sandbox (3 args as shown above).\n"
+            "2. Use qualified keyword names (GlobalKeywords.Launch App, SalesPO.Create A New Lead, etc.).\n"
+            "3. For Lead creation: SalesPO.Open New Lead From Sales App then SalesPO.Create A New Lead.\n"
+            "4. End with verification keywords when appropriate.\n"
+            "5. Keep variable references like ${leadFirstName} as-is in args.\n"
+        )
 
     analysis_block = ""
     if scenario_analysis:
@@ -914,31 +950,6 @@ def break_prompt_into_steps(
             + json.dumps(scenario_analysis, indent=2, ensure_ascii=False)
         )
 
-    system = (
-        "You are a Robot Framework step planner. Given a user prompt and keyword catalog, "
-        "break the prompt into an ordered list of Robot Framework keyword calls. "
-        "Each step must use a keyword from the catalog (prefer GlobalKeywords.* and SalesPO.* prefixes). "
-        "Return ONLY a JSON array where each element is an object with 'keyword' (string) and "
-        "'args' (array of strings, may be empty). No markdown fences, no explanation — just the JSON array.\n\n"
-        "CRITICAL FORMAT RULES:\n"
-        "- 'keyword' must be ONLY the keyword name — NEVER include 'with args' or arguments in the keyword string.\n"
-        "- 'args' is a separate array of argument values.\n"
-        "- For SalesPO.Create A New Lead, pass ZERO args (it reads from suite variables) or three "
-        "plain string args: [\"John\", \"Doe\", \"Acme Corp\"]. NEVER pass named args like "
-        "\"${leadFirstName}=${EMPTY}\".\n\n"
-        "EXAMPLE (correct):\n"
-        '[{"keyword": "GlobalKeywords.Login To Sandbox", '
-        '"args": ["${globalSandboxTestUrl}", "${sandboxUserNameInput}", "${sandboxPasswordInput}"]},\n'
-        '{"keyword": "SalesPO.Open New Lead From Sales App", "args": []},\n'
-        '{"keyword": "SalesPO.Create A New Lead", "args": []},\n'
-        '{"keyword": "SalesPO.Verify Lead Created Successfully", "args": []}]\n\n'
-        "WORKFLOW RULES:\n"
-        "1. Always start with GlobalKeywords.Login To Sandbox (3 args as shown above).\n"
-        "2. Use qualified keyword names (GlobalKeywords.Launch App, SalesPO.Create A New Lead, etc.).\n"
-        "3. For Lead creation: SalesPO.Open New Lead From Sales App then SalesPO.Create A New Lead.\n"
-        "4. End with verification keywords when appropriate.\n"
-        "5. Keep variable references like ${leadFirstName} as-is in args.\n"
-    )
     user_content = (
         f"## Keyword Catalog\n\n{catalog_json}\n\n"
         f"## User Request\n\n{user_prompt.strip()}"
@@ -1109,8 +1120,20 @@ def generate_test_from_prompt(
     Returns path to the written file.
     """
     hydrate_llm_env()
-    system_prompt = _load_text(SYSTEM_PROMPT_PATH)
-    catalog_json = _load_catalog_compact()
+
+    # Prefer the new assembler so this path picks up library changes via the
+    # live keyword catalog scanner + Salesforce playbook. Fall back to the
+    # legacy static system_prompt.txt + keyword_catalog.json if the assembler
+    # can't be imported (e.g. running ai_bridge as a standalone CLI from a
+    # context where ai_qa_portal isn't on the path).
+    try:
+        from ai_qa_portal.backend.prompts import assembler as _assembler
+        from ai_qa_portal.backend.services import keyword_catalog as _kw_catalog
+        system_prompt = _assembler.build_system_prompt("quick")
+        catalog_json = _kw_catalog.compact_json()
+    except Exception:  # pylint: disable=broad-exception-caught
+        system_prompt = _load_text(SYSTEM_PROMPT_PATH)
+        catalog_json = _load_catalog_compact()
 
     user_content = (
         "You are given the full keyword catalog as JSON. "

@@ -4,9 +4,22 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import AnimatedCard from "@/components/cards/AnimatedCard";
+import StatusDonut, { DONUT_COLORS } from "@/components/charts/StatusDonut";
 import { api, type InvitationRow } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
 import { useMe, membershipFor } from "@/lib/useMe";
+
+/** Minimal per-project stats fetched on the list page so each tile can
+ *  show its own donut + counts without drilling in. Both fields default
+ *  to safe shapes so an in-flight tile renders an empty donut, not crash. */
+type ProjectStats = {
+  total: number;
+  by_status: { draft: number; approved: number; rejected: number; stale: number };
+  scripts_built: number;
+  story_count: number;
+  pass_rate?: number;
+  total_runs?: number;
+};
 
 const AUTH_DISABLED =
   (process.env.NEXT_PUBLIC_AUTH_DISABLED || "").toLowerCase() === "true";
@@ -23,6 +36,10 @@ export default function ProjectsPage() {
   const [requesting, setRequesting] = useState<string | null>(null);
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
   const [openInvites, setOpenInvites] = useState<InvitationRow[]>([]);
+  /** Stats keyed by project slug. Populated lazily after the project list
+   *  loads -- two requests per project (testCases + analytics) fan out in
+   *  parallel so the tiles fill in within one round-trip burst. */
+  const [stats, setStats] = useState<Record<string, ProjectStats>>({});
 
   // Anyone in the org can create a project (becomes PM of the new one).
   // Phase 2c will add stricter "TM cannot create" toggle if you want.
@@ -44,6 +61,37 @@ export default function ProjectsPage() {
   };
 
   useEffect(loadProjects, []);
+
+  // Fan-out per-project stats fetch. Two requests per project run in
+  // parallel; results land into the `stats` map keyed by slug as they
+  // arrive so each tile renders its donut as soon as its row is ready.
+  useEffect(() => {
+    if (projects.length === 0) return;
+    let cancelled = false;
+    projects.forEach((name) => {
+      void Promise.all([
+        api.projects.testCases(name).catch(() => null),
+        api.analytics.summary(name).catch(() => null),
+      ]).then(([tcs, summary]) => {
+        if (cancelled) return;
+        if (!tcs) return;
+        setStats((prev) => ({
+          ...prev,
+          [name]: {
+            total: tcs.total,
+            by_status: tcs.by_status,
+            scripts_built: tcs.scripts_built,
+            story_count: tcs.stories.length,
+            pass_rate: summary?.pass_rate,
+            total_runs: summary?.total_runs,
+          },
+        }));
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [projects]);
 
   const handleAcceptInvite = async (id: string) => {
     try {
@@ -281,31 +329,13 @@ export default function ProjectsPage() {
               return (
               <motion.div key={name} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }} transition={{ delay: i * 0.08 }}>
-                <Link href={`/projects/${encodeURIComponent(name)}`}>
-                  <AnimatedCard glow="purple" className="cursor-pointer group">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="text-2xl mb-2">📁</div>
-                        <h3 className="text-lg font-bold text-white mb-1">{name}</h3>
-                        {roleLabel && (
-                          <span className="inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 font-semibold mb-1">
-                            {roleLabel}
-                          </span>
-                        )}
-                        <p className="text-xs text-slate-500">Click to manage</p>
-                      </div>
-                      {(isPm || AUTH_DISABLED) && (
-                        <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDelete(name); }}
-                          title="Delete project (PM/Admin only)"
-                          className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all text-sm p-1"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </AnimatedCard>
-                </Link>
+                <ProjectTile
+                  name={name}
+                  roleLabel={roleLabel}
+                  canDelete={isPm || AUTH_DISABLED}
+                  stats={stats[name]}
+                  onDelete={() => handleDelete(name)}
+                />
               </motion.div>
               );
             })}
@@ -347,6 +377,117 @@ export default function ProjectsPage() {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Per-project tile on the project list. Shows a mini status donut + counts
+ * the moment its stats arrive. Status chips link to
+ * `/projects/<name>?filter=<id>` so a click drills straight into the
+ * detail page already filtered to that slice.
+ */
+function ProjectTile({
+  name,
+  roleLabel,
+  canDelete,
+  stats,
+  onDelete,
+}: {
+  name: string;
+  roleLabel: string | null;
+  canDelete: boolean;
+  stats: ProjectStats | undefined;
+  onDelete: () => void;
+}) {
+  const slices = stats
+    ? [
+        { id: "approved", label: "Approved", count: stats.by_status.approved, color: DONUT_COLORS.approved },
+        { id: "draft", label: "Draft", count: stats.by_status.draft, color: DONUT_COLORS.draft },
+        { id: "rejected", label: "Rejected", count: stats.by_status.rejected, color: DONUT_COLORS.rejected },
+        { id: "stale", label: "Stale", count: stats.by_status.stale, color: DONUT_COLORS.stale },
+      ]
+    : [];
+
+  return (
+    <div className="relative group">
+      <Link href={`/projects/${encodeURIComponent(name)}`}>
+        <AnimatedCard glow="purple" className="cursor-pointer">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-bold text-white mb-1 truncate">{name}</h3>
+              {roleLabel && (
+                <span className="inline-block text-[10px] uppercase tracking-wider px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 font-semibold mb-2">
+                  {roleLabel}
+                </span>
+              )}
+              {stats ? (
+                <div className="text-[11px] text-slate-400 flex flex-wrap gap-x-3">
+                  <span>{stats.story_count} {stats.story_count === 1 ? "story" : "stories"}</span>
+                  <span>{stats.total} test {stats.total === 1 ? "case" : "cases"}</span>
+                  {typeof stats.pass_rate === "number" && (
+                    <span className="text-emerald-300">{stats.pass_rate.toFixed(1)}% pass</span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500">Loading stats…</div>
+              )}
+            </div>
+            <div className="shrink-0">
+              <StatusDonut
+                slices={slices}
+                size={72}
+                thickness={10}
+                centerSubtitle="cases"
+                ariaLabel={`${name} test case status`}
+              />
+            </div>
+          </div>
+
+          {stats && stats.total > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: "approved", label: "Approved", count: stats.by_status.approved, cls: "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30" },
+                  { id: "draft", label: "Draft", count: stats.by_status.draft, cls: "bg-slate-500/30 text-slate-200 hover:bg-slate-500/40" },
+                  { id: "stale", label: "Stale", count: stats.by_status.stale, cls: "bg-amber-500/20 text-amber-200 hover:bg-amber-500/30" },
+                  { id: "rejected", label: "Rejected", count: stats.by_status.rejected, cls: "bg-red-500/20 text-red-200 hover:bg-red-500/30" },
+                ] as const
+              )
+                .filter((c) => c.count > 0)
+                .map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/projects/${encodeURIComponent(name)}?filter=${c.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${c.cls}`}
+                  >
+                    {c.label} {c.count}
+                  </Link>
+                ))}
+              {stats.scripts_built > 0 && (
+                <Link
+                  href={`/projects/${encodeURIComponent(name)}?filter=has-script`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 transition-colors"
+                >
+                  Scripts {stats.scripts_built}/{stats.total}
+                </Link>
+              )}
+            </div>
+          )}
+        </AnimatedCard>
+      </Link>
+      {canDelete && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+          title="Delete project (PM/Admin only)"
+          className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all text-sm p-1 z-10"
+        >
+          ✕
+        </button>
       )}
     </div>
   );

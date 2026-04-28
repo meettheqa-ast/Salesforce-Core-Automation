@@ -345,6 +345,31 @@ export const api = {
     delete: (name: string) => apiFetch<any>(`/api/projects/${name}`, { method: "DELETE" }),
     tests: (name: string) => apiFetch<any[]>(`/api/projects/${name}/tests`),
     testSource: (name: string, test: string) => apiFetch<any>(`/api/projects/${name}/tests/${test}/source`),
+    /** All test cases for this project, grouped by user story.
+     *  Uses the JSON store (test_case_ids_project:<UUID> index), not the
+     *  Robot files on disk -- that's the `tests` endpoint. */
+    testCases: (name: string) =>
+      apiFetch<{
+        project_id: string;
+        total: number;
+        by_status: { draft: number; approved: number; rejected: number; stale: number };
+        scripts_built: number;
+        stories: Array<{
+          id: string;
+          title: string;
+          version: number;
+          test_cases: Array<{
+            id: string;
+            title: string;
+            status: "draft" | "approved" | "rejected";
+            stale: boolean;
+            tags: string[];
+            script_path: string | null;
+            script_built_at: string | null;
+            heal_attempts: number;
+          }>;
+        }>;
+      }>(`/api/projects/${encodeURIComponent(name)}/test-cases`),
     environments: (name: string) => apiFetch<string[]>(`/api/projects/${name}/environments`),
     config: (name: string, env: string, persona: string) =>
       apiFetch<Record<string, string>>(
@@ -508,7 +533,12 @@ export const api = {
       apiFetch<void>(`/personas/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   userStories: {
-    create: (data: { project_id: string; title: string; description: string }) =>
+    create: (data: {
+      project_id: string;
+      title: string;
+      description: string;
+      sprint_id?: string;
+    }) =>
       apiFetch<any>("/user-stories", { method: "POST", body: JSON.stringify(data) }),
     get: (id: string) => apiFetch<any>(`/user-stories/${encodeURIComponent(id)}`),
     list: (projectId: string) => apiFetch<any[]>(`/user-stories?project_id=${encodeURIComponent(projectId)}`),
@@ -542,10 +572,38 @@ export const api = {
   testCases: {
     list: (userStoryId: string) =>
       apiFetch<any[]>(`/test-cases?user_story_id=${encodeURIComponent(userStoryId)}`),
-    /** Per-case status flip: "approved" | "rejected" | "draft". */
-    patch: (id: string, body: { status: "approved" | "rejected" | "draft" }) =>
+    /** Per-case patch. Every field is optional -- the backend applies only
+     *  what's sent. Editing any of title / steps / expected_result /
+     *  preconditions clears `script_path` so the next bulk run re-builds. */
+    patch: (
+      id: string,
+      body: {
+        status?: "approved" | "rejected" | "draft";
+        title?: string;
+        steps?: string[];
+        expected_result?: string;
+        preconditions?: string | null;
+        tags?: string[];
+      },
+    ) =>
       apiFetch<any>(`/test-cases/${encodeURIComponent(id)}`, {
         method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    /** Manual create -- companion to the "Add case manually" button on
+     *  the story detail page. Distinct from /user-stories/{id}/generate
+     *  which goes through the LLM. */
+    create: (body: {
+      user_story_id: string;
+      title: string;
+      steps: string[];
+      expected_result: string;
+      preconditions?: string | null;
+      tags: string[];
+      status?: "draft" | "approved" | "rejected";
+    }) =>
+      apiFetch<any>(`/test-cases`, {
+        method: "POST",
         body: JSON.stringify(body),
       }),
     /** Returns the saved Robot script content (404 if not built yet). */
@@ -556,6 +614,26 @@ export const api = {
         content: string;
         built_at: string | null;
       }>(`/test-cases/${encodeURIComponent(id)}/script`),
+    /** Self-heal a failed test case: feed its output.xml + screenshot back to
+     *  the LLM and rewrite the saved Robot script. The frontend can then open
+     *  api.runs.testCaseStreamUrl to verify the rewrite. Capped at 2
+     *  attempts/hour by the backend. */
+    heal: (id: string, runFolder: string) =>
+      apiFetch<{
+        ok: boolean;
+        test_case_id: string;
+        script_path: string | null;
+        diagnosis: {
+          test_name: string;
+          test_message: string;
+          first_failure: { keyword_name: string; error_message: string } | null;
+        };
+        attempts: number;
+        message: string;
+      }>(`/test-cases/${encodeURIComponent(id)}/heal`, {
+        method: "POST",
+        body: JSON.stringify({ run_folder: runFolder }),
+      }),
     batchApprove: (data: {
       user_story_id: string;
       approved: Array<{
@@ -570,6 +648,77 @@ export const api = {
   },
   tags: {
     list: (projectId: string) => apiFetch<any[]>(`/tags?project_id=${encodeURIComponent(projectId)}`),
+  },
+  sprints: {
+    /** Create a sprint under a project. Owner check is enforced by the
+     *  backend via the parent project. */
+    create: (body: {
+      project_id: string;
+      name: string;
+      goal?: string | null;
+      state?: "planned" | "active" | "completed" | "cancelled";
+      start_date?: string | null;
+      end_date?: string | null;
+    }) =>
+      apiFetch<any>("/sprints", { method: "POST", body: JSON.stringify(body) }),
+    list: (projectId: string, state?: "planned" | "active" | "completed" | "cancelled") => {
+      const q = new URLSearchParams({ project_id: projectId });
+      if (state) q.append("state", state);
+      return apiFetch<any[]>(`/sprints?${q.toString()}`);
+    },
+    get: (id: string) => apiFetch<any>(`/sprints/${encodeURIComponent(id)}`),
+    update: (
+      id: string,
+      body: {
+        name?: string;
+        goal?: string | null;
+        state?: "planned" | "active" | "completed" | "cancelled";
+        start_date?: string | null;
+        end_date?: string | null;
+      },
+    ) => apiFetch<any>(`/sprints/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+    /** Soft-delete: state -> cancelled and every assigned story has
+     *  sprint_id cleared back to null. */
+    delete: (id: string) =>
+      apiFetch<any>(`/sprints/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    assignStory: (sprintId: string, storyId: string) =>
+      apiFetch<any>(
+        `/sprints/${encodeURIComponent(sprintId)}/stories/${encodeURIComponent(storyId)}/assign`,
+        { method: "POST", body: "{}" },
+      ),
+    unassignStory: (sprintId: string, storyId: string) =>
+      apiFetch<any>(
+        `/sprints/${encodeURIComponent(sprintId)}/stories/${encodeURIComponent(storyId)}`,
+        { method: "DELETE" },
+      ),
+    /** Same response shape as `api.projects.testCases` so the existing
+     *  test-cases panel rendering can be reused unchanged. */
+    testCases: (id: string) =>
+      apiFetch<{
+        sprint_id: string;
+        project_id: string;
+        total: number;
+        by_status: { draft: number; approved: number; rejected: number; stale: number };
+        scripts_built: number;
+        stories: Array<{
+          id: string;
+          title: string;
+          version: number;
+          test_cases: Array<{
+            id: string;
+            title: string;
+            status: "draft" | "approved" | "rejected";
+            stale: boolean;
+            tags: string[];
+            script_path: string | null;
+            script_built_at: string | null;
+            heal_attempts: number;
+          }>;
+        }>;
+      }>(`/sprints/${encodeURIComponent(id)}/test-cases`),
   },
   generate: {
     quick: (data: any) => apiFetch<any>("/api/generate/robot-suite", { method: "POST", body: JSON.stringify(data) }),
@@ -620,6 +769,62 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    /** Live SSE for parallel bulk runs of all approved test cases in a story.
+     *  Events emitted: start, queued (per tc), running, log (line per tc),
+     *  done (per tc outcome), summary (final aggregate). When `auto_heal`
+     *  is true the engine adds healing/healed/heal_failed events between
+     *  attempts on a failed test. */
+    userStoryStreamUrl: (
+      storyId: string,
+      body: { org_id: string; persona_id?: string | null; auto_heal?: boolean },
+    ) => {
+      const q = new URLSearchParams({ org_id: body.org_id });
+      if (body.persona_id) q.append("persona_id", body.persona_id);
+      if (body.auto_heal) q.append("auto_heal", "true");
+      return withAuthQuery(
+        `${API_BASE}/run/user-story/${encodeURIComponent(storyId)}/stream?${q.toString()}`,
+      );
+    },
+    byTagStreamUrl: (
+      tagName: string,
+      body: {
+        project_id: string;
+        org_id: string;
+        persona_id?: string | null;
+        auto_heal?: boolean;
+      },
+    ) => {
+      const q = new URLSearchParams({ project_id: body.project_id, org_id: body.org_id });
+      if (body.persona_id) q.append("persona_id", body.persona_id);
+      if (body.auto_heal) q.append("auto_heal", "true");
+      return withAuthQuery(
+        `${API_BASE}/run/tag/${encodeURIComponent(tagName)}/stream?${q.toString()}`,
+      );
+    },
+    /** SSE stream for a sprint-scoped bulk run. Resolves to all approved
+     *  non-stale test cases across every story in the sprint. */
+    sprintStreamUrl: (
+      sprintId: string,
+      body: { org_id: string; persona_id?: string | null; auto_heal?: boolean },
+    ) => {
+      const q = new URLSearchParams({ org_id: body.org_id });
+      if (body.persona_id) q.append("persona_id", body.persona_id);
+      if (body.auto_heal) q.append("auto_heal", "true");
+      return withAuthQuery(
+        `${API_BASE}/run/sprint/${encodeURIComponent(sprintId)}/stream?${q.toString()}`,
+      );
+    },
+    /** SSE stream that re-runs a single test case (used by Heal & retry). */
+    testCaseStreamUrl: (
+      testCaseId: string,
+      body: { org_id: string; persona_id?: string | null },
+    ) => {
+      const q = new URLSearchParams({ org_id: body.org_id });
+      if (body.persona_id) q.append("persona_id", body.persona_id);
+      return withAuthQuery(
+        `${API_BASE}/run/test-case/${encodeURIComponent(testCaseId)}/stream?${q.toString()}`,
+      );
+    },
   },
   llm: {
     chat: (data: any) => apiFetch<any>("/api/llm/chat", { method: "POST", body: JSON.stringify(data) }),

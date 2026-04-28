@@ -41,7 +41,15 @@ class JsonFileBackend(StorageBackend):
 
     def save_user_story(self, story: dict[str, Any]) -> None:
         sid = str(story["id"])
+        # Detect sprint reassignment so we can keep the per-sprint index
+        # in sync. If the story had a different sprint_id before, drop it
+        # from the old index; if it has one now, add to the new index.
+        old_row = self.read(f"user_story:{sid}")
+        old_sprint = old_row.get("sprint_id") if old_row else None
+        new_sprint = story.get("sprint_id")
+
         self.write(f"user_story:{sid}", story)
+
         pid = str(story["project_id"])
         idx_key = f"user_stories_by_project:{pid}"
         idx = self.read(idx_key)
@@ -49,6 +57,21 @@ class JsonFileBackend(StorageBackend):
         if sid not in ids:
             ids.insert(0, sid)
         self.write(idx_key, {"ids": ids})
+
+        # Sprint index maintenance. The sprint_id is optional on
+        # UserStory; both branches no-op cleanly when the field is null.
+        if old_sprint and old_sprint != new_sprint:
+            old_key = f"user_stories_by_sprint:{old_sprint}"
+            old_idx = self.read(old_key)
+            old_ids = [x for x in old_idx.get("ids", []) if x != sid]
+            self.write(old_key, {"ids": old_ids})
+        if new_sprint:
+            sp_key = f"user_stories_by_sprint:{new_sprint}"
+            sp_idx = self.read(sp_key)
+            sp_ids: list[str] = list(sp_idx.get("ids", []))
+            if sid not in sp_ids:
+                sp_ids.insert(0, sid)
+            self.write(sp_key, {"ids": sp_ids})
 
     def get_user_story(self, story_id: UUID) -> dict[str, Any]:
         data = self.read(f"user_story:{story_id}")
@@ -64,6 +87,45 @@ class JsonFileBackend(StorageBackend):
                 row = self.read(f"user_story:{sid}")
             except (OSError, json.JSONDecodeError):
                 continue
+            if row:
+                out.append(row)
+        return out
+
+    # --- Sprint persistence (parallels user_story) -------------------
+
+    def save_sprint(self, sprint: dict[str, Any]) -> None:
+        sid = str(sprint["id"])
+        self.write(f"sprint:{sid}", sprint)
+        pid = str(sprint["project_id"])
+        idx_key = f"sprints_by_project:{pid}"
+        idx = self.read(idx_key)
+        ids: list[str] = list(idx.get("ids", []))
+        if sid not in ids:
+            ids.insert(0, sid)
+        self.write(idx_key, {"ids": ids})
+
+    def get_sprint(self, sprint_id: UUID) -> dict[str, Any]:
+        data = self.read(f"sprint:{sprint_id}")
+        if not data:
+            raise KeyError(str(sprint_id))
+        return data
+
+    def list_sprints(self, project_id: UUID) -> list[dict[str, Any]]:
+        idx = self.read(f"sprints_by_project:{project_id}")
+        out: list[dict[str, Any]] = []
+        for sid in idx.get("ids", []):
+            row = self.read(f"sprint:{sid}")
+            if row:
+                out.append(row)
+        return out
+
+    def get_user_stories_by_sprint(self, sprint_id: UUID) -> list[dict[str, Any]]:
+        """Read the per-sprint story index. Returns rows in insertion
+        order (newest first since save_user_story uses `insert(0, ...)`)."""
+        idx = self.read(f"user_stories_by_sprint:{sprint_id}")
+        out: list[dict[str, Any]] = []
+        for sid in idx.get("ids", []):
+            row = self.read(f"user_story:{sid}")
             if row:
                 out.append(row)
         return out

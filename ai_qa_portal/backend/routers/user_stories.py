@@ -9,10 +9,11 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ai_qa_portal.backend.config import REPO_ROOT, settings
 from ai_qa_portal.backend.project_registry import slug_for_project_id
+from ai_qa_portal.backend.prompts import assembler
 from ai_qa_portal.backend.services.auth import (
     assert_user_owns_project,
     get_current_user,
@@ -22,6 +23,7 @@ from ..models.generation import GenerationResponse
 from ..models.tag import Tag, TagScope
 from ..models.test_case import BatchApproveRequest, TestCase, TestCaseStatus
 from ..models.user_story import UserStory, UserStoryCreate, UserStoryStatus, UserStoryUpdate
+from ..services.failure_diagnoser import diagnose_run, format_for_prompt
 from ..services.story_versioner import StoryVersioner
 from ..services.test_case_generator import TestCaseGenerator
 from ..services.test_case_script_builder import TestCaseScriptBuilder
@@ -31,6 +33,7 @@ _store = JsonFileBackend(settings.data_dir)
 _versioner = StoryVersioner()
 _generator = TestCaseGenerator()
 _builder = TestCaseScriptBuilder()
+_RESULTS_ROOT = Path(settings.results_dir)
 
 router = APIRouter(
     prefix="/user-stories",
@@ -190,30 +193,123 @@ async def generate_test_cases(story_id: UUID, current_user: User = Depends(get_c
     return GenerationResponse(user_story_id=story.id, generated=generated)
 
 
-class TestCaseStatusPatch(BaseModel):
-    status: TestCaseStatus
+class TestCaseCreate(BaseModel):
+    """Manual create of a test case. Distinct from the AI-driven
+    `/user-stories/{id}/generate` path -- this is what the "Add case
+    manually" button on the story detail page hits."""
+    user_story_id: UUID
+    title: str
+    steps: list[str] = Field(default_factory=list)
+    expected_result: str = ""
+    preconditions: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    status: TestCaseStatus = TestCaseStatus.draft
+
+
+@test_cases_router.post("", response_model=TestCase, status_code=201)
+def create_test_case(
+    body: TestCaseCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Create one test case manually. Ownership inherited from the parent
+    story; new tags are seeded into the project's tag registry so they
+    show up in the bulk-run tag dropdown immediately."""
+    story = _load_story_or_403(body.user_story_id, current_user)
+    _store.seed_static_tags(story.project_id)
+
+    cleaned_tags = [t.strip() for t in body.tags if t.strip()]
+    for tname in cleaned_tags:
+        _ensure_tag(story.project_id, tname)
+
+    tc = TestCase(
+        id=uuid4(),
+        user_story_id=story.id,
+        project_id=story.project_id,
+        title=body.title.strip() or "Untitled",
+        steps=[s for s in body.steps if s is not None],
+        expected_result=(body.expected_result or "").strip(),
+        preconditions=(body.preconditions or "").strip() or None,
+        status=body.status,
+        stale=False,
+        tags=cleaned_tags,
+        created_at=datetime.now(timezone.utc),
+    )
+    _store.save_test_case(tc.model_dump(mode="json"))
+    return tc
+
+
+class TestCasePatch(BaseModel):
+    """Per-case patch covering both status flips and content edits.
+
+    Every field is optional; only the keys the caller actually sends are
+    applied (`model_dump(exclude_unset=True)`). When ANY content field
+    changes (title / steps / expected / preconditions), `script_path` is
+    cleared so the bulk runner can't ship a stale Robot script -- the
+    user can hit "Generate scripts" again to re-materialise.
+    """
+    status: Optional[TestCaseStatus] = None
+    title: Optional[str] = None
+    steps: Optional[list[str]] = None
+    expected_result: Optional[str] = None
+    preconditions: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
+_TC_CONTENT_FIELDS = frozenset({"title", "steps", "expected_result", "preconditions"})
 
 
 @test_cases_router.patch("/{test_case_id}", response_model=TestCase)
-def patch_test_case_status(
+def patch_test_case(
     test_case_id: UUID,
-    body: TestCaseStatusPatch,
+    body: TestCasePatch,
     current_user: User = Depends(get_current_user),
 ):
-    """Per-case status flip used by the story detail UI's Approve / Reject /
-    Re-draft buttons. Replaces the all-or-nothing batch-approve round-trip.
-    """
+    """Patch any subset of a test case's fields. Used by both the per-row
+    Approve / Reject / Re-draft buttons (status-only) and the new bulk
+    Edit modal (full content edits)."""
     try:
         row = _store.get_test_case(test_case_id)
     except KeyError:
         raise HTTPException(404, "Test case not found") from None
-    # Inherit ownership from the parent story.
     _load_story_or_403(UUID(str(row["user_story_id"])), current_user)
 
-    row["status"] = body.status.value
-    # Status mutation does not invalidate a previously built script -- only
-    # changes to title/steps/expected/precondition would. Leave script_path
-    # alone here.
+    payload = body.model_dump(exclude_unset=True)
+    if not payload:
+        return TestCase.model_validate(row)
+
+    project_id = UUID(str(row["project_id"]))
+    content_changed = any(k in payload for k in _TC_CONTENT_FIELDS)
+
+    for k, v in payload.items():
+        if k == "status":
+            row[k] = v.value if hasattr(v, "value") else v
+            continue
+        if k == "title":
+            row[k] = (v or "").strip() or "Untitled"
+            continue
+        if k == "expected_result":
+            row[k] = (v or "").strip()
+            continue
+        if k == "preconditions":
+            row[k] = (v or "").strip() or None
+            continue
+        if k == "steps":
+            row[k] = [s for s in (v or []) if s is not None]
+            continue
+        if k == "tags":
+            cleaned = [t.strip() for t in (v or []) if t.strip()]
+            for tname in cleaned:
+                _ensure_tag(project_id, tname)
+            row[k] = cleaned
+            continue
+
+    if content_changed:
+        # Saved Robot script is no longer guaranteed to match the new
+        # steps/expected. Force re-materialisation on the next
+        # "Generate scripts" / bulk run.
+        row["script_path"] = None
+        row["script_built_at"] = None
+
     _store.save_test_case(row)
     return TestCase.model_validate(row)
 
@@ -430,3 +526,173 @@ def list_tags(
     static = sorted([t for t in tags if t.scope == TagScope.static], key=lambda t: t.name.lower())
     custom = sorted([t for t in tags if t.scope == TagScope.custom], key=lambda t: t.name.lower())
     return static + custom
+
+
+# --- Self-healing -----------------------------------------------------------
+
+_HEAL_CAP_PER_HOUR = 2
+
+
+class HealRequest(BaseModel):
+    run_folder: str  # which failed run to learn from
+
+
+class HealResponse(BaseModel):
+    ok: bool
+    test_case_id: UUID
+    script_path: Optional[str]
+    diagnosis: dict
+    attempts: int
+    message: str
+
+
+def _resolve_run_dir_safe(run_folder: str) -> Path:
+    """Same path-safety rules as routers/runs.py uses for file serving."""
+    if "/" in run_folder or "\\" in run_folder or ".." in run_folder:
+        raise HTTPException(400, "Invalid run folder")
+    run_dir = (_RESULTS_ROOT / run_folder).resolve()
+    try:
+        run_dir.relative_to(_RESULTS_ROOT.resolve())
+    except ValueError:
+        raise HTTPException(400, "Refusing to access path outside the results directory") from None
+    if not run_dir.is_dir():
+        raise HTTPException(404, f"Run '{run_folder}' not found")
+    return run_dir
+
+
+def _read_screenshot_bytes(path: Optional[str], limit: int = 4 * 1024 * 1024) -> Optional[bytes]:
+    """Read a screenshot file from disk, capped at ``limit`` bytes so we
+    don't pump huge images into the LLM. Returns None on any error."""
+    if not path:
+        return None
+    p = Path(path)
+    try:
+        if not p.is_file():
+            return None
+        if p.stat().st_size > limit:
+            return None
+        return p.read_bytes()
+    except OSError:
+        return None
+
+
+@test_cases_router.post("/{test_case_id}/heal", response_model=HealResponse)
+def heal_test_case(
+    test_case_id: UUID,
+    body: HealRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Read a failed run, ask the LLM (with playbook + catalog + screenshot)
+    to rewrite the saved Robot script, and persist the rewrite.
+
+    The endpoint:
+      1. Loads the failing test case (ownership inherited from parent story).
+      2. Diagnoses ``output.xml`` to extract the failing keyword + error
+         + last screenshot.
+      3. Calls the LLM with the "healer" role prompt (playbook + catalog +
+         original test case + current script + diagnosis + screenshot bytes
+         when available + small).
+      4. Writes the rewrite to the same ``script_path`` so the next run
+         picks it up automatically.
+      5. Bumps ``heal_attempts`` and ``last_healed_at`` on the test case
+         and refuses to act past ``_HEAL_CAP_PER_HOUR`` attempts within
+         the trailing hour.
+
+    The endpoint is sync because the heal is one LLM call; the bulk
+    runner already runs heals concurrently via its ThreadPoolExecutor.
+    """
+    try:
+        row = _store.get_test_case(test_case_id)
+    except KeyError:
+        raise HTTPException(404, "Test case not found") from None
+    story_id = UUID(str(row["user_story_id"]))
+    _load_story_or_403(story_id, current_user)
+
+    tc = TestCase.model_validate(row)
+    if not tc.script_path:
+        raise HTTPException(409, "Test case has no saved script to heal. Build scripts first.")
+
+    # Per-hour cap. Cheap to compute -- one timestamp comparison.
+    now = datetime.now(timezone.utc)
+    if tc.last_healed_at is not None:
+        last = tc.last_healed_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        elapsed = (now - last).total_seconds()
+        if elapsed < 3600 and tc.heal_attempts >= _HEAL_CAP_PER_HOUR:
+            raise HTTPException(
+                429,
+                f"Heal cap reached: {tc.heal_attempts} attempts in the last hour. "
+                "Investigate manually or wait an hour for the cap to reset.",
+            )
+
+    run_dir = _resolve_run_dir_safe(body.run_folder)
+    diag = diagnose_run(run_dir)
+    if diag is None:
+        raise HTTPException(
+            400,
+            "No actionable diagnosis: the run has no output.xml or did not fail at the test level.",
+        )
+
+    script_abs = (REPO_ROOT / tc.script_path).resolve()
+    if not script_abs.is_file():
+        raise HTTPException(410, f"Saved script missing on disk: {tc.script_path}")
+    current_script = script_abs.read_text(encoding="utf-8")
+
+    failure_block = format_for_prompt(diag)
+    steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(tc.steps))
+    user_body = (
+        f"## Original test case\n\n"
+        f"Title: {tc.title}\n"
+        f"Preconditions: {tc.preconditions or 'None'}\n\n"
+        f"Steps:\n{steps_block}\n\n"
+        f"Expected result: {tc.expected_result}\n"
+        f"Tags: {', '.join(tc.tags) if tc.tags else 'none'}\n\n"
+        f"## Current saved script (which just failed)\n\n"
+        f"```robot\n{current_script}\n```\n\n"
+        f"## Diagnosis from the failed run\n\n"
+        f"{failure_block}\n"
+    )
+    user_prompt = assembler.build_user_prompt_with_catalog(user_body, include_full_catalog=True)
+    system_prompt = assembler.build_system_prompt("healer")
+
+    screenshot_bytes = _read_screenshot_bytes(diag.screenshot_path)
+
+    # Late import to avoid pulling ai_bridge at module load time (it
+    # eagerly imports LLM SDK packages which are heavy).
+    from ai_bridge import call_llm, extract_robot_code
+
+    raw = call_llm(system_prompt, user_prompt, image_bytes=screenshot_bytes)
+    new_script = extract_robot_code(raw).rstrip()
+    if not new_script:
+        raise HTTPException(502, "Healer returned no usable Robot source.")
+
+    # Atomic write -- write to a tempfile next to the target then rename.
+    tmp_path = script_abs.with_suffix(script_abs.suffix + ".heal.tmp")
+    tmp_path.write_text(new_script + "\n", encoding="utf-8")
+    tmp_path.replace(script_abs)
+
+    # Reset attempts when an hour has passed; otherwise increment.
+    if tc.last_healed_at is not None:
+        last = tc.last_healed_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if (now - last).total_seconds() >= 3600:
+            tc.heal_attempts = 0
+    tc.heal_attempts += 1
+    tc.last_healed_at = now
+    tc.script_built_at = now
+    _store.save_test_case(tc.model_dump(mode="json"))
+
+    return HealResponse(
+        ok=True,
+        test_case_id=tc.id,
+        script_path=tc.script_path,
+        diagnosis=diag.to_dict(),
+        attempts=tc.heal_attempts,
+        message=(
+            f"Healed. Failing keyword '{diag.first_failure.keyword_name}' rewritten."
+            if diag.first_failure
+            else "Healed."
+        ),
+    )

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import EditTestCasesModal, { type TestCaseDraft } from "@/components/test-cases/EditTestCasesModal";
 
 type TestCaseRow = {
   id: string;
@@ -38,6 +39,88 @@ export default function UserStoryDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+
+  // Bulk edit / add modal state. `editAllOpen` carries an "openMode"
+  // because the same modal serves both flows: "manual" pre-loads one
+  // blank case, "edit-all" pre-loads every existing case.
+  const [editAllOpen, setEditAllOpen] = useState<"manual" | "edit-all" | null>(null);
+  const [knownTags, setKnownTags] = useState<string[]>([]);
+  // Sprint reassignment state. The chip is always visible; clicking it
+  // toggles `sprintMenuOpen` to show a dropdown of active+planned
+  // sprints in this project plus a "(No sprint)" option.
+  const [availableSprints, setAvailableSprints] = useState<Array<{ id: string; name: string; state: string }>>([]);
+  const [currentSprint, setCurrentSprint] = useState<{ id: string; name: string } | null>(null);
+  const [sprintMenuOpen, setSprintMenuOpen] = useState(false);
+  const [sprintBusy, setSprintBusy] = useState(false);
+
+  // Pull the project's known tags once we know the story's project id, so
+  // the Edit modal can show clickable tag suggestions instead of forcing
+  // free-text entry every time.
+  useEffect(() => {
+    if (!story?.project_id) return;
+    api.tags
+      .list(story.project_id)
+      .then((rows: Array<{ name: string }>) =>
+        setKnownTags(rows.map((r) => r.name).filter(Boolean)),
+      )
+      .catch(() => setKnownTags([]));
+  }, [story?.project_id]);
+
+  // Available sprints + the story's current sprint label. Two requests
+  // because the story payload only carries the sprint UUID; we need to
+  // resolve the name for the chip text.
+  useEffect(() => {
+    if (!story?.project_id) return;
+    api.sprints
+      .list(story.project_id)
+      .then((rows: any[]) =>
+        setAvailableSprints(
+          rows.map((s) => ({ id: s.id, name: s.name, state: s.state })),
+        ),
+      )
+      .catch(() => setAvailableSprints([]));
+  }, [story?.project_id]);
+
+  useEffect(() => {
+    const sid = story?.sprint_id as string | undefined;
+    if (!sid) {
+      setCurrentSprint(null);
+      return;
+    }
+    // Look it up locally first; fall back to a fetch if the list hasn't
+    // loaded yet (e.g. sprint is in 'completed' state and the project
+    // page filters those out -- we still want to show its name here).
+    const local = availableSprints.find((s) => s.id === sid);
+    if (local) {
+      setCurrentSprint({ id: local.id, name: local.name });
+      return;
+    }
+    api.sprints.get(sid).then((s: any) => setCurrentSprint({ id: s.id, name: s.name })).catch(() => {});
+  }, [story?.sprint_id, availableSprints]);
+
+  const reassignSprint = async (newSprintId: string | null) => {
+    if (!story) return;
+    setSprintBusy(true);
+    try {
+      const currentId = story.sprint_id as string | null;
+      // Two-step move: unassign from old sprint (if any), assign to new (if any).
+      // The backend's assign endpoint accepts the move in one call but we go
+      // through unassign first so the per-sprint index reflects the previous
+      // owner cleanly; save_user_story handles index churn either way.
+      if (currentId && currentId !== newSprintId) {
+        await api.sprints.unassignStory(currentId, story.id);
+      }
+      if (newSprintId && newSprintId !== currentId) {
+        await api.sprints.assignStory(newSprintId, story.id);
+      }
+      setSprintMenuOpen(false);
+      load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not reassign sprint");
+    } finally {
+      setSprintBusy(false);
+    }
+  };
 
   const load = useCallback(() => {
     api.userStories.get(id).then(setStory).catch(() => setStory(null));
@@ -162,9 +245,59 @@ export default function UserStoryDetailPage() {
           <div>
             <h1 className="text-3xl font-bold text-white mb-1">{story.title}</h1>
             <p className="text-slate-400 whitespace-pre-wrap">{story.description}</p>
-            <div className="flex flex-wrap gap-2 mt-3">
+            <div className="flex flex-wrap gap-2 mt-3 items-center">
               <span className="text-xs px-2 py-0.5 rounded bg-purple-600/30 text-purple-200">v{story.version}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{story.status}</span>
+              {/* Sprint chip with click-to-reassign dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setSprintMenuOpen((v) => !v)}
+                  disabled={sprintBusy}
+                  className={`text-xs px-2 py-0.5 rounded transition-colors ${
+                    currentSprint
+                      ? "bg-fuchsia-500/30 text-fuchsia-100 hover:bg-fuchsia-500/40"
+                      : "bg-slate-600/30 text-slate-300 hover:bg-slate-600/40 border border-dashed border-white/15"
+                  }`}
+                  title="Reassign sprint"
+                >
+                  {currentSprint ? `Sprint: ${currentSprint.name} ▾` : "No sprint ▾"}
+                </button>
+                {sprintMenuOpen && (
+                  <div className="absolute z-20 top-full mt-1 left-0 min-w-[240px] glass-strong rounded-xl py-1 border border-white/10 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={() => reassignSprint(null)}
+                      disabled={sprintBusy || !story.sprint_id}
+                      className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-50"
+                    >
+                      (No sprint -- backlog)
+                    </button>
+                    {availableSprints.length === 0 && (
+                      <p className="px-3 py-2 text-[11px] text-slate-500 italic">
+                        No sprints in this project yet.
+                      </p>
+                    )}
+                    {availableSprints.map((s) => {
+                      const isCurrent = s.id === story.sprint_id;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => reassignSprint(s.id)}
+                          disabled={sprintBusy || isCurrent}
+                          className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-50 ${
+                            isCurrent ? "text-fuchsia-200" : "text-slate-200"
+                          }`}
+                        >
+                          {s.name} <span className="text-slate-500">({s.state})</span>
+                          {isCurrent && <span className="ml-2 text-[10px]">current</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               {counts.stale > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded bg-amber-600/30 text-amber-200" title="Parent story was updated">
                   {counts.stale} stale
@@ -191,6 +324,22 @@ export default function UserStoryDetailPage() {
             >
               Update story
             </button>
+            <button
+              type="button"
+              onClick={() => setEditAllOpen("manual")}
+              className="px-4 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white border border-cyan-500/30"
+            >
+              + Add case manually
+            </button>
+            {tcs.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setEditAllOpen("edit-all")}
+                className="px-4 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white border border-amber-500/30"
+              >
+                Edit all ({tcs.length})
+              </button>
+            )}
             <button
               type="button"
               disabled={genLoading}
@@ -415,6 +564,41 @@ export default function UserStoryDetailPage() {
           })}
         </div>
       )}
+
+      <AnimatePresence>
+        {editAllOpen && (
+          <EditTestCasesModal
+            open={!!editAllOpen}
+            storyId={id}
+            storyTitle={story?.title ?? ""}
+            existing={
+              editAllOpen === "manual"
+                ? []
+                : tcs.map<TestCaseDraft>((t) => ({
+                    id: t.id,
+                    title: t.title,
+                    steps: t.steps.length > 0 ? [...t.steps] : [""],
+                    expected_result: t.expected_result,
+                    preconditions: t.preconditions ?? "",
+                    tags: [...t.tags],
+                    status: t.status,
+                    removed: false,
+                    dirty: false,
+                  }))
+            }
+            knownTags={knownTags}
+            onClose={() => setEditAllOpen(null)}
+            onSaved={() => {
+              setMsg(
+                editAllOpen === "manual"
+                  ? "Test case created."
+                  : "Saved changes.",
+              );
+              load();
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

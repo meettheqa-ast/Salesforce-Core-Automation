@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/projects", label: "Projects", icon: "📂" },
   { href: "/runs", label: "Runs", icon: "🏁" },
+  { href: "/sprints", label: "Sprints", icon: "🏃" },
   { href: "/user-stories", label: "Stories", icon: "📖" },
   // Hidden from the demo nav -- routes still live at /sfdx and /locators if
   // accessed directly. Re-enable once the features are demo-ready.

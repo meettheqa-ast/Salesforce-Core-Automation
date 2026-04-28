@@ -1,14 +1,36 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import AnimatedCard from "@/components/cards/AnimatedCard";
-import MetricCard from "@/components/cards/MetricCard";
+import StatusDonut, { DONUT_COLORS } from "@/components/charts/StatusDonut";
 import RobotCodeEditor from "@/components/editor/RobotCodeEditor";
 import GlassSelect from "@/components/ui/GlassSelect";
 import { api } from "@/lib/api";
+
+/** Filter state for the test-cases panel. Mirrors a `?filter=<id>` URL
+ *  param so a click-through from the project list page lands here on
+ *  the right slice. */
+type CaseFilter =
+  | "all"
+  | "approved"
+  | "draft"
+  | "rejected"
+  | "stale"
+  | "has-script"
+  | "no-script";
+
+const VALID_FILTERS: CaseFilter[] = [
+  "all",
+  "approved",
+  "draft",
+  "rejected",
+  "stale",
+  "has-script",
+  "no-script",
+];
 
 const DEFAULT_PERSONA = "System Admin";
 
@@ -34,9 +56,34 @@ type ConfirmTarget =
   | { kind: "env"; env: string }
   | { kind: "persona"; env: string; persona: string };
 
+type ProjectTestCases = Awaited<ReturnType<typeof api.projects.testCases>>;
+type StoryGroup = ProjectTestCases["stories"][number];
+type TCRow = StoryGroup["test_cases"][number];
+
 export default function ProjectDetailPage() {
   const params = useParams();
   const name = decodeURIComponent(params.name as string);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const initialFilter = ((): CaseFilter => {
+    const v = searchParams.get("filter");
+    return v && (VALID_FILTERS as string[]).includes(v) ? (v as CaseFilter) : "all";
+  })();
+  const [activeFilter, setActiveFilter] = useState<CaseFilter>(initialFilter);
+
+  /** Update both component state and the URL so the filter is shareable
+   *  and survives a refresh. Uses `replace` to keep the back button clean
+   *  -- the user's history shouldn't fill with filter toggles. */
+  const setFilter = (next: CaseFilter) => {
+    setActiveFilter(next);
+    const sp = new URLSearchParams(searchParams.toString());
+    if (next === "all") sp.delete("filter");
+    else sp.set("filter", next);
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
   const [environments, setEnvironments] = useState<string[]>([]);
   const [selectedEnv, setSelectedEnv] = useState("");
@@ -52,6 +99,44 @@ export default function ProjectDetailPage() {
   const [tests, setTests] = useState<TestRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [viewingSource, setViewingSource] = useState<{ name: string; source: string } | null>(null);
+  const [projectTCs, setProjectTCs] = useState<ProjectTestCases | null>(null);
+  const [openStories, setOpenStories] = useState<Record<string, boolean>>({});
+  const [scriptPreview, setScriptPreview] = useState<{ tcId: string; title: string; content: string } | null>(null);
+  // Sprints summary for the project. Fetched once we resolve the
+  // project slug -> portal UUID so /sprints?project_id=... works.
+  const [sprintsForProject, setSprintsForProject] = useState<
+    Array<{ id: string; name: string; state: string; story_count: number }>
+  >([]);
+
+  /** The Test cases panel renders this filtered slice of `projectTCs.stories`.
+   *  When the filter is "all" we just pass the original stories through;
+   *  otherwise each story is reduced to only the test cases matching the
+   *  active filter, and stories with zero matches are dropped entirely. */
+  const filteredStories = useMemo(() => {
+    if (!projectTCs) return [];
+    if (activeFilter === "all") return projectTCs.stories;
+    const matchesFilter = (tc: TCRow): boolean => {
+      switch (activeFilter) {
+        case "approved":
+          return tc.status === "approved" && !tc.stale;
+        case "draft":
+          return tc.status === "draft" && !tc.stale;
+        case "rejected":
+          return tc.status === "rejected";
+        case "stale":
+          return tc.stale;
+        case "has-script":
+          return !!tc.script_path;
+        case "no-script":
+          return !tc.script_path;
+        default:
+          return true;
+      }
+    };
+    return projectTCs.stories
+      .map((s) => ({ ...s, test_cases: s.test_cases.filter(matchesFilter) }))
+      .filter((s) => s.test_cases.length > 0);
+  }, [projectTCs, activeFilter]);
 
   const [showAddEnv, setShowAddEnv] = useState(false);
   const [newEnvName, setNewEnvName] = useState("");
@@ -80,6 +165,30 @@ export default function ProjectDetailPage() {
       loadEnvironments();
       api.projects.tests(name).then(setTests).catch(() => setTests([]));
       api.analytics.summary(name).then(setAnalytics).catch(() => setAnalytics(null));
+      api.projects.testCases(name).then(setProjectTCs).catch(() => setProjectTCs(null));
+      // Sprint panel needs the portal project UUID, so resolve slug
+      // first then fan out to sprints + stories (for per-sprint counts).
+      api.projects.portalProjectId(name).then((r) => {
+        const pid = r.project_id;
+        return Promise.all([
+          api.sprints.list(pid).catch(() => []),
+          api.userStories.list(pid).catch(() => [] as Array<{ sprint_id: string | null }>),
+        ]).then(([sprints, stories]) => {
+          const counts: Record<string, number> = {};
+          for (const st of stories) {
+            const sid = st.sprint_id;
+            if (sid) counts[sid] = (counts[sid] || 0) + 1;
+          }
+          setSprintsForProject(
+            sprints.map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              state: s.state,
+              story_count: counts[s.id] || 0,
+            })),
+          );
+        });
+      }).catch(() => setSprintsForProject([]));
     });
   }, [name, loadEnvironments]);
 
@@ -256,19 +365,14 @@ export default function ProjectDetailPage() {
         </div>
       </motion.div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 mb-6">
-        <MetricCard icon="🌐" label="Environments" value={environments.length} color="purple" delay={0} />
-        <MetricCard icon="📄" label="Saved Tests" value={tests.length} color="cyan" delay={0.1} />
-        <MetricCard
-          icon="✅"
-          label="Pass Rate"
-          value={analytics?.pass_rate != null ? `${analytics.pass_rate}%` : "--"}
-          color="green"
-          delay={0.2}
-        />
-        <MetricCard icon="🔄" label="Total Runs" value={analytics?.total_runs ?? 0} color="pink" delay={0.3} />
-      </div>
+      {/* Dashboard: counts row + 2 donuts + filter chips */}
+      <ProjectDashboard
+        environments={environments.length}
+        tcs={projectTCs}
+        analytics={analytics}
+        activeFilter={activeFilter}
+        onFilterChange={setFilter}
+      />
 
       {/* Inline status */}
       <AnimatePresence>
@@ -497,6 +601,213 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {/* Sprints panel */}
+      <div className="mt-6">
+        <AnimatedCard glow="purple" delay={0.12}>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 className="text-sm font-bold text-white">
+              Sprints{" "}
+              <span className="text-slate-500 font-normal">({sprintsForProject.length})</span>
+            </h3>
+            <Link
+              href={`/sprints?project=${encodeURIComponent(name)}`}
+              className="text-[11px] text-purple-300 hover:text-purple-200"
+            >
+              Manage sprints &rarr;
+            </Link>
+          </div>
+          {sprintsForProject.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              No sprints yet for this project.{" "}
+              <Link
+                href={`/sprints?project=${encodeURIComponent(name)}`}
+                className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
+              >
+                Create one
+              </Link>{" "}
+              to organise stories into iterations.
+            </p>
+          ) : (
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {sprintsForProject
+                .sort((a, b) => {
+                  const order = { active: 0, planned: 1, completed: 2, cancelled: 3 };
+                  return (order[a.state as keyof typeof order] ?? 9) - (order[b.state as keyof typeof order] ?? 9);
+                })
+                .map((s) => (
+                  <Link
+                    key={s.id}
+                    href={`/sprints/${encodeURIComponent(s.id)}`}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/40 transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm text-slate-100 truncate">{s.name}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {s.story_count} stor{s.story_count === 1 ? "y" : "ies"}
+                      </p>
+                    </div>
+                    <span
+                      className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        s.state === "active"
+                          ? "bg-emerald-500/30 text-emerald-200"
+                          : s.state === "planned"
+                          ? "bg-purple-500/30 text-purple-200"
+                          : s.state === "completed"
+                          ? "bg-slate-500/30 text-slate-200"
+                          : "bg-red-500/30 text-red-200"
+                      }`}
+                    >
+                      {s.state}
+                    </span>
+                  </Link>
+                ))}
+            </div>
+          )}
+        </AnimatedCard>
+      </div>
+
+      {/* Test cases (project-wide, grouped by user story, filterable) */}
+      {projectTCs && projectTCs.total > 0 && (
+        <div className="mt-6">
+          <AnimatedCard glow="cyan" delay={0.15}>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-white">
+                Test cases{" "}
+                <span className="text-slate-500 font-normal">
+                  ({activeFilter === "all"
+                    ? projectTCs.total
+                    : `${filteredStories.reduce((n, s) => n + s.test_cases.length, 0)} of ${projectTCs.total}`})
+                </span>
+              </h3>
+              <div className="flex flex-wrap gap-2 text-[11px]">
+                {projectTCs.scripts_built > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-600/20 text-cyan-200">
+                    {projectTCs.scripts_built} script(s) built
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {activeFilter !== "all" && filteredStories.length === 0 && (
+              <div className="text-center py-6 text-sm text-slate-400">
+                No test cases match the <span className="text-slate-200">{activeFilter}</span> filter.{" "}
+                <button
+                  type="button"
+                  onClick={() => setFilter("all")}
+                  className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
+                >
+                  Clear filter
+                </button>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {filteredStories.map((story: StoryGroup) => {
+                const isOpen = openStories[story.id] ?? true;
+                const approvedHere = story.test_cases.filter(
+                  (t) => t.status === "approved" && !t.stale,
+                ).length;
+                return (
+                  <div key={story.id} className="rounded-xl border border-white/10 bg-white/5">
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenStories((s) => ({ ...s, [story.id]: !(s[story.id] ?? true) }))
+                        }
+                        className="flex items-center gap-2 text-left flex-1 min-w-0"
+                      >
+                        <span className="text-slate-400 text-xs">{isOpen ? "▼" : "▶"}</span>
+                        <span className="text-sm text-white truncate">{story.title}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-600/30 text-purple-200">
+                          v{story.version}
+                        </span>
+                        <span className="text-[10px] text-slate-500 ml-1">
+                          {story.test_cases.length} case(s) -- {approvedHere} approved
+                        </span>
+                      </button>
+                      <Link
+                        href={`/user-stories/${encodeURIComponent(story.id)}`}
+                        className="text-[10px] text-purple-400 hover:text-purple-300 px-2"
+                      >
+                        Open story →
+                      </Link>
+                    </div>
+
+                    {isOpen && (
+                      <div className="border-t border-white/10 divide-y divide-white/5">
+                        {story.test_cases.map((tc: TCRow) => (
+                          <div
+                            key={tc.id}
+                            className="px-3 py-2 flex flex-wrap items-center gap-2"
+                          >
+                            <span
+                              className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                tc.status === "approved"
+                                  ? "bg-emerald-600/25 text-emerald-200"
+                                  : tc.status === "rejected"
+                                    ? "bg-red-600/25 text-red-200"
+                                    : "bg-slate-700/50 text-slate-300"
+                              }`}
+                            >
+                              {tc.status}
+                            </span>
+                            {tc.stale && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-600/25 text-amber-200">
+                                stale
+                              </span>
+                            )}
+                            <span className="text-sm text-slate-100 flex-1 min-w-0 truncate">
+                              {tc.title}
+                            </span>
+                            {tc.tags.slice(0, 3).map((t) => (
+                              <span
+                                key={t}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-purple-600/25 text-purple-200"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                            {tc.script_path ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void api.testCases
+                                    .script(tc.id)
+                                    .then((r) =>
+                                      setScriptPreview({
+                                        tcId: tc.id,
+                                        title: tc.title,
+                                        content: r.content,
+                                      }),
+                                    )
+                                    .catch((err) =>
+                                      flash(
+                                        "err",
+                                        err instanceof Error ? err.message : "Could not load script",
+                                      ),
+                                    );
+                                }}
+                                className="text-[10px] px-2 py-0.5 rounded bg-cyan-600/30 text-cyan-100 hover:bg-cyan-600/50"
+                                title={tc.script_path}
+                              >
+                                View script
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 italic">no script built</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </AnimatedCard>
+        </div>
+      )}
+
       {/* Saved Tests */}
       <div className="mt-6">
         <AnimatedCard glow="purple" delay={0.2}>
@@ -586,6 +897,40 @@ export default function ProjectDetailPage() {
         )}
       </AnimatePresence>
 
+      {/* Test-case Robot script preview modal */}
+      <AnimatePresence>
+        {scriptPreview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-8"
+            onClick={() => setScriptPreview(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              className="glass-strong p-4 w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-white truncate">{scriptPreview.title}</h3>
+                <button
+                  type="button"
+                  onClick={() => setScriptPreview(null)}
+                  className="text-slate-400 hover:text-white text-lg"
+                >
+                  ×
+                </button>
+              </div>
+              <pre className="bg-black/40 border border-cyan-900/40 rounded p-3 text-[12px] text-cyan-100 overflow-auto whitespace-pre flex-1">
+                {scriptPreview.content}
+              </pre>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Source Viewer Modal */}
       <AnimatePresence>
         {viewingSource && (
@@ -638,5 +983,209 @@ function Field({
       </div>
       {children}
     </label>
+  );
+}
+
+
+/**
+ * Project-detail dashboard. Replaces the old four-MetricCard row with a
+ * richer view: top-line counts (stories / cases / pass rate / runs),
+ * two donuts (status breakdown + scripts ready vs not), and a row of
+ * filter chips that toggle which test cases the panel below shows.
+ *
+ * The chips are the only place the active filter is mutated -- they call
+ * `onFilterChange` which writes both component state and the URL.
+ */
+function ProjectDashboard({
+  environments,
+  tcs,
+  analytics,
+  activeFilter,
+  onFilterChange,
+}: {
+  environments: number;
+  tcs: ProjectTestCases | null;
+  analytics: AnalyticsSummary | null;
+  activeFilter: CaseFilter;
+  onFilterChange: (next: CaseFilter) => void;
+}) {
+  const total = tcs?.total ?? 0;
+  const built = tcs?.scripts_built ?? 0;
+  const noScript = total - built;
+  const statusSlices = tcs
+    ? [
+        { id: "approved", label: "Approved", count: tcs.by_status.approved, color: DONUT_COLORS.approved },
+        { id: "draft", label: "Draft", count: tcs.by_status.draft, color: DONUT_COLORS.draft },
+        { id: "rejected", label: "Rejected", count: tcs.by_status.rejected, color: DONUT_COLORS.rejected },
+        { id: "stale", label: "Stale", count: tcs.by_status.stale, color: DONUT_COLORS.stale },
+      ]
+    : [];
+  const scriptSlices = tcs
+    ? [
+        { id: "built", label: "Scripts ready", count: built, color: DONUT_COLORS.built },
+        { id: "no-script", label: "No script", count: noScript, color: DONUT_COLORS.noScript },
+      ]
+    : [];
+
+  const chip = (
+    id: CaseFilter,
+    label: string,
+    count: number,
+    activeCls: string,
+    inactiveCls: string,
+  ) => {
+    const isActive = activeFilter === id;
+    return (
+      <button
+        type="button"
+        key={id}
+        onClick={() => onFilterChange(id)}
+        className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+          isActive ? activeCls : inactiveCls
+        }`}
+      >
+        {label} {count}
+      </button>
+    );
+  };
+
+  return (
+    <AnimatedCard glow="purple" delay={0.05} className="mt-6 mb-6">
+      {/* Top-line counts */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <Stat label="Stories" value={tcs?.stories.length ?? 0} accent="text-purple-200" />
+        <Stat label="Test cases" value={total} accent="text-cyan-200" />
+        <Stat
+          label="Pass rate"
+          value={analytics?.pass_rate != null ? `${analytics.pass_rate}%` : "--"}
+          accent="text-emerald-200"
+        />
+        <Stat label="Total runs" value={analytics?.total_runs ?? 0} accent="text-pink-200" />
+      </div>
+
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-3">
+        {environments} environment{environments === 1 ? "" : "s"} configured
+      </div>
+
+      {/* Two donuts: status + scripts */}
+      <div className="grid sm:grid-cols-2 gap-4 mb-4">
+        <div className="flex items-center gap-4">
+          <StatusDonut
+            slices={statusSlices}
+            size={120}
+            thickness={18}
+            centerSubtitle="cases"
+            ariaLabel="Test case status breakdown"
+          />
+          <div className="text-[11px] space-y-1">
+            <p className="uppercase tracking-wider text-slate-500 text-[10px] mb-1">Status</p>
+            <Legend dot={DONUT_COLORS.approved} label="Approved" count={tcs?.by_status.approved ?? 0} />
+            <Legend dot={DONUT_COLORS.draft} label="Draft" count={tcs?.by_status.draft ?? 0} />
+            <Legend dot={DONUT_COLORS.rejected} label="Rejected" count={tcs?.by_status.rejected ?? 0} />
+            <Legend dot={DONUT_COLORS.stale} label="Stale" count={tcs?.by_status.stale ?? 0} />
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <StatusDonut
+            slices={scriptSlices}
+            size={120}
+            thickness={18}
+            centerLabel={total > 0 ? `${Math.round((built / total) * 100)}%` : "—"}
+            centerSubtitle="ready"
+            ariaLabel="Scripts ready breakdown"
+          />
+          <div className="text-[11px] space-y-1">
+            <p className="uppercase tracking-wider text-slate-500 text-[10px] mb-1">Scripts</p>
+            <Legend dot={DONUT_COLORS.built} label="Scripts ready" count={built} />
+            <Legend dot={DONUT_COLORS.noScript} label="No script (manual)" count={noScript} />
+          </div>
+        </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex flex-wrap gap-1.5 items-center pt-2 border-t border-white/10">
+        <span className="text-[10px] uppercase tracking-wider text-slate-500 mr-1">Filter</span>
+        {chip(
+          "all",
+          "All",
+          total,
+          "bg-white/15 text-white",
+          "bg-white/5 text-slate-300 hover:bg-white/10",
+        )}
+        {chip(
+          "approved",
+          "Approved",
+          tcs?.by_status.approved ?? 0,
+          "bg-emerald-500/40 text-white",
+          "bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25",
+        )}
+        {chip(
+          "draft",
+          "Draft",
+          tcs?.by_status.draft ?? 0,
+          "bg-slate-500/50 text-white",
+          "bg-slate-500/20 text-slate-200 hover:bg-slate-500/30",
+        )}
+        {chip(
+          "rejected",
+          "Rejected",
+          tcs?.by_status.rejected ?? 0,
+          "bg-red-500/40 text-white",
+          "bg-red-500/15 text-red-200 hover:bg-red-500/25",
+        )}
+        {chip(
+          "stale",
+          "Stale",
+          tcs?.by_status.stale ?? 0,
+          "bg-amber-500/40 text-white",
+          "bg-amber-500/15 text-amber-200 hover:bg-amber-500/25",
+        )}
+        <span className="mx-2 text-slate-700">|</span>
+        {chip(
+          "has-script",
+          "Has script",
+          built,
+          "bg-cyan-500/40 text-white",
+          "bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25",
+        )}
+        {chip(
+          "no-script",
+          "No script",
+          noScript,
+          "bg-purple-500/40 text-white",
+          "bg-purple-500/15 text-purple-200 hover:bg-purple-500/25",
+        )}
+      </div>
+    </AnimatedCard>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string | number;
+  accent: string;
+}) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`text-2xl font-bold ${accent}`}>{value}</div>
+    </div>
+  );
+}
+
+function Legend({ dot, label, count }: { dot: string; label: string; count: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        className="w-2 h-2 rounded-full inline-block"
+        style={{ backgroundColor: dot }}
+      />
+      <span className="text-slate-300">{label}</span>
+      <span className="text-slate-500 ml-auto">{count}</span>
+    </div>
   );
 }

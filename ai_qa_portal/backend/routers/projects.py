@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session
 
 import project_manager
 
+from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.project_registry import ensure_project_uuid
 from ai_qa_portal.backend.services.auth import (
     assert_project_role_at_least,
@@ -23,8 +26,14 @@ from ai_qa_portal.backend.services.db import (
     list_memberships_for_user,
     upsert_membership,
 )
+from ai_qa_portal.backend.storage.json_file_backend import JsonFileBackend
 
 from ..models.schemas import ProjectCreate, ProjectMeta, TestInfo
+from ..models.test_case import TestCase
+from ..models.user_story import UserStory
+
+
+_store = JsonFileBackend(settings.data_dir)
 
 
 class CredentialsPayload(BaseModel):
@@ -242,6 +251,144 @@ def get_test_source(
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"source": source}
+
+
+# --- Test cases (project-wide view, grouped by story) ------------------------
+
+
+class _TestCaseRow(BaseModel):
+    """Trim of `models.test_case.TestCase` for the project overview.
+    Excludes fields the project page doesn't need (project_id duplicates
+    the URL slug, created_at is implied by the parent story)."""
+    id: str
+    title: str
+    status: str
+    stale: bool
+    tags: list[str]
+    script_path: Optional[str] = None
+    script_built_at: Optional[datetime] = None
+    heal_attempts: int = 0
+
+
+class _StoryGroup(BaseModel):
+    id: str
+    title: str
+    version: int
+    test_cases: list[_TestCaseRow]
+
+
+class _ProjectTestCasesResponse(BaseModel):
+    project_id: str
+    total: int
+    by_status: dict[str, int]
+    scripts_built: int
+    stories: list[_StoryGroup]
+
+
+@router.get("/{project_name}/test-cases", response_model=_ProjectTestCasesResponse)
+def list_project_test_cases(
+    project_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return every test case for this project, grouped by user story.
+
+    Why this exists: the legacy ``/api/projects/{name}/tests`` endpoint
+    only sees ``.robot`` files on disk (after the recursive-glob fix --
+    previously it missed every AI-generated file under
+    ``Tests/Generated/story_*/``). That's a fine view of "what has a
+    materialised script", but the project detail page also needs to
+    answer "what test cases exist for this project, in what state, and
+    do they have scripts built yet?" -- which lives in the JSON store
+    keyed by ``test_case_ids_project:<UUID>``.
+    """
+    _ensure_can_access_project(project_name, current_user, db)
+    project_id = ensure_project_uuid(project_name)
+
+    # All test cases for this project via the per-project index.
+    tc_rows = []
+    pidx = _store.read(f"test_case_ids_project:{project_id}")
+    for tid in pidx.get("ids", []):
+        row = _store.read(f"test_case:{tid}")
+        if row:
+            tc_rows.append(row)
+
+    test_cases = [TestCase.model_validate(r) for r in tc_rows]
+
+    # Resolve story metadata so the UI can render "<Story title> v1" headers
+    # without N round-trips. Every test case carries user_story_id, so a
+    # single deduplicated lookup covers them all.
+    story_ids = {tc.user_story_id for tc in test_cases}
+    stories_by_id: dict[str, UserStory] = {}
+    for sid in story_ids:
+        try:
+            story_row = _store.get_user_story(sid)
+        except KeyError:
+            continue
+        story = UserStory.model_validate(story_row)
+        stories_by_id[str(story.id)] = story
+
+    # Group + sort. Stories: newest-first by created_at. Within a story:
+    # approved first, then draft, then rejected; stale flagged but kept
+    # in place so users can see the staleness chip next to its peers.
+    status_order = {"approved": 0, "draft": 1, "rejected": 2}
+    groups_by_story: dict[str, list[TestCase]] = {}
+    for tc in test_cases:
+        groups_by_story.setdefault(str(tc.user_story_id), []).append(tc)
+
+    groups: list[_StoryGroup] = []
+    for story_id_str, tcs in groups_by_story.items():
+        story = stories_by_id.get(story_id_str)
+        if story is None:
+            # Test cases for a story that's been deleted -- skip silently.
+            # The orphan rows can be cleaned up via the test-case PATCH
+            # endpoint or a future janitor.
+            continue
+        tcs.sort(key=lambda t: (status_order.get(t.status.value, 99), t.title.lower()))
+        groups.append(
+            _StoryGroup(
+                id=story_id_str,
+                title=story.title,
+                version=story.version,
+                test_cases=[
+                    _TestCaseRow(
+                        id=str(t.id),
+                        title=t.title,
+                        status=t.status.value,
+                        stale=t.stale,
+                        tags=list(t.tags or []),
+                        script_path=t.script_path,
+                        script_built_at=t.script_built_at,
+                        heal_attempts=int(getattr(t, "heal_attempts", 0) or 0),
+                    )
+                    for t in tcs
+                ],
+            )
+        )
+    groups.sort(
+        key=lambda g: (
+            stories_by_id[g.id].created_at if g.id in stories_by_id else datetime.min
+        ),
+        reverse=True,
+    )
+
+    by_status = {"draft": 0, "approved": 0, "rejected": 0, "stale": 0}
+    scripts_built = 0
+    for tc in test_cases:
+        if tc.stale:
+            by_status["stale"] += 1
+        else:
+            by_status[tc.status.value] = by_status.get(tc.status.value, 0) + 1
+        if tc.script_path:
+            scripts_built += 1
+
+    return _ProjectTestCasesResponse(
+        project_id=str(project_id),
+        total=len(test_cases),
+        by_status=by_status,
+        scripts_built=scripts_built,
+        stories=groups,
+    )
 
 
 @router.get("/{project_name}/config")

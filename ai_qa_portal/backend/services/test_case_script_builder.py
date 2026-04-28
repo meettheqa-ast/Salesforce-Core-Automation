@@ -5,18 +5,25 @@ from typing import Optional
 from ..models.org import SalesforceOrg
 from ..models.persona import Persona
 from ..models.test_case import TestCase
+from ..prompts import assembler
 
 
 class TestCaseScriptBuilder:
-    """Turn a `TestCase` into Robot Framework code via the configured LLM.
+    """Builder: approved test case -> complete `.robot` file.
 
-    Persona and org are optional. When omitted (the build-scripts pre-flight
-    flow), the generated script uses Robot variables (`${globalSandboxTestUrl}`,
-    `${sandboxUserNameInput}`, `${sandboxPasswordInput}`) which the runner
-    injects via `robot --variable` at run time. This keeps a single saved
-    script reusable across orgs and personas; only the inline run path in
-    `routers/runs.py` ever passes a concrete persona+org, and even there the
-    generated text still leans on those same Robot variables for credentials.
+    Powered by the assembler, so this path now sees the full Salesforce
+    playbook (recipes, anti-patterns, few-shots, suite skeleton) and the
+    full live keyword catalog. Previously the system prompt was a single
+    sentence ("You are a Robot Framework expert") with no library
+    context, which is why it kept inventing keywords like raw
+    `Click Element` for picklists.
+
+    Persona and org are accepted but optional. When omitted (the
+    pre-flight build-scripts flow), the prompt instructs the LLM to use
+    Robot variables for credentials -- the runner injects real values at
+    run time. When supplied (the legacy inline path in runs.py), the
+    Org's login URL is mentioned as additional context so the LLM can
+    pick org-shape-specific helpers if it has them.
     """
 
     def build_robot_script(
@@ -27,29 +34,31 @@ class TestCaseScriptBuilder:
     ) -> str:
         from ai_bridge import call_llm
 
-        # Persona is not yet woven into the prompt -- accepted for API
-        # compatibility with existing callers and so a future revision can
-        # specialise the prompt by role profile without touching call sites.
+        # Persona role profile is hinted but not required; future prompt
+        # tuning may specialise behaviour ("as a Sales Manager...") --
+        # for now we just pass the persona name in context.
         _ = persona
+
         steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(tc.steps))
-        login_url = org.login_url if org is not None else "${globalSandboxTestUrl}"
-        prompt = f"""
-Convert this test case into a Robot Framework test script for Salesforce.
-Login URL: {login_url}
-Username variable: ${{sandboxUserNameInput}}
-Password variable: ${{sandboxPasswordInput}}
+        org_hint = (
+            f"Org login URL: {org.login_url} (do NOT embed; use ${{globalSandboxTestUrl}})"
+            if org is not None
+            else "Org: not pinned -- use ${globalSandboxTestUrl}."
+        )
 
-Test case title: {tc.title}
-Preconditions: {tc.preconditions or "None"}
-Steps:
-{steps_block}
-Expected result: {tc.expected_result}
+        user_body = (
+            f"Test case title: {tc.title}\n"
+            f"Preconditions: {tc.preconditions or 'None'}\n"
+            f"{org_hint}\n\n"
+            f"Steps:\n{steps_block}\n\n"
+            f"Expected result: {tc.expected_result}\n"
+        )
+        if tc.tags:
+            user_body += f"\nTags to include: {', '.join(tc.tags)}\n"
 
-Return ONLY valid Robot Framework syntax. No explanation.
-Use GlobalKeywords and SalesPO resources as in existing suites.
-The script MUST resolve credentials from ${{sandboxUserNameInput}} and
-${{sandboxPasswordInput}} only -- never hard-code values. Do not embed any
-real URL, username, or password literal in the output.
-""".strip()
-        system = "You are a Robot Framework expert for Salesforce UI tests."
-        return call_llm(system, prompt)
+        system_prompt = assembler.build_system_prompt("builder")
+        user_prompt = assembler.build_user_prompt_with_catalog(
+            user_body,
+            include_full_catalog=True,
+        )
+        return call_llm(system_prompt, user_prompt)

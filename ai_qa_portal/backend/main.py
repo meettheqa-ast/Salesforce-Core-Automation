@@ -33,6 +33,7 @@ from .routers import (
     projects,
     runs,
     salesforce,
+    sprints,
     user_stories,
 )
 
@@ -91,6 +92,7 @@ app.include_router(locators.router)
 app.include_router(user_stories.router)
 app.include_router(user_stories.test_cases_router)
 app.include_router(user_stories.tags_router)
+app.include_router(sprints.router)
 app.include_router(admin.router)
 
 results_dir = Path(settings.results_dir)

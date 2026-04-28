@@ -3,41 +3,42 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from ..models.generation import GeneratedTestCase
 from ..models.user_story import UserStory
-
-if TYPE_CHECKING:
-    pass
+from ..prompts import assembler
 
 
 class TestCaseGenerator:
-    SYSTEM_PROMPT = """
-You are a QA engineer. Given a user story, generate structured test cases.
-Return ONLY a JSON array. No markdown, no explanation, no preamble.
-Each element must have exactly these keys:
-  - title: string
-  - steps: array of strings (each step is an action)
-  - expected_result: string
-  - preconditions: string or null
-  - suggested_tags: array of strings from ["Smoke","Regression","Sanity","E2E"] or empty
-Do not include any other keys.
-""".strip()
+    """Drafter: user story -> structured test case definitions.
+
+    The system prompt is now assembled from the Salesforce playbook (so
+    drafted steps reference real recipes and field names) plus the
+    drafter-specific output rules. The user content includes the keyword
+    name list (not full args/docs -- the drafter doesn't need to know
+    signatures, only what the library is capable of) so the steps it
+    invents are framed in terms of actually-implementable actions.
+    """
 
     async def generate(self, user_story: UserStory) -> list[GeneratedTestCase]:
         from ai_bridge import call_llm
 
-        prompt = (
-            f"User story title: {user_story.title}\n\nDescription:\n{user_story.description}"
+        system_prompt = assembler.build_system_prompt("drafter")
+        user_body = (
+            f"User story title: {user_story.title}\n\n"
+            f"Description:\n{user_story.description}"
         )
-        response = await asyncio.to_thread(
-            call_llm,
-            self.SYSTEM_PROMPT,
-            prompt,
+        # Drafter gets just the keyword names -- enough to anchor steps
+        # to real capabilities without spending tokens on full signatures.
+        user_prompt = assembler.build_user_prompt_with_catalog(
+            user_body,
+            include_full_catalog=False,
+            catalog_section_title="Available keyword names (for reference)",
         )
+
+        response = await asyncio.to_thread(call_llm, system_prompt, user_prompt)
         raw = response.strip()
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
         raw = re.sub(r"\s*```\s*$", "", raw)

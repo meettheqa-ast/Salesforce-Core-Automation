@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
-from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Optional
@@ -21,6 +23,7 @@ from ..models.org import SalesforceOrg
 from ..models.persona import RunRequest, RunResponse
 from ..models.test_case import TestCase, TestCaseStatus
 from ..models.user_story import UserStory
+from ..prompts import assembler as _assembler
 from ..routers.personas import load_personas_for_user
 from ..services.audit import log_action
 from ..services.auth import get_current_user
@@ -31,6 +34,10 @@ from ..services.db import (
     list_memberships_for_user,
 )
 from ..services.credential_service import CredentialService
+from ..services.failure_diagnoser import (
+    diagnose_run,
+    format_for_prompt as format_diag_for_prompt,
+)
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
     parse_output_xml as _shared_parse_output_xml,
@@ -283,6 +290,673 @@ def run_tests_for_tag(
             )
         )
     return out
+
+
+# --- Parallel bulk execution with live SSE -----------------------------------
+#
+# Why custom executor instead of pabot:
+#   pabot manages its own parallelism and produces a consolidated output, but
+#   it's awkward to interleave per-suite stdout into a tagged SSE stream that
+#   the UI can use to drive per-test cards + a live progress bar. A
+#   ThreadPoolExecutor + per-test subprocess gives us exactly that, with the
+#   cost of merging summaries ourselves at the end.
+#
+# Concurrency cap:
+#   BULK_RUN_CONCURRENCY env var, default 3. UI Selenium runs are heavy
+#   (each spawns Chromium); bumping this past machine memory will thrash.
+
+_BULK_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _bulk_run_concurrency() -> int:
+    raw = (os.getenv("BULK_RUN_CONCURRENCY") or "").strip()
+    if not raw:
+        return 3
+    try:
+        n = int(raw)
+    except ValueError:
+        return 3
+    return max(1, min(n, 16))
+
+
+def _bulk_slug(text: str, max_len: int = 32) -> str:
+    s = _BULK_SLUG_RE.sub("_", text.lower()).strip("_")
+    return (s or "case")[:max_len]
+
+
+def _build_bulk_robot_cmd(
+    test_path: Path,
+    out_dir: Path,
+    sandbox_url: str,
+    username: str,
+    password: str,
+) -> list[str]:
+    """Same shape as `_build_robot_cmd` but tuned for bulk: always uses the
+    container/headless override path, no tag include/exclude (bulk runs
+    intentionally take the test list verbatim from the caller)."""
+    cmd = [
+        sys.executable, "-m", "robot",
+        "--outputdir", str(out_dir),
+        "--variable", f"globalSandboxTestUrl:{sandbox_url}",
+        "--variable", f"sandboxUserNameInput:{username}",
+        "--variable", f"sandboxPasswordInput:{password}",
+    ]
+    if _effective_headless(True):
+        cmd.extend(["--variable", "headless:true"])
+    cmd.extend(_container_browser_overrides())
+    cmd.append(str(test_path))
+    return cmd
+
+
+def _bulk_event_stream(
+    *,
+    label: str,
+    tcs: list[TestCase],
+    persona,
+    org_model: SalesforceOrg,
+    password: str,
+    auto_heal: bool = False,
+    max_heal_attempts: int = 1,
+):
+    """Engine generator. Drives parallel Robot subprocesses, streams SSE
+    events tagged with each test case's id.
+
+    Auto-heal: when a test fails its first attempt and ``auto_heal=True``,
+    the worker thread feeds the failure back to the LLM (same path as the
+    /test-cases/{id}/heal endpoint), rewrites the saved script, and re-runs
+    the test. Up to ``max_heal_attempts`` retries per test. Each attempt
+    gets its own ``_attempt<n>`` subfolder so the UI can link to whichever
+    attempt is the canonical result.
+    """
+    concurrency = _bulk_run_concurrency()
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    bulk_token = uuid4().hex[:6]
+    # Per-test dirs live as SIBLINGS under RESULTS_ROOT (not nested) so the
+    # existing /api/runs/{run_folder}/file endpoint can serve their log.html
+    # and report.html unchanged. They're correlated by the shared prefix
+    # `bulk_<ts>_<token>__` for grouping in the UI / on disk.
+    bulk_prefix = f"bulk_{ts}_{bulk_token}"
+    gen_fallback = REPO_ROOT / "Tests" / "Generated"
+    gen_fallback.mkdir(parents=True, exist_ok=True)
+
+    yield _sse("start", {
+        "label": label,
+        "total": len(tcs),
+        "concurrency": concurrency,
+        "bulk_prefix": bulk_prefix,
+        "persona": persona.name,
+        "org": org_model.name,
+        "auto_heal": auto_heal,
+        "max_heal_attempts": max_heal_attempts if auto_heal else 0,
+    })
+    for tc in tcs:
+        yield _sse("queued", {
+            "tc_id": str(tc.id),
+            "tc_title": tc.title,
+            "tags": list(tc.tags or []),
+        })
+
+    queue: Queue[dict | None] = Queue()
+    results: dict[str, dict] = {}
+    completed = 0
+    sandbox_url = org_model.login_url
+    username = persona.username
+
+    def _attempt_dir(tc: TestCase, attempt: int) -> Path:
+        suffix = "" if attempt == 1 else f"_attempt{attempt}"
+        tc_folder = f"{bulk_prefix}__{_bulk_slug(tc.title)}_{tc.id.hex[:8]}{suffix}"
+        d = RESULTS_ROOT / tc_folder
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _run_attempt(tc: TestCase, attempt: int) -> dict:
+        """Run Robot once for this test case. Emits running/log events to
+        the queue. Returns a dict with the attempt's result -- the caller
+        decides whether to publish it as `done` or to heal+retry."""
+        tc_dir = _attempt_dir(tc, attempt)
+        try:
+            script_path = _resolve_or_build_script(tc, persona, org_model, gen_fallback)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            return {
+                "tc_id": str(tc.id),
+                "tc_title": tc.title,
+                "status": "FAIL",
+                "passed": 0, "failed": 1, "skipped": 0,
+                "duration_s": 0.0,
+                "exit_code": -1,
+                "output_dir": str(tc_dir),
+                "log_html": None,
+                "report_html": None,
+                "error": f"script resolution failed: {exc}",
+                "attempt": attempt,
+            }
+
+        cmd = _build_bulk_robot_cmd(script_path, tc_dir, sandbox_url, username, password)
+        started_at = datetime.now()
+        queue.put({
+            "event": "running",
+            "tc_id": str(tc.id),
+            "tc_title": tc.title,
+            "test_path": str(script_path),
+            "output_dir": str(tc_dir),
+            "attempt": attempt,
+        })
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(REPO_ROOT),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except FileNotFoundError as exc:
+            return {
+                "tc_id": str(tc.id),
+                "tc_title": tc.title,
+                "status": "FAIL",
+                "passed": 0, "failed": 1, "skipped": 0,
+                "duration_s": 0.0,
+                "exit_code": -1,
+                "output_dir": str(tc_dir),
+                "log_html": None,
+                "report_html": None,
+                "error": f"robot not on PATH: {exc}",
+                "attempt": attempt,
+            }
+
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            queue.put({
+                "event": "log",
+                "tc_id": str(tc.id),
+                "line": raw.rstrip("\n"),
+            })
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+        duration = round((datetime.now() - started_at).total_seconds(), 2)
+        passed, failed, skipped = _parse_output_xml(tc_dir / "output.xml")
+        status = "PASS" if (proc.returncode == 0 and failed == 0) else "FAIL"
+        log_html = tc_dir / "log.html"
+        report_html = tc_dir / "report.html"
+        return {
+            "tc_id": str(tc.id),
+            "tc_title": tc.title,
+            "status": status,
+            "passed": passed,
+            "failed": failed,
+            "skipped": skipped,
+            "duration_s": duration,
+            "exit_code": proc.returncode,
+            "output_dir": str(tc_dir),
+            "log_html": str(log_html) if log_html.exists() else None,
+            "report_html": str(report_html) if report_html.exists() else None,
+            "attempt": attempt,
+        }
+
+    def _heal_after_failure(tc: TestCase, last_attempt_result: dict) -> bool:
+        """Run the heal pipeline on a freshly-failed test. Returns True
+        when the script was rewritten and we should retry, False to give
+        up. Emits healing / healed / heal_failed events for the UI."""
+        run_dir = Path(last_attempt_result.get("output_dir") or "")
+        queue.put({
+            "event": "healing",
+            "tc_id": str(tc.id),
+            "tc_title": tc.title,
+            "attempt": last_attempt_result.get("attempt", 1),
+        })
+
+        diag = diagnose_run(run_dir) if run_dir.is_dir() else None
+        if diag is None or not diag.first_failure:
+            queue.put({
+                "event": "heal_failed",
+                "tc_id": str(tc.id),
+                "reason": "no actionable diagnosis from output.xml",
+            })
+            return False
+        if not tc.script_path:
+            queue.put({
+                "event": "heal_failed",
+                "tc_id": str(tc.id),
+                "reason": "test case has no saved script_path to rewrite",
+            })
+            return False
+
+        script_abs = (REPO_ROOT / tc.script_path).resolve()
+        if not script_abs.is_file():
+            queue.put({
+                "event": "heal_failed",
+                "tc_id": str(tc.id),
+                "reason": f"saved script missing: {tc.script_path}",
+            })
+            return False
+
+        try:
+            current_script = script_abs.read_text(encoding="utf-8")
+            steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(tc.steps))
+            user_body = (
+                f"## Original test case\n\n"
+                f"Title: {tc.title}\n"
+                f"Preconditions: {tc.preconditions or 'None'}\n\n"
+                f"Steps:\n{steps_block}\n\n"
+                f"Expected result: {tc.expected_result}\n"
+                f"Tags: {', '.join(tc.tags) if tc.tags else 'none'}\n\n"
+                f"## Current saved script (which just failed)\n\n"
+                f"```robot\n{current_script}\n```\n\n"
+                f"## Diagnosis from the failed run\n\n"
+                f"{format_diag_for_prompt(diag)}\n"
+            )
+            user_prompt = _assembler.build_user_prompt_with_catalog(user_body, include_full_catalog=True)
+            system_prompt = _assembler.build_system_prompt("healer")
+
+            screenshot_bytes: Optional[bytes] = None
+            if diag.screenshot_path:
+                p = Path(diag.screenshot_path)
+                try:
+                    if p.is_file() and p.stat().st_size <= 4 * 1024 * 1024:
+                        screenshot_bytes = p.read_bytes()
+                except OSError:
+                    screenshot_bytes = None
+
+            from ai_bridge import call_llm, extract_robot_code  # late import
+            raw = call_llm(system_prompt, user_prompt, image_bytes=screenshot_bytes)
+            new_script = extract_robot_code(raw).rstrip()
+            if not new_script:
+                queue.put({
+                    "event": "heal_failed",
+                    "tc_id": str(tc.id),
+                    "reason": "healer LLM returned no usable Robot source",
+                })
+                return False
+
+            tmp_path = script_abs.with_suffix(script_abs.suffix + ".heal.tmp")
+            tmp_path.write_text(new_script + "\n", encoding="utf-8")
+            tmp_path.replace(script_abs)
+
+            now = datetime.now(timezone.utc)
+            row = _store.get_test_case(tc.id)
+            row["script_built_at"] = now.isoformat()
+            row["heal_attempts"] = int(row.get("heal_attempts", 0) or 0) + 1
+            row["last_healed_at"] = now.isoformat()
+            _store.save_test_case(row)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            queue.put({
+                "event": "heal_failed",
+                "tc_id": str(tc.id),
+                "reason": f"heal pipeline crashed: {exc}",
+            })
+            return False
+
+        queue.put({
+            "event": "healed",
+            "tc_id": str(tc.id),
+            "tc_title": tc.title,
+            "fixed_keyword": diag.first_failure.keyword_name,
+        })
+        return True
+
+    def _run_with_optional_heal(tc: TestCase) -> None:
+        """Outer worker loop: one attempt + up to N heal-and-retry rounds.
+        Always emits exactly one final `done` event for this tc."""
+        attempt = 1
+        result = _run_attempt(tc, attempt)
+        while (
+            auto_heal
+            and result["status"] == "FAIL"
+            and attempt <= max_heal_attempts
+        ):
+            if not _heal_after_failure(tc, result):
+                break
+            attempt += 1
+            result = _run_attempt(tc, attempt)
+        queue.put({"event": "done", **result})
+
+    executor = ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="bulk-run")
+    for tc in tcs:
+        executor.submit(_run_with_optional_heal, tc)
+    # Don't wait on the executor here -- we drain `queue` instead and shut
+    # down once we've seen `done` for every test.
+
+    summary_started = datetime.now()
+    try:
+        while completed < len(tcs):
+            try:
+                msg = queue.get(timeout=15)
+            except Empty:
+                yield ": keepalive\n\n"
+                continue
+            if msg is None:
+                continue
+            ev = msg.pop("event")
+            if ev == "done":
+                results[msg["tc_id"]] = msg
+                completed += 1
+            yield _sse(ev, msg)
+    finally:
+        executor.shutdown(wait=True)
+
+    total_passed = sum(r.get("passed", 0) for r in results.values())
+    total_failed = sum(r.get("failed", 0) for r in results.values())
+    total_skipped = sum(r.get("skipped", 0) for r in results.values())
+    pass_count = sum(1 for r in results.values() if r.get("status") == "PASS")
+    fail_count = len(results) - pass_count
+    duration = round((datetime.now() - summary_started).total_seconds(), 2)
+    yield _sse("summary", {
+        "label": label,
+        "total": len(tcs),
+        "tests_passed": pass_count,
+        "tests_failed": fail_count,
+        "assertions_passed": total_passed,
+        "assertions_failed": total_failed,
+        "assertions_skipped": total_skipped,
+        "duration_s": duration,
+        "bulk_prefix": bulk_prefix,
+        "results": list(results.values()),
+    })
+
+
+def _resolve_story_bulk_inputs(
+    story_id: UUID,
+    org_id: UUID,
+    persona_id: Optional[UUID],
+    current_user: User,
+) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
+    """Shared resolver for the user-story bulk endpoints. Returns
+    (tcs, persona, org_model, password, label) or raises HTTPException.
+
+    Pulled out so the SSE handler and the existing POST endpoint can share
+    exactly the same access checks and resolution path."""
+    try:
+        row = _store.get_user_story(story_id)
+    except KeyError:
+        raise HTTPException(404, "User story not found") from None
+    story = UserStory.model_validate(row)
+
+    tcs_raw = _store.get_test_cases_by_story(story_id)
+    tcs = [TestCase.model_validate(r) for r in tcs_raw]
+    tcs = [t for t in tcs if t.status == TestCaseStatus.approved and not t.stale]
+    if not tcs:
+        raise HTTPException(400, "No approved non-stale test cases for this story")
+
+    org = _get_org(org_id)
+    if not org:
+        raise HTTPException(404, f"Org {org_id} not found")
+    org_model = SalesforceOrg(**org)
+
+    all_personas = load_personas_for_user(current_user)
+    prompt = f"Execute automated tests for user story: {story.title}"
+    try:
+        persona, _method = _resolver.resolve(
+            project_id=story.project_id,
+            org_id=org_id,
+            prompt=prompt,
+            ui_persona_id=persona_id,
+            all_personas=all_personas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    cred_svc = CredentialService(settings.fernet_key or None)
+    password = cred_svc.decrypt(persona.encrypted_password)
+    label = f"Story: {story.title}"
+    return tcs, persona, org_model, password, label
+
+
+def _resolve_tag_bulk_inputs(
+    tag_name: str,
+    project_id: UUID,
+    org_id: UUID,
+    persona_id: Optional[UUID],
+    current_user: User,
+) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
+    tcs_raw = _store.get_test_cases_by_tag(project_id, tag_name)
+    tcs = [TestCase.model_validate(r) for r in tcs_raw if not r.get("stale")]
+    if not tcs:
+        raise HTTPException(400, f"No approved non-stale test cases tagged {tag_name!r}")
+
+    org = _get_org(org_id)
+    if not org:
+        raise HTTPException(404, f"Org {org_id} not found")
+    org_model = SalesforceOrg(**org)
+
+    all_personas = load_personas_for_user(current_user)
+    prompt = f"Run tests tagged {tag_name}"
+    try:
+        persona, _method = _resolver.resolve(
+            project_id=project_id,
+            org_id=org_id,
+            prompt=prompt,
+            ui_persona_id=persona_id,
+            all_personas=all_personas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    cred_svc = CredentialService(settings.fernet_key or None)
+    password = cred_svc.decrypt(persona.encrypted_password)
+    label = f"Tag: {tag_name}"
+    return tcs, persona, org_model, password, label
+
+
+def _resolve_sprint_bulk_inputs(
+    sprint_id: UUID,
+    org_id: UUID,
+    persona_id: Optional[UUID],
+    current_user: User,
+) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
+    """Sprint-scoped resolver. Walks every story under the sprint, then
+    every approved non-stale test case under each story, and returns the
+    flat list. Same return shape as the story / tag resolvers so the
+    SSE engine consumes it unchanged.
+    """
+    try:
+        sprint_row = _store.get_sprint(sprint_id)
+    except KeyError:
+        raise HTTPException(404, "Sprint not found") from None
+
+    project_id = UUID(str(sprint_row["project_id"]))
+    sprint_name = sprint_row.get("name") or f"Sprint {sprint_id.hex[:8]}"
+
+    story_rows = _store.get_user_stories_by_sprint(sprint_id)
+    if not story_rows:
+        raise HTTPException(400, "Sprint has no user stories assigned")
+
+    tcs: list[TestCase] = []
+    for srow in story_rows:
+        # Skip archived stories so a stale leftover doesn't run.
+        if srow.get("status") == "archived":
+            continue
+        for tc_row in _store.get_test_cases_by_story(UUID(str(srow["id"]))):
+            tc = TestCase.model_validate(tc_row)
+            if tc.status == TestCaseStatus.approved and not tc.stale:
+                tcs.append(tc)
+
+    if not tcs:
+        raise HTTPException(
+            400,
+            "Sprint has no approved non-stale test cases across its stories",
+        )
+
+    org = _get_org(org_id)
+    if not org:
+        raise HTTPException(404, f"Org {org_id} not found")
+    org_model = SalesforceOrg(**org)
+
+    all_personas = load_personas_for_user(current_user)
+    prompt = f"Execute automated tests for sprint: {sprint_name}"
+    try:
+        persona, _method = _resolver.resolve(
+            project_id=project_id,
+            org_id=org_id,
+            prompt=prompt,
+            ui_persona_id=persona_id,
+            all_personas=all_personas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    cred_svc = CredentialService(settings.fernet_key or None)
+    password = cred_svc.decrypt(persona.encrypted_password)
+    label = f"Sprint: {sprint_name}"
+    return tcs, persona, org_model, password, label
+
+
+@router.get("/user-story/{story_id}/stream")
+def run_user_story_stream(
+    story_id: UUID,
+    org_id: UUID = Query(...),
+    persona_id: Optional[UUID] = Query(None),
+    auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
+    current_user: User = Depends(get_current_user),
+):
+    """SSE stream of a parallel bulk run for a user story.
+
+    Auth: get_current_user already runs (router-level dependency); the JWT
+    is provided by the EventSource as a query token (see frontend/lib/api.ts
+    `withAuthQuery`).
+    """
+    tcs, persona, org_model, password, label = _resolve_story_bulk_inputs(
+        story_id, org_id, persona_id, current_user,
+    )
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(
+        _bulk_event_stream(
+            label=label, tcs=tcs, persona=persona, org_model=org_model, password=password,
+            auto_heal=auto_heal,
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@router.get("/tag/{tag_name}/stream")
+def run_tag_stream(
+    tag_name: str,
+    project_id: UUID = Query(...),
+    org_id: UUID = Query(...),
+    persona_id: Optional[UUID] = Query(None),
+    auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
+    current_user: User = Depends(get_current_user),
+):
+    """SSE stream of a parallel bulk run for a tag."""
+    tcs, persona, org_model, password, label = _resolve_tag_bulk_inputs(
+        tag_name, project_id, org_id, persona_id, current_user,
+    )
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(
+        _bulk_event_stream(
+            label=label, tcs=tcs, persona=persona, org_model=org_model, password=password,
+            auto_heal=auto_heal,
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@router.get("/sprint/{sprint_id}/stream")
+def run_sprint_stream(
+    sprint_id: UUID,
+    org_id: UUID = Query(...),
+    persona_id: Optional[UUID] = Query(None),
+    auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
+    current_user: User = Depends(get_current_user),
+):
+    """SSE stream of a parallel bulk run across every story in a sprint.
+
+    Resolves to all approved non-stale test cases under the sprint's
+    stories, then delegates to the same `_bulk_event_stream` engine that
+    powers /run/user-story/{id}/stream and /run/tag/{name}/stream. The
+    UI's BulkExecutionStream component handles its events unchanged.
+    """
+    tcs, persona, org_model, password, label = _resolve_sprint_bulk_inputs(
+        sprint_id, org_id, persona_id, current_user,
+    )
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(
+        _bulk_event_stream(
+            label=label, tcs=tcs, persona=persona, org_model=org_model, password=password,
+            auto_heal=auto_heal,
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
+
+
+@router.get("/test-case/{test_case_id}/stream")
+def run_single_test_case_stream(
+    test_case_id: UUID,
+    org_id: UUID = Query(...),
+    persona_id: Optional[UUID] = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    """Re-run a single test case as SSE.
+
+    Used by the "Heal & retry" button in the bulk-execution UI: after
+    `POST /test-cases/{id}/heal` rewrites the script, the frontend
+    opens this stream to verify the rewrite. Reuses the same engine as
+    the bulk endpoint with a one-element list, so the UI's per-test
+    card sees the same event shape and can replace its prior result.
+
+    Ownership: inherited via the test case's parent story, same as
+    other /test-cases routes.
+    """
+    try:
+        row = _store.get_test_case(test_case_id)
+    except KeyError:
+        raise HTTPException(404, "Test case not found") from None
+    story_id = UUID(str(row["user_story_id"]))
+    try:
+        story_row = _store.get_user_story(story_id)
+    except KeyError:
+        raise HTTPException(404, "Parent story not found") from None
+    story = UserStory.model_validate(story_row)
+    # Owner check (matches _user_can_see_story in user_stories.py).
+    if not current_user.is_admin and (
+        not story.owner_user_id or story.owner_user_id != current_user.id
+    ):
+        raise HTTPException(404, "Test case not found")
+
+    tc = TestCase.model_validate(row)
+    # Allow re-running even if status flipped to draft / rejected -- the
+    # caller explicitly chose this case. Stale we still skip, since the
+    # parent story moved on and the test no longer matches it.
+    if tc.stale:
+        raise HTTPException(400, "Test case is stale (parent story changed); regenerate first.")
+
+    org = _get_org(org_id)
+    if not org:
+        raise HTTPException(404, f"Org {org_id} not found")
+    org_model = SalesforceOrg(**org)
+
+    all_personas = load_personas_for_user(current_user)
+    prompt = f"Re-run test case: {tc.title}"
+    try:
+        persona, _method = _resolver.resolve(
+            project_id=story.project_id,
+            org_id=org_id,
+            prompt=prompt,
+            ui_persona_id=persona_id,
+            all_personas=all_personas,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    cred_svc = CredentialService(settings.fernet_key or None)
+    password = cred_svc.decrypt(persona.encrypted_password)
+
+    label = f"Re-run: {tc.title}"
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(
+        _bulk_event_stream(
+            label=label, tcs=[tc], persona=persona, org_model=org_model, password=password,
+        ),
+        media_type="text/event-stream",
+        headers=headers,
+    )
 
 
 class ExecuteRequest(BaseModel):

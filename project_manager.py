@@ -48,7 +48,10 @@ def _credential_service():
     try:
         from ai_qa_portal.backend.services.credential_service import CredentialService
         return CredentialService()
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Defensive: missing FERNET_KEY, import-time errors, etc. should
+        # all degrade to "no encryption available" rather than crash the
+        # legacy Streamlit / CLI flows that pre-date the FastAPI portal.
         return None
 
 
@@ -69,7 +72,7 @@ def _maybe_decrypt(value: str) -> str:
         return value
     try:
         return svc.decrypt(value[len(_ENC_PREFIX):])
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         # Bad ciphertext or wrong key -- return empty rather than the marker.
         return ""
 
@@ -213,11 +216,14 @@ def encrypt_plaintext_credentials_in_place() -> dict[str, int]:
             continue
         changed = False
         envs = raw.get("environments", {})
-        for env_name, env_block in envs.items():
+        # We only need the values here -- the env / persona names aren't
+        # referenced in the inner block. Iterating values() makes that
+        # explicit and silences the unused-variable lint warning.
+        for env_block in envs.values():
             if not isinstance(env_block, dict):
                 continue
             personas = env_block.get("personas", {})
-            for persona_name, cred in personas.items():
+            for cred in personas.values():
                 if not isinstance(cred, dict):
                     continue
                 for field in _ENCRYPTED_FIELDS:
@@ -531,7 +537,15 @@ def save_test_to_project(
 def list_project_tests(project_name: str) -> list[dict]:
     """
     Return test metadata sorted by modification time (newest first).
-    Each entry: {name, path, modified, has_csv}
+    Each entry: {name, path, modified, has_csv}.
+
+    Walks the entire `Tests/` tree recursively. AI-generated suites land
+    under `Tests/Generated/story_<hex>/<file>.robot`, and a non-recursive
+    glob would miss them entirely (which is what the project-detail page
+    was hitting before -- it always showed "0 saved tests" even when
+    dozens of generated scripts existed). The CSV companion lookup uses
+    the bare stem since `Data/` is flat regardless of where the .robot
+    file sits in the tree.
     """
     proj_dir = _project_dir(project_name)
     tests_dir = proj_dir / "Tests"
@@ -542,12 +556,19 @@ def list_project_tests(project_name: str) -> list[dict]:
 
     results = []
     for robot_file in sorted(
-        tests_dir.glob("*.robot"), key=lambda p: -p.stat().st_mtime
+        tests_dir.rglob("*.robot"), key=lambda p: -p.stat().st_mtime
     ):
         stem = robot_file.stem
+        try:
+            rel = robot_file.relative_to(tests_dir).as_posix()
+        except ValueError:
+            rel = robot_file.name
         results.append(
             {
                 "name": stem,
+                # Display-friendly path relative to Tests/, e.g.
+                # "Generated/story_23fef62d6430/verify_x_aa2db4a3".
+                "rel_path": rel,
                 "path": robot_file,
                 "modified": datetime.fromtimestamp(robot_file.stat().st_mtime),
                 "has_csv": (data_dir / f"{stem}.csv").is_file(),
