@@ -11,6 +11,9 @@ interface RunRequestData {
   username: string;
   password: string;
   headless: boolean;
+  /** Persona's default Salesforce app, forwarded to the runner so PO
+   *  keywords land in the right app via ${salesAutomationAppName}. */
+  default_app?: string;
 }
 
 interface RunResult {

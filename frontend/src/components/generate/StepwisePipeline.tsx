@@ -18,12 +18,29 @@ export type PipelineStep = {
   keyword: string;
   status: "pass" | "fail";
   error?: string;
+  /** Wall-clock the backend spent inside this single execute_step call. */
+  elapsed_ms?: number;
+};
+
+/** One row of the per-phase timing summary. The page tracks how long each
+ *  phase spent (computed from the backend's `elapsed_ms_phase` field on the
+ *  next phase transition + a final wall-clock close on `done`/`error`). */
+export type PhaseTiming = {
+  phase: PipelinePhase;
+  elapsed_ms: number;
 };
 
 interface StepwisePipelineProps {
   phase: PipelinePhase;
   steps: PipelineStep[];
   notes: string[];
+  /** Closed phases with their measured durations, oldest first. */
+  timings?: PhaseTiming[];
+  /** Live elapsed time in the current phase (ms). UI ticks this on the
+   *  page side so we don't have to push periodic updates from the server. */
+  currentPhaseElapsedMs?: number;
+  /** Total elapsed time for the whole stream so far (ms). */
+  totalElapsedMs?: number;
 }
 
 const PHASE_LABEL: Record<PipelinePhase, string> = {
@@ -37,8 +54,26 @@ const PHASE_LABEL: Record<PipelinePhase, string> = {
   "done": "Done",
 };
 
-export default function StepwisePipeline({ phase, steps, notes }: StepwisePipelineProps) {
+function fmtMs(ms: number): string {
+  if (!isFinite(ms) || ms < 0) return "";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const s = ms / 1000;
+  if (s < 10) return `${s.toFixed(1)} s`;
+  return `${Math.round(s)} s`;
+}
+
+export default function StepwisePipeline({
+  phase,
+  steps,
+  notes,
+  timings = [],
+  currentPhaseElapsedMs,
+  totalElapsedMs,
+}: StepwisePipelineProps) {
   if (phase === "idle" && steps.length === 0 && notes.length === 0) return null;
+
+  const showCurrentTimer =
+    phase !== "idle" && phase !== "done" && currentPhaseElapsedMs !== undefined;
 
   return (
     <motion.div
@@ -46,14 +81,45 @@ export default function StepwisePipeline({ phase, steps, notes }: StepwisePipeli
       animate={{ opacity: 1, y: 0 }}
       className="glass p-3 mb-4"
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-2 gap-2">
         <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
           MCP Stepwise pipeline
         </span>
-        <span className={"text-[11px] font-mono " + (phase === "done" ? "text-emerald-300" : "text-cyan-300")}>
-          {PHASE_LABEL[phase]}
-        </span>
+        <div className="flex items-center gap-2">
+          {totalElapsedMs !== undefined && totalElapsedMs > 0 && (
+            <span className="text-[10px] font-mono text-slate-500" title="Total elapsed">
+              total {fmtMs(totalElapsedMs)}
+            </span>
+          )}
+          <span
+            className={
+              "text-[11px] font-mono " +
+              (phase === "done" ? "text-emerald-300" : "text-cyan-300")
+            }
+          >
+            {PHASE_LABEL[phase]}
+            {showCurrentTimer && (
+              <span className="ml-1 text-slate-500">· {fmtMs(currentPhaseElapsedMs!)}</span>
+            )}
+          </span>
+        </div>
       </div>
+
+      {timings.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {timings.map((t, i) => (
+            <span
+              key={`${t.phase}-${i}`}
+              className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-300"
+              title={`${PHASE_LABEL[t.phase]} took ${fmtMs(t.elapsed_ms)}`}
+            >
+              <span className="text-slate-500">{PHASE_LABEL[t.phase]}</span>
+              <span className="ml-1.5 text-slate-200">{fmtMs(t.elapsed_ms)}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {steps.length > 0 && (
         <div className="space-y-1 mb-2 max-h-44 overflow-y-auto">
           <AnimatePresence initial={false}>
@@ -71,7 +137,12 @@ export default function StepwisePipeline({ phase, steps, notes }: StepwisePipeli
                     (s.status === "pass" ? "bg-emerald-400" : "bg-red-400")
                   }
                 />
-                <span className="text-slate-300 truncate" title={s.keyword}>{s.keyword}</span>
+                <span className="text-slate-300 truncate flex-1" title={s.keyword}>{s.keyword}</span>
+                {s.elapsed_ms !== undefined && (
+                  <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                    {fmtMs(s.elapsed_ms)}
+                  </span>
+                )}
                 {s.error && (
                   <span className="text-[10px] text-red-400 truncate" title={s.error}>
                     {s.error}

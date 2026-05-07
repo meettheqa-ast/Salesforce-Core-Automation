@@ -44,6 +44,10 @@ class CredentialsPayload(BaseModel):
     password: str = ""
     security_token: str = ""
     slack_webhook_url: str = ""
+    # Salesforce app this persona should land in by default. Mirrored into
+    # Persona.default_app on sync; injected at run time as
+    # ${salesAutomationAppName}. Empty string keeps the project-wide default.
+    default_app: str = ""
 
 router = APIRouter(
     prefix="/api/projects",
@@ -108,7 +112,15 @@ def list_discoverable_projects(
     name, description, member_count. Per the locked architecture decision
     (gap C5), these are visible to encourage collaboration; access still
     requires a Request Access -> PM/TL approval handshake.
+
+    Admin short-circuit: admins (is_admin or global_role=='admin') already
+    have implicit PM rights on every project and see them all under "My
+    projects" via list_projects(). Returning [] here prevents the projects
+    page from double-listing those projects under "Other projects in the
+    org" with a misleading "Request access" CTA.
     """
+    if current_user.is_admin or current_user.global_role == "admin":
+        return []
     all_names = set(project_manager.list_projects())
     membership_slugs = {
         m.project_slug for m in list_memberships_for_user(db, current_user.id)
@@ -439,7 +451,33 @@ def save_credentials(
         slack_webhook_url=body.slack_webhook_url or "",
         environment=env,
         persona=persona,
+        default_app=body.default_app or "",
     )
+    # If a portal-side Persona row already exists for this env+persona, keep
+    # it in sync so the bulk runner picks the right ${salesAutomationAppName}
+    # without needing the user to re-edit through /personas. Best-effort -- we
+    # never want a credentials save to fail because the portal mirror is off.
+    try:
+        from ai_qa_portal.backend.project_registry import ensure_project_uuid
+        from ai_qa_portal.backend.storage.json_file_backend import JsonFileBackend
+        from ai_qa_portal.backend.config import settings as _settings
+        proj_uuid = ensure_project_uuid(project_name)
+        store = JsonFileBackend(_settings.data_dir)
+        items = store.read("personas").get("items", [])
+        new_app = (body.default_app or "").strip() or None
+        changed = False
+        for raw in items:
+            if (
+                str(raw.get("project_id")) == str(proj_uuid)
+                and raw.get("name") == persona
+            ):
+                if raw.get("default_app") != new_app:
+                    raw["default_app"] = new_app
+                    changed = True
+        if changed:
+            store.write("personas", {"items": items})
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
     return {"environment": env, "persona": persona, "status": "saved"}
 
 

@@ -97,14 +97,37 @@ async def _call_tool_async(
                 return {"raw": combined}
 
 
+def _run_async_with_timeout(coro_factory, *, timeout: float, label: str):
+    """Run a no-arg coroutine factory with a HARD timeout.
+
+    See ``mcp_bridge._run_async_with_timeout`` for the full reasoning -- the
+    short version: ``with ThreadPoolExecutor(...) as pool`` blocks on
+    ``shutdown(wait=True)`` even when we just timed out, defeating the
+    purpose of having a timeout when the upstream server is wedged.
+    Manual ``shutdown(wait=False, cancel_futures=True)`` so timeout is real.
+    """
+    import concurrent.futures
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(asyncio.run, coro_factory())
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError as exc:
+            raise TimeoutError(f"{label} did not finish within {timeout}s") from exc
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
 def call_sf_dx_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Synchronous wrapper: call a SF DX MCP tool and return parsed result."""
     loop = _get_or_create_event_loop()
     if loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, _call_tool_async(tool_name, arguments))
-            return future.result(timeout=120)
+        return _run_async_with_timeout(
+            lambda: _call_tool_async(tool_name, arguments),
+            timeout=120,
+            label=f"SF-DX call_tool {tool_name!r}",
+        )
     return loop.run_until_complete(_call_tool_async(tool_name, arguments))
 
 
@@ -138,10 +161,11 @@ def list_sf_dx_tools() -> list[dict[str, Any]]:
     """Return available SF DX MCP tool names and descriptions."""
     loop = _get_or_create_event_loop()
     if loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(asyncio.run, _list_tools_async())
-            return future.result(timeout=60)
+        return _run_async_with_timeout(
+            _list_tools_async,
+            timeout=60,
+            label="SF-DX list_tools",
+        )
     return loop.run_until_complete(_list_tools_async())
 
 

@@ -102,7 +102,7 @@ ${dialogLocator}=                                       xpath://*[contains(@clas
 ${successToastMessageOnRecordDetailsPageLocator}=       css:div[data-key='success'] .toastMessage
 ${relatedRecordsViewAllLocator}=                        xpath://article[@aria-label='<record-type>']//span[@class='view-all-label']
 ${realtedRecordListViewTitleLocator}=                   xpath://h1[@title='<record-type>']
-${tableCellLocator}=                                    xpath:(//a[starts-with(@href, '/lightning/r/') and contains(@href, '/view')][.//text()='<record-id>'])[<pos>]
+${tableCellLocator}=                                    xpath:(//a[starts-with(@href, '/lightning/r/') and contains(@href, '/view')][contains(translate(normalize-space(.), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), translate('<record-id>', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'))])[<pos>]
 ${successToastMessageLocator}=                          css:div[data-key='success']
 
 ${relatedRecordParentBreadcrumbLocator}=                xpath://nav[@role='navigation' and @aria-label='Breadcrumbs']//li[2]

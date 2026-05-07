@@ -3,6 +3,9 @@
  * is redirected to /login if they don't have a valid NextAuth session.
  *
  * Static assets and the NextAuth handlers are excluded via the matcher below.
+ *
+ * Note: in Next.js 16, the `middleware.ts` file convention was renamed to
+ * `proxy.ts`. Functionality is unchanged.
  */
 
 import { auth } from "@/auth";
@@ -40,6 +43,6 @@ export default auth((req) => {
 });
 
 export const config = {
-  // Run middleware on everything EXCEPT Next.js internals and static assets.
+  // Run proxy on everything EXCEPT Next.js internals and static assets.
   matcher: ["/((?!_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

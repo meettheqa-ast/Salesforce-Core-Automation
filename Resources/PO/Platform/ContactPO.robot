@@ -6,7 +6,7 @@ Resource    ../../Common/GlobalKeywords.robot
 
 *** Keywords ***
 Open New Contact From Sales App
-    [Documentation]    Launches the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name (e.g. ``Pentair Sales``) when the user specifies one; omit for the default Sales app.
+    [Documentation]    Launches the given app (default ``Sales``) → **Contacts** → **New**. Pass a custom app name (e.g. ``Pentair Sales``) when the user specifies one; omit for the default Sales app. ``Open New Dialog`` handles the "Choose Record Type" picker centrally -- pre-selected default is auto-confirmed when the picker appears.
     [Tags]    navigation    contact
     [Arguments]    ${app_name}=${salesAutomationAppName}
     Launch App    ${app_name}
@@ -15,7 +15,16 @@ Open New Contact From Sales App
 
 Create A New Contact
     [Documentation]    Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors.
+    ...
+    ...    Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.
     [Tags]    interaction    contact    modal
+    [Arguments]    ${first_name}=${contactFirstName}    ${last_name}=${contactLastName}    ${email}=${contactEmail}    ${phone}=${contactPhone}    ${title}=${contactTitle}    ${account_name}=${contactAccountName}
+    Set Suite Variable    ${contactFirstName}    ${first_name}
+    Set Suite Variable    ${contactLastName}    ${last_name}
+    Set Suite Variable    ${contactEmail}    ${email}
+    Set Suite Variable    ${contactPhone}    ${phone}
+    Set Suite Variable    ${contactTitle}    ${title}
+    Set Suite Variable    ${contactAccountName}    ${account_name}
     Open Dropdown And Select First Option    Salutation
     Enter Text With Fallback    First Name    ${contactFirstName}
     Enter Text With Fallback    Last Name     ${contactLastName}

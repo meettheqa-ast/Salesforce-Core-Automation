@@ -221,6 +221,7 @@ def sync_project_from_config(
                 )
                 continue
 
+            default_app_raw = (cfg.get("default_app") or "").strip()
             new_persona = Persona(
                 id=uuid4(),
                 project_id=project_id,
@@ -237,6 +238,7 @@ def sync_project_from_config(
                 visibility=PersonaVisibility.private.value,
                 credential_version=1,
                 credentials_updated_at=datetime.fromisoformat(now_iso),
+                default_app=default_app_raw or None,
             )
             personas.append(new_persona.model_dump(mode="json"))
             personas_added += 1

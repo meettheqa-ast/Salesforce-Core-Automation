@@ -8,6 +8,7 @@ import StoryExecutionPanel from "@/components/execution/StoryExecutionPanel";
 import WorkspaceBar, { type WorkspaceCreds } from "@/components/layout/WorkspaceBar";
 import Segmented from "@/components/ui/Segmented";
 import StepwisePipeline, {
+  type PhaseTiming,
   type PipelinePhase,
   type PipelineStep,
 } from "@/components/generate/StepwisePipeline";
@@ -29,6 +30,11 @@ type RunRequest = {
   username: string;
   password: string;
   headless: boolean;
+  /** Persona's default Salesforce app -- threaded into the runner as
+   *  ${salesAutomationAppName} so PO keywords like
+   *  SalesPO.Open New Lead From Sales App land in the right app
+   *  (e.g. "Pentair Sales") instead of the generic "Sales" default. */
+  default_app?: string;
 };
 
 const AUTO_DATA_HINT =
@@ -50,7 +56,11 @@ function savePref(key: string, value: string) {
 
 export default function GeneratePage() {
   const [creds, setCreds] = useState<WorkspaceCreds | null>(null);
-  const [execMode, setExecMode] = useState<ExecMode>("background");
+  // Watch is the default so the user can SEE the browser drive Salesforce
+  // in real time -- it's what new users expect from a "test automation"
+  // demo. Background headless mode is still available via the toggle for
+  // long bulk runs / CI-like usage.
+  const [execMode, setExecMode] = useState<ExecMode>("watch");
   const [genMode, setGenMode] = useState<GenMode>("stepwise");
   const [prompt, setPrompt] = useState("");
   const [testName, setTestName] = useState("");
@@ -62,17 +72,86 @@ export default function GeneratePage() {
   const [error, setError] = useState("");
   const [genComplete, setGenComplete] = useState(false);
 
+  // Validation surfaces from the new validate-fix-validate pipeline.
+  // ``validationOk === null`` means the generator returned no validation
+  // metadata yet (first paint, or legacy backend) -- treat as
+  // optimistically OK so we don't block the Run button on a stale tab.
+  type ValidationErr = {
+    line: number;
+    column: number;
+    kind: string;
+    symbol: string;
+    message: string;
+    closest_matches: string[];
+    snippet: string;
+  };
+  type ValidationAttempt = {
+    attempt: number;
+    ok: boolean;
+    error_count: number;
+    fix_prompt_excerpt: string;
+    script_excerpt: string;
+  };
+  const [validationOk, setValidationOk] = useState<boolean | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationErr[]>([]);
+  const [validationAttempts, setValidationAttempts] = useState<ValidationAttempt[]>([]);
+  const [validationTrailOpen, setValidationTrailOpen] = useState(false);
+
+  // LLM-provider failover events. Populated when the primary LLM hit a
+  // quota / rate-limit / auth / availability error and ``call_llm``
+  // automatically fell over to a configured backup. Renders a small
+  // banner above the script preview so the user sees, e.g.,
+  // "Switched from Gemini to Groq because Gemini hit its quota."
+  type ProviderSwitch = {
+    from_provider: string;
+    from_label: string;
+    to_provider: string;
+    to_label: string;
+    reason: string;
+    error_excerpt: string;
+  };
+  const [providerSwitches, setProviderSwitches] = useState<ProviderSwitch[]>([]);
+
   const [phase, setPhase] = useState<PipelinePhase>("idle");
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
+  // Closed phases with their measured wall-clock duration. Populated each
+  // time the backend transitions phases (its `phase` event carries the
+  // elapsed_ms_phase the *previous* phase took -- so on transition N+1 we
+  // close out phase N and open phase N+1 cleanly).
+  const [phaseTimings, setPhaseTimings] = useState<PhaseTiming[]>([]);
+  // Wall-clock of the current (still-open) phase. Tracked client-side via
+  // performance.now() so the badge ticks live without server pushes.
+  const [phaseStartedAt, setPhaseStartedAt] = useState<number | null>(null);
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
+  const [tickMs, setTickMs] = useState<number>(0);
+
+  // Mirror of `phase` we read synchronously from the SSE handler. Without
+  // this we'd have to reach into setPhase's updater fn to know the current
+  // phase, but doing setPhaseTimings() inside that updater is a side-effect
+  // inside a state updater -- React 18 strict mode invokes updaters twice
+  // in development to surface exactly this bug, which produced duplicate
+  // timing pills ("Planning steps 31 s, Planning steps 31 s") in the UI.
+  const phaseRef = useRef<PipelinePhase>("idle");
+  const phaseStartedAtRef = useRef<number | null>(null);
 
   const [runRequest, setRunRequest] = useState<RunRequest | null>(null);
   const sourceRef = useRef<{ close: () => void } | null>(null);
 
+  // Tick the live "current phase" timer at 4 Hz while a phase is open and
+  // we're not yet done. Cheap, and avoids the worst "is this hung?" UX.
+  useEffect(() => {
+    if (phaseStartedAt === null || phase === "done" || phase === "idle") return;
+    const id = window.setInterval(() => {
+      setTickMs(performance.now());
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [phaseStartedAt, phase]);
+
   // Restore preferences once mounted (avoids hydration mismatch).
   useEffect(() => {
     void Promise.resolve().then(() => {
-      setExecMode(loadPref<ExecMode>("gen.execMode", "background"));
+      setExecMode(loadPref<ExecMode>("gen.execMode", "watch"));
       setGenMode(loadPref<GenMode>("gen.genMode", "stepwise"));
     });
   }, []);
@@ -102,6 +181,17 @@ export default function GeneratePage() {
     setPhase("idle");
     setSteps([]);
     setNotes([]);
+    setPhaseTimings([]);
+    setPhaseStartedAt(null);
+    setStreamStartedAt(null);
+    setTickMs(0);
+    phaseRef.current = "idle";
+    phaseStartedAtRef.current = null;
+    setValidationOk(null);
+    setValidationErrors([]);
+    setValidationAttempts([]);
+    setValidationTrailOpen(false);
+    setProviderSwitches([]);
   };
 
   const runQuickGenerate = async (rawPrompt: string) => {
@@ -110,6 +200,11 @@ export default function GeneratePage() {
       sandbox_url: creds?.sandboxUrl ?? "",
       username: creds?.username ?? "",
       password: creds?.password ?? "",
+      // Persona's default app -- threaded through so the LLM injects
+      // ${salesAutomationAppName} = "<this>" and the generated script
+      // lands in the right Salesforce app (Pentair Sales etc.) instead
+      // of the global "Sales" default.
+      default_app: creds?.defaultApp ?? "",
       generation_mode: "quick",
       test_name: testName.trim() || undefined,
       headless,
@@ -121,6 +216,21 @@ export default function GeneratePage() {
     if (Array.isArray(res.lint_errors) && res.lint_errors.length) {
       setNotes(res.lint_errors);
     }
+    // New validation surfaces. ``validation_ok`` defaults to true on a
+    // legacy backend that doesn't emit it -- read it explicitly so a
+    // truly-failing validation toggles the Run button.
+    if (typeof res.validation_ok === "boolean") {
+      setValidationOk(res.validation_ok);
+    }
+    if (Array.isArray(res.validation_errors)) {
+      setValidationErrors(res.validation_errors as ValidationErr[]);
+    }
+    if (Array.isArray(res.validation_attempts)) {
+      setValidationAttempts(res.validation_attempts as ValidationAttempt[]);
+    }
+    if (Array.isArray((res as any).provider_switches)) {
+      setProviderSwitches((res as any).provider_switches as ProviderSwitch[]);
+    }
     setPhase("done");
   };
 
@@ -130,6 +240,8 @@ export default function GeneratePage() {
       sandbox_url: creds?.sandboxUrl ?? "",
       username: creds?.username ?? "",
       password: creds?.password ?? "",
+      // See runQuickGenerate -- same fix applies to the Stepwise planner.
+      default_app: creds?.defaultApp ?? "",
       generation_mode: "mcp_stepwise",
       test_name: testName.trim() || undefined,
       headless,
@@ -175,7 +287,33 @@ export default function GeneratePage() {
         const handle = (event: string, data: string) => {
           try {
             const obj = data ? JSON.parse(data) : {};
-            if (event === "phase") setPhase((obj.name as PipelinePhase) || "executing");
+            if (event === "phase") {
+              const next = (obj.name as PipelinePhase) || "executing";
+              const current = phaseRef.current;
+              // Backend tells us how long the *previous* phase took via
+              // elapsed_ms_phase. Stamp it into our running tape, then open
+              // the new phase. Reading from phaseRef (not setPhase's updater
+              // arg) keeps the timing append outside any state-updater fn,
+              // which avoids React 18 strict-mode's double-invocation
+              // duplicating every pill.
+              if (current !== "idle") {
+                const prevElapsed =
+                  typeof obj.elapsed_ms_phase === "number"
+                    ? obj.elapsed_ms_phase
+                    : 0;
+                setPhaseTimings((prev) => [
+                  ...prev,
+                  { phase: current, elapsed_ms: prevElapsed },
+                ]);
+              }
+              const now = performance.now();
+              phaseRef.current = next;
+              phaseStartedAtRef.current = now;
+              setPhase(next);
+              setPhaseStartedAt(now);
+              setStreamStartedAt((prev) => prev ?? now);
+              setTickMs(now);
+            }
             else if (event === "note") setNotes((prev) => [...prev, String(obj.message || data)]);
             else if (event === "step") setSteps((prev) => [...prev, obj as PipelineStep]);
             else if (event === "result") {
@@ -184,6 +322,30 @@ export default function GeneratePage() {
               if (Array.isArray(obj.lint_errors) && obj.lint_errors.length) {
                 setNotes((prev) => [...prev, ...obj.lint_errors]);
               }
+              if (typeof obj.validation_ok === "boolean") {
+                setValidationOk(obj.validation_ok);
+              }
+              if (Array.isArray(obj.validation_errors)) {
+                setValidationErrors(obj.validation_errors as ValidationErr[]);
+              }
+              if (Array.isArray(obj.validation_attempts)) {
+                setValidationAttempts(obj.validation_attempts as ValidationAttempt[]);
+              }
+              if (Array.isArray(obj.provider_switches)) {
+                setProviderSwitches(obj.provider_switches as ProviderSwitch[]);
+              }
+              // Result frame doesn't carry a phase change, but we want to
+              // close out whatever phase was open so its duration shows up
+              // in the timing tape.
+              const current = phaseRef.current;
+              const startedAt = phaseStartedAtRef.current;
+              if (current !== "idle" && current !== "done" && startedAt !== null) {
+                setPhaseTimings((prev) => [
+                  ...prev,
+                  { phase: current, elapsed_ms: performance.now() - startedAt },
+                ]);
+              }
+              phaseRef.current = "done";
               setPhase("done");
             } else if (event === "error") {
               setError(String(obj.message || "Generation failed"));
@@ -253,6 +415,7 @@ export default function GeneratePage() {
       username: creds.username,
       password: creds.password,
       headless,
+      default_app: creds.defaultApp || undefined,
     });
   };
 
@@ -375,7 +538,22 @@ export default function GeneratePage() {
       </div>
 
       {/* Stepwise pipeline */}
-      <StepwisePipeline phase={phase} steps={steps} notes={notes} />
+      <StepwisePipeline
+        phase={phase}
+        steps={steps}
+        notes={notes}
+        timings={phaseTimings}
+        currentPhaseElapsedMs={
+          phaseStartedAt !== null && phase !== "done" && phase !== "idle"
+            ? Math.max(0, tickMs - phaseStartedAt)
+            : undefined
+        }
+        totalElapsedMs={
+          streamStartedAt !== null
+            ? Math.max(0, (phase === "done" ? tickMs || performance.now() : tickMs) - streamStartedAt)
+            : undefined
+        }
+      />
 
       {/* Status strip */}
       <AnimatePresence>
@@ -411,6 +589,38 @@ export default function GeneratePage() {
         )}
       </AnimatePresence>
 
+      {/* LLM-provider failover banner. One row per switch so the user
+          sees exactly which provider was active when the script came
+          back. Survives across both Quick Generate and the Stepwise
+          stream because both response shapes carry provider_switches. */}
+      <AnimatePresence>
+        {providerSwitches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-4 p-3 rounded-xl border border-amber-400/30 bg-amber-500/5"
+          >
+            {providerSwitches.map((sw, i) => (
+              <div key={i} className="text-xs text-amber-200">
+                <span className="font-semibold">LLM switched:</span>{" "}
+                <span className="text-slate-300">{sw.from_label}</span>{" "}
+                <span className="text-slate-500">→</span>{" "}
+                <span className="text-cyan-200 font-semibold">{sw.to_label}</span>{" "}
+                <span className="text-slate-400">
+                  (reason: {sw.reason})
+                </span>
+                {sw.error_excerpt && (
+                  <div className="mt-1 text-[10px] text-slate-500 font-mono truncate">
+                    {sw.error_excerpt}
+                  </div>
+                )}
+              </div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Review section */}
       <AnimatePresence>
         {robotCode && (
@@ -422,12 +632,136 @@ export default function GeneratePage() {
           >
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-cyan-300">Review generated Robot</h3>
-              {generatedFile && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
-                  {generatedFile}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Validation badge. We render three states:
+                    - ok=true (or no metadata): green "Validated"
+                    - ok=false: red "Validation failed (N issues)"
+                    - attempts>1 even when ok: amber "Self-corrected after N tries"
+                    so the user sees the new safety-net at a glance. */}
+                {validationOk === false && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 border border-red-400/30 text-red-200"
+                    title="The script has unresolved keywords or variables; running it will fail."
+                  >
+                    Validation failed · {validationErrors.length} issue
+                    {validationErrors.length === 1 ? "" : "s"}
+                  </span>
+                )}
+                {validationOk === true && validationAttempts.length > 1 && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/30 text-amber-200"
+                    title="The first generation had errors; the model was asked to self-correct."
+                  >
+                    Self-corrected · {validationAttempts.length} attempts
+                  </span>
+                )}
+                {validationOk === true && validationAttempts.length <= 1 && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/30 text-emerald-200"
+                  >
+                    Validated
+                  </span>
+                )}
+                {generatedFile && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
+                    {generatedFile}
+                  </span>
+                )}
+              </div>
             </div>
+
+            {/* Validation errors panel: visible only when the loop didn't
+                 converge. Renders one row per error with the offending
+                 line/column, the symbol, and the model's suggested
+                 alternatives so the user can hand-edit before running. */}
+            {validationOk === false && validationErrors.length > 0 && (
+              <div className="mb-3 p-3 rounded-xl border border-red-400/30 bg-red-500/5">
+                <div className="text-xs font-semibold text-red-200 mb-2">
+                  Validator found {validationErrors.length} issue
+                  {validationErrors.length === 1 ? "" : "s"} in the generated script.
+                  The Run button is disabled until you fix them.
+                </div>
+                <ul className="space-y-1.5">
+                  {validationErrors.slice(0, 12).map((err, idx) => (
+                    <li key={idx} className="text-[11px] text-slate-200 font-mono">
+                      <span className="text-red-300">
+                        L{err.line || "—"}
+                      </span>
+                      <span className="ml-2 text-slate-400">[{err.kind}]</span>
+                      <span className="ml-2 text-amber-200">{err.symbol}</span>
+                      {err.message && (
+                        <div className="ml-6 text-slate-300 text-[10px]">
+                          {err.message}
+                        </div>
+                      )}
+                      {err.snippet && (
+                        <div className="ml-6 text-slate-500 text-[10px] truncate">
+                          on: <span className="text-slate-300">{err.snippet}</span>
+                        </div>
+                      )}
+                      {err.closest_matches.length > 0 && (
+                        <div className="ml-6 text-[10px] text-cyan-300">
+                          did you mean:{" "}
+                          {err.closest_matches.map((m, i) => (
+                            <span key={i} className="ml-1">
+                              <code className="px-1 py-0.5 rounded bg-cyan-500/10 border border-cyan-400/20">
+                                {m}
+                              </code>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                  {validationErrors.length > 12 && (
+                    <li className="text-[10px] text-slate-400">
+                      …and {validationErrors.length - 12} more
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {/* Self-correction trail: collapsible. Available even when
+                 validation passed so the user can audit how the model
+                 converged on a clean script. */}
+            {validationAttempts.length > 1 && (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  onClick={() => setValidationTrailOpen((v) => !v)}
+                  className="text-[10px] text-slate-400 hover:text-slate-200"
+                >
+                  {validationTrailOpen ? "▾" : "▸"} Self-correction trail (
+                  {validationAttempts.length} attempts)
+                </button>
+                {validationTrailOpen && (
+                  <div className="mt-2 space-y-2">
+                    {validationAttempts.map((att) => (
+                      <div
+                        key={att.attempt}
+                        className="text-[10px] font-mono p-2 rounded bg-white/5 border border-white/10"
+                      >
+                        <div className="text-slate-300">
+                          Attempt {att.attempt} ·{" "}
+                          {att.ok ? (
+                            <span className="text-emerald-300">passed</span>
+                          ) : (
+                            <span className="text-red-300">{att.error_count} error(s)</span>
+                          )}
+                        </div>
+                        {att.fix_prompt_excerpt && (
+                          <div className="mt-1 text-slate-400 whitespace-pre-wrap">
+                            {att.fix_prompt_excerpt}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <RobotCodeEditor value={robotCode} onChange={setRobotCode} height="380px" />
             <div className="flex items-center justify-end gap-2 mt-3">
               <button
@@ -440,8 +774,14 @@ export default function GeneratePage() {
               <button
                 type="button"
                 onClick={handleRun}
-                disabled={!credsReady}
-                title={credsReady ? "Run the generated script" : "Select a workspace login first"}
+                disabled={!credsReady || validationOk === false}
+                title={
+                  validationOk === false
+                    ? "Validation failed -- fix the issues above before running"
+                    : credsReady
+                      ? "Run the generated script"
+                      : "Select a workspace login first"
+                }
                 className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50"
               >
                 Run

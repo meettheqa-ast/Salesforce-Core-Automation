@@ -53,3 +53,12 @@ ${contactEmail}=                            ${{FakerLibrary.FakerLibrary().email
 ${contactPhone}=                            ${randomPhone}
 # Link contact to this existing account (leave empty to skip Account Name lookup)
 ${contactAccountName}=                      ${opportunityAccountName}
+
+# Campaign Test Data
+# Faker-backed company name + short numeric suffix keeps Campaign Name unique
+# across parallel runs without colliding with real org data. Type / Status are
+# the org-default safe options; CampaignPO falls back to the first valid
+# picklist option if these aren't present in the running org.
+${campaignName}=                            ${{FakerLibrary.FakerLibrary().company()}} Campaign ${{FakerLibrary.FakerLibrary().random_number(digits=4)}}
+${campaignType}=                            Advertisement
+${campaignStatus}=                          Planned

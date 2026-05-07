@@ -33,6 +33,12 @@ class Persona(BaseModel):
     # rotations and invalidate any cached "last revealed at" prompts.
     credential_version: int = 1
     credentials_updated_at: Optional[datetime] = None
+    # Salesforce app this persona should land in by default. Injected at
+    # run time as ${salesAutomationAppName} so existing PO keywords (e.g.
+    # `Open New Lead From Sales App`) automatically pick the right app for
+    # this user's license without test changes. None falls back to the
+    # project-wide default in Resources/TestData/Platform/SalesData.robot.
+    default_app: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -47,6 +53,7 @@ class Persona(BaseModel):
                     data["creator_user_id"] = legacy
             data.setdefault("visibility", PersonaVisibility.private.value)
             data.setdefault("credential_version", 1)
+            data.setdefault("default_app", None)
         return data
 
 
@@ -68,6 +75,7 @@ class PersonaPublic(BaseModel):
     visibility: str = PersonaVisibility.private.value
     credential_version: int = 1
     credentials_updated_at: Optional[datetime] = None
+    default_app: Optional[str] = None
     # Convenience flags computed by the router so the UI doesn't have to recompute.
     is_mine: bool = False
     can_edit_credentials: bool = False  # only the creator

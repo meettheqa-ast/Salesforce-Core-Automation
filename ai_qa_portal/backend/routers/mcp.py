@@ -44,20 +44,60 @@ def mcp_health():
     The TCP fallback keeps the dashboard accurate after a uvicorn reload,
     when the long-lived RF-MCP subprocess is still bound but the in-process
     handle has been forgotten.
+
+    When the server is reachable we also opportunistically include:
+      * installed ``rf-mcp`` version (so the UI can flag stale installs);
+      * total tool count from ``tools/list``;
+      * whether persistent semantic memory is configured + DB path.
+
+    All extra fields are best-effort: if any probe fails we still return
+    the basic ``running``/``url`` payload that older clients expect.
     """
+    import os
+
     try:
         import mcp_bridge
     except ImportError:
         return MCPStatus(running=False)
 
     url = mcp_bridge.mcp_url()
+    running = False
     if mcp_bridge.is_server_running():
-        return MCPStatus(running=True, url=url)
+        running = True
+    else:
+        try:
+            host, port = mcp_bridge._host_port()  # type: ignore[attr-defined]
+            running = _tcp_open(host, port)
+        except Exception:
+            running = False
+
+    version = ""
     try:
-        host, port = mcp_bridge._host_port()  # type: ignore[attr-defined]
+        import importlib.metadata as _m
+        version = _m.version("rf-mcp")
     except Exception:
-        return MCPStatus(running=False, url=url)
-    return MCPStatus(running=_tcp_open(host, port), url=url)
+        pass
+
+    tool_count = 0
+    memory_enabled = False
+    if running:
+        try:
+            tools = mcp_bridge.list_mcp_tools()
+            tool_count = len(tools)
+            memory_enabled = any(t.get("name") == "get_memory_status" for t in tools)
+        except Exception:
+            pass
+
+    memory_db_path = os.environ.get("ROBOTMCP_MEMORY_DB_PATH", "")
+
+    return MCPStatus(
+        running=running,
+        url=url,
+        version=version,
+        tool_count=tool_count,
+        memory_enabled=memory_enabled,
+        memory_db_path=memory_db_path,
+    )
 
 
 @router.post("/server/start")

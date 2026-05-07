@@ -40,6 +40,10 @@ type CredFields = {
   password: string;
   security_token: string;
   slack_webhook_url: string;
+  /** Salesforce app this persona should land in by default. Becomes
+   *  ${salesAutomationAppName} at run time so PO keywords pick the right
+   *  app without test changes. Empty string falls back to the global "Sales". */
+  default_app: string;
 };
 
 const EMPTY_CREDS: CredFields = {
@@ -48,6 +52,7 @@ const EMPTY_CREDS: CredFields = {
   password: "",
   security_token: "",
   slack_webhook_url: "",
+  default_app: "",
 };
 
 type TestRow = { name: string; path: string; modified: string };
@@ -231,6 +236,7 @@ export default function ProjectDetailPage() {
             password: cfg.password || "",
             security_token: cfg.security_token || "",
             slack_webhook_url: cfg.slack_webhook_url || "",
+            default_app: cfg.default_app || "",
           })
         )
         .catch(() => setCreds(EMPTY_CREDS))
@@ -468,6 +474,17 @@ export default function ProjectDetailPage() {
                     {selectedEnv} / {selectedPersona}
                   </span>
                 )}
+                {/* Surface the per-persona default app at a glance so the
+                    user knows which Salesforce app this persona will land
+                    in without having to scroll into the form below. */}
+                {selectedEnv && creds.default_app && (
+                  <span
+                    className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-200 text-[10px] uppercase tracking-wider"
+                    title={`Will be injected as $\{salesAutomationAppName} = "${creds.default_app}" at run time.`}
+                  >
+                    app: {creds.default_app}
+                  </span>
+                )}
               </h3>
               <div className="flex items-center gap-2">
                 <GlassSelect
@@ -584,6 +601,23 @@ export default function ProjectDetailPage() {
                     />
                   </Field>
                 </div>
+                {/* Default app -- per persona. Injected at run time as
+                    ${salesAutomationAppName} so PO keywords land in the
+                    right Salesforce app for this user's license. */}
+                <Field label="Default app (optional)">
+                  <input
+                    value={creds.default_app}
+                    onChange={(e) => setCreds({ ...creds, default_app: e.target.value })}
+                    disabled={credLoading}
+                    placeholder="e.g. Pentair Sales"
+                    autoComplete="off"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Used as <code className="text-slate-400">${"{salesAutomationAppName}"}</code> when running tests as this persona.
+                    Leave blank to use the project default (&quot;Sales&quot;).
+                  </p>
+                </Field>
                 <div className="flex justify-end">
                   <motion.button
                     whileTap={{ scale: 0.97 }}

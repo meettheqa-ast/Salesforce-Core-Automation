@@ -136,6 +136,7 @@ def _to_public(p: Persona, viewer: User, db: Session) -> PersonaPublic:
         visibility=p.visibility,
         credential_version=p.credential_version,
         credentials_updated_at=p.credentials_updated_at,
+        default_app=p.default_app,
         is_mine=_is_creator(p, viewer),
         can_edit_credentials=_is_creator(p, viewer),
         can_view_username=show_username,
@@ -153,6 +154,9 @@ class PersonaCreateRequest(BaseModel):
     role_profile: str | None = None
     is_default: bool = False
     visibility: str = PersonaVisibility.private.value
+    # Optional Salesforce app this persona should land in by default; injected
+    # at run time as ${salesAutomationAppName} so PO keywords pick it up.
+    default_app: str | None = None
 
 
 class PersonaUpdateRequest(BaseModel):
@@ -160,6 +164,9 @@ class PersonaUpdateRequest(BaseModel):
     role_profile: str | None = None
     is_default: bool | None = None
     visibility: str | None = None
+    # Same field on update -- pass empty string to clear, omit to leave
+    # unchanged. Server normalises empty/whitespace to None.
+    default_app: str | None = None
 
 
 class RotateCredentialsRequest(BaseModel):
@@ -219,6 +226,7 @@ def create_persona(
         raise HTTPException(400, "visibility must be 'private' or 'public'")
 
     svc = _cred_svc()
+    normalised_default_app = (body.default_app or "").strip() or None
     persona = Persona(
         project_id=body.project_id,
         org_id=body.org_id,
@@ -231,6 +239,7 @@ def create_persona(
         visibility=visibility_enum.value,
         credential_version=1,
         credentials_updated_at=datetime.now(timezone.utc),
+        default_app=normalised_default_app,
     )
     items = _load()
     items.append(persona.model_dump(mode="json"))
@@ -290,6 +299,12 @@ def update_persona(
                     persona.visibility = PersonaVisibility(body.visibility).value
                 except ValueError:
                     raise HTTPException(400, "visibility must be 'private' or 'public'")
+                changed = True
+            if body.default_app is not None:
+                # Empty string / whitespace clears the field; otherwise strip.
+                # Caller passing None means "don't touch".
+                stripped = body.default_app.strip()
+                persona.default_app = stripped or None
                 changed = True
             if changed:
                 # Replace the row in place.

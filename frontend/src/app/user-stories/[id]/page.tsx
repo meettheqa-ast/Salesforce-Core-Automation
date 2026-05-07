@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 import EditTestCasesModal, { type TestCaseDraft } from "@/components/test-cases/EditTestCasesModal";
+import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
 
 type TestCaseRow = {
   id: string;
@@ -45,6 +46,22 @@ export default function UserStoryDetailPage() {
   // blank case, "edit-all" pre-loads every existing case.
   const [editAllOpen, setEditAllOpen] = useState<"manual" | "edit-all" | null>(null);
   const [knownTags, setKnownTags] = useState<string[]>([]);
+  // Skip reasons from the most recent build-scripts call. Surfaced inline
+  // under the success message so users see *why* each case was skipped
+  // (rate-limit, parse error, etc.) instead of just a count.
+  const [buildSkipped, setBuildSkipped] = useState<
+    Array<{ test_case_id: string; title: string; reason: string }>
+  >([]);
+  // Per-test-case Run flow.
+  type OrgRow = { id: string; name?: string; environment?: string };
+  const [orgs, setOrgs] = useState<OrgRow[]>([]);
+  // When non-null, the page is showing the org-picker UI for this test case.
+  const [orgPickerForCase, setOrgPickerForCase] = useState<string | null>(null);
+  const [orgPickerSelected, setOrgPickerSelected] = useState<string>("");
+  // When set, a run is live and BulkExecutionStream is rendered with this URL.
+  const [activeRun, setActiveRun] = useState<
+    { tcId: string; tcTitle: string; streamUrl: string } | null
+  >(null);
   // Sprint reassignment state. The chip is always visible; clicking it
   // toggles `sprintMenuOpen` to show a dropdown of active+planned
   // sprints in this project plus a "(No sprint)" option.
@@ -64,6 +81,17 @@ export default function UserStoryDetailPage() {
         setKnownTags(rows.map((r) => r.name).filter(Boolean)),
       )
       .catch(() => setKnownTags([]));
+  }, [story?.project_id]);
+
+  // Available Salesforce orgs for this project, used by the per-test-case
+  // Run button. We need an org_id to build the stream URL; the persona is
+  // optional and resolved server-side from project + user defaults.
+  useEffect(() => {
+    if (!story?.project_id) return;
+    api.orgs
+      .list(story.project_id)
+      .then((rows: any[]) => setOrgs((rows || []) as OrgRow[]))
+      .catch(() => setOrgs([]));
   }, [story?.project_id]);
 
   // Available sprints + the story's current sprint label. Two requests
@@ -176,17 +204,59 @@ export default function UserStoryDetailPage() {
     setBuildLoading(true);
     setErr("");
     setMsg("");
+    setBuildSkipped([]);
     try {
       const res = await api.userStories.buildScripts(id);
       const fresh = await api.testCases.list(id);
       setTcs(fresh);
-      const skippedNote = res.skipped.length ? ` ${res.skipped.length} skipped.` : "";
+      // Capture each skipped case so the inline panel can surface
+      // titles + reasons (rate-limit, parse error, ...) instead of just
+      // a count.
+      setBuildSkipped(res.skipped || []);
+      const skippedNote = res.skipped.length
+        ? ` ${res.skipped.length} skipped — see details below.`
+        : "";
       setMsg(`Built ${res.built.length} script(s) under ${res.output_dir}.${skippedNote}`);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Build failed");
     } finally {
       setBuildLoading(false);
     }
+  };
+
+  /** Decide whether we have everything needed to launch a run, and either
+   *  start streaming or open the org picker. The persona is intentionally
+   *  unset so the backend resolver picks the project default; users can
+   *  fine-tune persona from the global Runs page when needed. */
+  const startRunForCase = (tcId: string) => {
+    setErr("");
+    if (orgs.length === 0) {
+      setErr(
+        "No Salesforce orgs registered for this project. Add one under Settings → Orgs first.",
+      );
+      return;
+    }
+    if (orgs.length === 1) {
+      launchRun(tcId, orgs[0].id);
+      return;
+    }
+    setOrgPickerSelected(orgs[0].id);
+    setOrgPickerForCase(tcId);
+  };
+
+  const launchRun = (tcId: string, orgId: string) => {
+    const tc = tcs.find((t) => t.id === tcId);
+    const url = api.runs.testCaseStreamUrl(tcId, { org_id: orgId });
+    setActiveRun({
+      tcId,
+      tcTitle: tc?.title ?? "Test case",
+      streamUrl: url,
+    });
+    setOrgPickerForCase(null);
+  };
+
+  const closeRun = () => {
+    setActiveRun(null);
   };
 
   const toggleScript = async (tcId: string) => {
@@ -364,6 +434,68 @@ export default function UserStoryDetailPage() {
       {msg && <p className="text-emerald-400 text-sm mb-3">{msg}</p>}
       {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
 
+      {/* Skipped-during-build details. Each row links the case title to
+          the underlying reason (rate limit / parse error / etc.) so the
+          user can decide to retry just those cases or fix prompts. */}
+      {buildSkipped.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-4 p-3 rounded-xl border border-amber-400/30 bg-amber-500/5"
+        >
+          <div className="text-xs font-semibold text-amber-200 mb-2">
+            {buildSkipped.length} case{buildSkipped.length === 1 ? "" : "s"} were
+            skipped during the last build. Click <span className="text-cyan-300">Generate scripts</span> again
+            to retry, or fix the underlying issue first.
+          </div>
+          <ul className="space-y-1">
+            {buildSkipped.map((s) => (
+              <li key={s.test_case_id} className="text-[11px] font-mono text-slate-200">
+                <span className="text-amber-300">{s.title}</span>
+                <span className="text-slate-500"> — </span>
+                <span className="text-slate-300">{s.reason}</span>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setBuildSkipped([])}
+            className="mt-2 text-[10px] text-slate-400 hover:text-slate-200 underline"
+          >
+            Dismiss
+          </button>
+        </motion.div>
+      )}
+
+      {/* Live run stream for a single test case. Reuses the same
+          BulkExecutionStream component used by /runs so per-case Run
+          shows the exact same per-test card the bulk view does. */}
+      <AnimatePresence>
+        {activeRun && (
+          <motion.div
+            key={activeRun.streamUrl}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-6 p-4 rounded-xl glass border border-cyan-500/30"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-cyan-300">
+                Running: <span className="text-white">{activeRun.tcTitle}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={closeRun}
+                className="px-3 py-1 text-xs rounded glass text-slate-300 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <BulkExecutionStream streamUrl={activeRun.streamUrl} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {editOpen && (
           <motion.div
@@ -515,8 +647,73 @@ export default function UserStoryDetailPage() {
                             : "View script"}
                       </button>
                     )}
+                    {/* Run button: only shown for script-ready cases.
+                        Disabled while another run is live, so the
+                        BulkExecutionStream isn't fighting two SSE
+                        sources at once. */}
+                    {t.script_path && (
+                      <button
+                        type="button"
+                        disabled={!!activeRun || orgs.length === 0}
+                        onClick={() => startRunForCase(t.id)}
+                        title={
+                          activeRun
+                            ? "A run is already in progress -- close it first"
+                            : orgs.length === 0
+                              ? "No Salesforce orgs registered for this project"
+                              : "Run this test case against a project org"
+                        }
+                        className="px-2.5 py-1 text-xs rounded bg-emerald-600 text-white disabled:opacity-40"
+                      >
+                        Run
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Inline org-picker shown when this card's Run button was
+                    clicked AND multiple orgs are registered. Single-org
+                    projects skip the picker and run immediately. */}
+                {orgPickerForCase === t.id && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-3 p-3 rounded border border-cyan-500/30 bg-cyan-500/5"
+                  >
+                    <label className="block text-[11px] text-slate-400 mb-1">
+                      Run on which org?
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={orgPickerSelected}
+                        onChange={(e) => setOrgPickerSelected(e.target.value)}
+                        className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-slate-200"
+                      >
+                        {orgs.map((o) => (
+                          <option key={o.id} value={o.id}>
+                            {o.name || o.id}
+                            {o.environment ? ` (${o.environment})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => launchRun(t.id, orgPickerSelected)}
+                        className="px-3 py-1 text-xs rounded bg-emerald-600 text-white"
+                      >
+                        Start
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOrgPickerForCase(null)}
+                        className="px-3 py-1 text-xs rounded glass text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
 
                 {(t.preconditions || t.steps.length > 0 || t.expected_result) && (
                   <details className="mt-2 text-xs text-slate-300">

@@ -283,6 +283,9 @@ export interface PersonaPublic {
   visibility: "private" | "public";
   credential_version: number;
   credentials_updated_at: string | null;
+  /** Salesforce app this persona should land in by default. Injected at run
+   *  time as ${salesAutomationAppName} so PO keywords pick the right app. */
+  default_app: string | null;
   is_mine: boolean;
   can_edit_credentials: boolean;
   can_view_username: boolean;
@@ -330,6 +333,18 @@ export interface AuditLogRow {
   target_id: string;
   metadata_json: string;
   timestamp: string | null;
+}
+
+/** Result row from `GET /api/users/search`. The optional project flags let
+ *  the PeerCombobox render "Already a member" / "Invite pending" badges
+ *  without a second fetch. */
+export interface UserSearchHit {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  is_member: boolean;
+  pending_invite_id: string | null;
 }
 
 export const api = {
@@ -389,6 +404,8 @@ export const api = {
         password?: string;
         security_token?: string;
         slack_webhook_url?: string;
+        /** Optional ${salesAutomationAppName} override for this persona. */
+        default_app?: string;
       }
     ) =>
       apiFetch<{ environment: string; persona: string; status: string }>(
@@ -510,9 +527,21 @@ export const api = {
       role_profile?: string;
       is_default?: boolean;
       visibility?: "private" | "public";
+      /** Optional: ${salesAutomationAppName} override for this persona's runs. */
+      default_app?: string;
     }) =>
       apiFetch<PersonaPublic>("/personas", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { name?: string; role_profile?: string; is_default?: boolean; visibility?: "private" | "public" }) =>
+    update: (
+      id: string,
+      body: {
+        name?: string;
+        role_profile?: string;
+        is_default?: boolean;
+        visibility?: "private" | "public";
+        /** Pass empty string to clear, omit to leave unchanged. */
+        default_app?: string;
+      },
+    ) =>
       apiFetch<PersonaPublic>(`/personas/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -735,6 +764,9 @@ export const api = {
       username: string;
       password: string;
       headless?: boolean;
+      /** Persona's default Salesforce app. Backend maps to
+       *  ${salesAutomationAppName} so PO keywords pick the right app. */
+      default_app?: string;
     }) => {
       const q = new URLSearchParams({
         test_path: data.test_path,
@@ -743,6 +775,7 @@ export const api = {
         password: data.password,
         headless: String(data.headless ?? true),
       });
+      if (data.default_app) q.set("default_app", data.default_app);
       return withAuthQuery(`${API_BASE}/api/runs/execute/stream?${q.toString()}`);
     },
     latest: (limit = 50) =>
@@ -851,5 +884,18 @@ export const api = {
     soql: (query: string) => apiFetch<any>("/api/salesforce/soql", { method: "POST", body: JSON.stringify({ query }) }),
     dxStatus: () => apiFetch<any>("/api/salesforce/dx/status"),
     describeFields: (obj: string) => apiFetch<any>(`/api/salesforce/dx/objects/${obj}/fields`),
+  },
+  users: {
+    /** Search the same-domain user directory for the Add Member combobox.
+     *  Empty `q` returns []. When `projectName` (slug) is set, each hit is
+     *  annotated with `is_member` and `pending_invite_id` so the UI can
+     *  badge & disable rows that are already on the project or already
+     *  invited. */
+    search: (q: string, opts?: { projectName?: string; limit?: number }) => {
+      const sp = new URLSearchParams({ q });
+      if (opts?.projectName) sp.set("project_name", opts.projectName);
+      if (opts?.limit) sp.set("limit", String(opts.limit));
+      return apiFetch<UserSearchHit[]>(`/api/users/search?${sp.toString()}`);
+    },
   },
 };

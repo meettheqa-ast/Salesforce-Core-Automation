@@ -61,11 +61,64 @@ class GenerateRequest(BaseModel):
     auto_generate_data: bool = True
     headless: bool = False
     generation_mode: str = "mcp_stepwise"
+    # Persona's default Salesforce app (e.g. "Pentair Sales"). When set, the
+    # planner / quick-generator gets a "Persona context" block telling the
+    # LLM that ${salesAutomationAppName} will be injected at runtime, so PO
+    # keywords like SalesPO.Open New Lead From Sales App land in the right
+    # app instead of falling back to "Sales".
+    default_app: str = ""
+
+class ValidationErrorPayload(BaseModel):
+    """One actionable issue surfaced by the script validator. Mirrors
+    ``ai_qa_portal.backend.services.script_validator.ValidationError``
+    but is duplicated here so the schema module stays free of internal
+    service imports (avoids circular imports + keeps the public API
+    decoupled from the validator's internal representation)."""
+    line: int = 0
+    column: int = 0
+    kind: str = ""
+    symbol: str = ""
+    message: str = ""
+    closest_matches: list[str] = []
+    snippet: str = ""
+
+
+class GenerationAttempt(BaseModel):
+    """One trip through the validate-fix-validate loop. Surfaced in the
+    response so the UI can render the correction trail."""
+    attempt: int
+    ok: bool
+    error_count: int
+    fix_prompt_excerpt: str = ""
+    script_excerpt: str = ""
+
+
+class ProviderSwitchPayload(BaseModel):
+    """One LLM-provider failover event surfaced to the UI. Populated when
+    the primary LLM hit a quota / rate-limit / auth / availability issue
+    and ``call_llm`` automatically failed over to a configured backup.
+    The frontend renders this as a banner: 'Switched from Gemini to Groq
+    because Gemini hit its quota'."""
+    from_provider: str = ""
+    from_label: str = ""
+    to_provider: str = ""
+    to_label: str = ""
+    reason: str = ""
+    error_excerpt: str = ""
+
 
 class GenerateResponse(BaseModel):
     robot_code: str
     test_path: str | None = None
     lint_errors: list[str] = []
+    # Validation metadata. Populated by the new retry-loop pipeline.
+    # Empty when validation was skipped (legacy path) or not available.
+    validation_ok: bool = True
+    validation_errors: list[ValidationErrorPayload] = []
+    validation_attempts: list[GenerationAttempt] = []
+    # LLM-provider failover events that occurred while servicing this
+    # request. Empty in the common case (primary provider succeeded).
+    provider_switches: list[ProviderSwitchPayload] = []
 
 class StepwiseProgress(BaseModel):
     step: int
@@ -135,6 +188,12 @@ class FailureAnalysisResponse(BaseModel):
 class MCPStatus(BaseModel):
     running: bool
     url: str = ""
+    # Optional fields populated when the server is reachable. Older callers
+    # that read only ``running``/``url`` keep working unchanged.
+    version: str = ""
+    tool_count: int = 0
+    memory_enabled: bool = False
+    memory_db_path: str = ""
 
 class MCPSessionInit(BaseModel):
     sandbox_url: str

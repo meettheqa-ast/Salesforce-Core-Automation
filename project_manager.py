@@ -31,6 +31,11 @@ DEFAULT_ENVIRONMENTS: list[str] = ["Dev", "QA", "UAT", "Prod"]
 DEFAULT_PERSONA = "System Admin"
 _CREDENTIAL_KEYS: list[str] = [
     "sandbox_url", "username", "password", "security_token", "slack_webhook_url",
+    # Not a credential, but lives alongside them in config.json so the legacy
+    # Streamlit form and the FastAPI portal share one storage shape. Mirrored
+    # into Persona.default_app on sync; injected at run time as
+    # ${salesAutomationAppName} so PO keywords land in the right Salesforce app.
+    "default_app",
 ]
 
 # Fields whose values are encrypted at rest in config.json. Marker-prefixed so
@@ -459,8 +464,14 @@ def write_project_credentials(
     slack_webhook_url: str = "",
     environment: str = "Dev",
     persona: str = DEFAULT_PERSONA,
+    default_app: str = "",
 ) -> Path:
-    """Write credentials for a single *environment* / *persona*."""
+    """Write credentials for a single *environment* / *persona*.
+
+    `default_app` is the Salesforce app this persona should land in by
+    default. Stored alongside the credentials but NOT encrypted (it's just
+    a user-facing string). Empty string means "use the global default".
+    """
     _PLACEHOLDER_STRINGS = {
         "https://yourorg--sbx.sandbox.my.salesforce.com/",
         "user@example.com",
@@ -485,6 +496,7 @@ def write_project_credentials(
         "password": _maybe_encrypt((password or "").strip()),
         "security_token": _maybe_encrypt(_clean(security_token)),
         "slack_webhook_url": _clean(slack_webhook_url),
+        "default_app": (default_app or "").strip(),
     }
     return _write_full_config(project_name, raw)
 

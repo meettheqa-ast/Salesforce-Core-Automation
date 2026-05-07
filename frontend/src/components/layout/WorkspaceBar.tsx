@@ -14,6 +14,10 @@ export type WorkspaceCreds = {
   project: string;
   environment: string;
   persona: string;
+  /** Persona's default Salesforce app (e.g. "Pentair Sales"). Threaded
+   *  to the generate endpoints so the LLM can frame the script around the
+   *  right app instead of falling back to the global "Sales" default. */
+  defaultApp: string;
 };
 
 interface WorkspaceBarProps {
@@ -107,18 +111,24 @@ export default function WorkspaceBar({ onChange }: WorkspaceBarProps) {
       const u = cfg.username || "";
       const p = cfg.password || "";
       const s = cfg.sandbox_url || "";
+      // default_app is a string field on the persona config (config.json
+      // -> environments.<env>.personas.<name>.default_app). Carry it on
+      // every onChange emit so consumers don't have to re-fetch.
+      const da = cfg.default_app || "";
       setUsername(u);
       setPassword(p);
       setSandboxUrl(s);
       onChangeRef.current({
         sandboxUrl: s, username: u, password: p,
         project, environment, persona,
+        defaultApp: da,
       });
     }).catch(() => {
       setUsername(""); setPassword(""); setSandboxUrl("");
       onChangeRef.current({
         sandboxUrl: "", username: "", password: "",
         project, environment, persona,
+        defaultApp: "",
       });
     });
   }, [project, environment, persona]);

@@ -330,10 +330,15 @@ def _build_bulk_robot_cmd(
     sandbox_url: str,
     username: str,
     password: str,
+    default_app: str = "",
 ) -> list[str]:
     """Same shape as `_build_robot_cmd` but tuned for bulk: always uses the
     container/headless override path, no tag include/exclude (bulk runs
-    intentionally take the test list verbatim from the caller)."""
+    intentionally take the test list verbatim from the caller).
+
+    `default_app` (when non-empty) is injected as `${salesAutomationAppName}`
+    so PO keywords pick the right Salesforce app for the persona's license.
+    """
     cmd = [
         sys.executable, "-m", "robot",
         "--outputdir", str(out_dir),
@@ -344,6 +349,7 @@ def _build_bulk_robot_cmd(
     if _effective_headless(True):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_persona_robot_overrides(default_app))
     cmd.append(str(test_path))
     return cmd
 
@@ -431,7 +437,10 @@ def _bulk_event_stream(
                 "attempt": attempt,
             }
 
-        cmd = _build_bulk_robot_cmd(script_path, tc_dir, sandbox_url, username, password)
+        cmd = _build_bulk_robot_cmd(
+            script_path, tc_dir, sandbox_url, username, password,
+            default_app=getattr(persona, "default_app", None) or "",
+        )
         started_at = datetime.now()
         queue.put({
             "event": "running",
@@ -968,6 +977,8 @@ class ExecuteRequest(BaseModel):
     use_pabot: bool = False
     include_tags: str = ""
     exclude_tags: str = ""
+    # Optional Salesforce app to land in (mapped to ${salesAutomationAppName}).
+    default_app: str = ""
 
 
 class ExecuteResponse(BaseModel):
@@ -1065,6 +1076,7 @@ def execute_robot(
     if _effective_headless(body.headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_persona_robot_overrides(body.default_app))
     if body.include_tags:
         for tag in [t.strip() for t in body.include_tags.split(",") if t.strip()]:
             cmd.extend(["--include", tag])
@@ -1155,6 +1167,27 @@ def _container_browser_overrides() -> list[str]:
     return ["--variable", f"CONTAINER_BROWSER_BINARY:{binary}"]
 
 
+def _persona_robot_overrides(default_app: str | None) -> list[str]:
+    """Extra `--variable` args derived from persona metadata.
+
+    Today: maps `persona.default_app` -> `${salesAutomationAppName}` so
+    PO keywords (Open New Lead From Sales App, Go To Accounts Tab For App,
+    etc.) automatically land in the right Salesforce app for this user's
+    license. Without this override the global default in
+    `Resources/TestData/Platform/SalesData.robot` (= "Sales") wins, which
+    is what existing tests fall back to when no persona is bound.
+
+    Single source of truth: any future per-persona Robot variable
+    (e.g. `defaultListView`, `defaultRecordType`) lands in this helper so
+    we don't have to thread new kwargs through every command builder.
+    """
+    extras: list[str] = []
+    app = (default_app or "").strip()
+    if app:
+        extras.extend(["--variable", f"salesAutomationAppName:{app}"])
+    return extras
+
+
 def _effective_headless(requested: bool) -> bool:
     """Containerized backend has no display, so headed Chrome dies on launch.
     Force headless regardless of what the caller asked for."""
@@ -1170,6 +1203,7 @@ def _build_robot_cmd(
     headless: bool,
     include_tags: str = "",
     exclude_tags: str = "",
+    default_app: str = "",
 ) -> list[str]:
     cmd = [
         sys.executable, "-m", "robot",
@@ -1181,6 +1215,7 @@ def _build_robot_cmd(
     if _effective_headless(headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_persona_robot_overrides(default_app))
     for tag in [t.strip() for t in include_tags.split(",") if t.strip()]:
         cmd.extend(["--include", tag])
     for tag in [t.strip() for t in exclude_tags.split(",") if t.strip()]:
@@ -1198,6 +1233,7 @@ def execute_robot_stream(
     headless: bool = Query(True),
     include_tags: str = Query(""),
     exclude_tags: str = Query(""),
+    default_app: str = Query("", description="Optional ${salesAutomationAppName} override."),
 ):
     """Stream Robot stdout line-by-line as Server-Sent Events.
 
@@ -1220,7 +1256,8 @@ def execute_robot_stream(
     out_dir = RESULTS_ROOT / f"ui_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
     cmd = _build_robot_cmd(
-        tp, out_dir, sandbox_url, username, password, headless, include_tags, exclude_tags
+        tp, out_dir, sandbox_url, username, password, headless, include_tags, exclude_tags,
+        default_app=default_app,
     )
 
     def event_stream():
@@ -1606,12 +1643,13 @@ def _execute_in_background(
     password: str,
     prompt: str,
 ) -> None:
-    """Background task: generate .robot from prompt then run it."""
-    import sys
-    import os
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    sys.path.insert(0, repo_root)
+    """Background task: generate .robot from prompt then run it.
 
+    Repo root is already on sys.path at module import time (see top of file
+    -- REPO_ROOT injection happens once when this module is loaded). No need
+    to re-inject per call, and re-importing logging/os/sys inside the body
+    just shadowed the module-level names.
+    """
     try:
         from ai_bridge import generate_test_from_prompt
         output_path = generate_test_from_prompt(prompt)
@@ -1622,5 +1660,4 @@ def _execute_in_background(
             login_url=login_url,
         )
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).error("Background run %s failed: %s", run_id, exc)
+        logger.error("Background run %s failed: %s", run_id, exc)

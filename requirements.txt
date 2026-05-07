@@ -34,8 +34,12 @@ google-generativeai==0.8.6
 anthropic>=0.34.0
 cohere>=5.0.0
 
-# RF-MCP — stepwise test generation with live browser verification
-rf-mcp
+# RF-MCP — stepwise test generation with live browser verification.
+# `[memory]` adds the persistent semantic-memory tools (sqlite-vec + model2vec)
+# so RF-MCP can recall prior locators, step sequences, and error→fix mappings
+# across sessions. Pinned because we exercise tool surfaces (execute_batch,
+# recall_*, get_locator_guidance) that landed in 0.30+.
+rf-mcp[memory]>=0.31.2
 
 # UI enhancements
 streamlit-option-menu>=0.4.0

@@ -279,16 +279,44 @@ def build_system_prompt(role: Role, *, include_legacy_quick_guidance: bool = Tru
     return "\n\n".join(p for p in parts if p).strip() + "\n"
 
 
+def render_persona_context(default_app: Optional[str] = None) -> str:
+    """Format an optional 'Persona context' block for inclusion in a user
+    prompt. Returns empty string when nothing relevant is set, so callers
+    can unconditionally concatenate.
+
+    Today's only field is `default_app`; the helper exists so the next
+    persona-derived hint (role profile, default list view, etc.) lands in
+    one place rather than five separate prompt builders.
+    """
+    app = (default_app or "").strip()
+    if not app:
+        return ""
+    return (
+        "## Persona context\n\n"
+        f"Persona default app: {app}\n"
+        f"   (Already injected as ${{salesAutomationAppName}} at runtime. "
+        "Prefer PO keywords like `Open New Lead From Sales App` without "
+        "specifying app_name; they will pick this up automatically. Only "
+        "pass an explicit app name if the test deliberately needs a "
+        "different one.)\n"
+    )
+
+
 def build_user_prompt_with_catalog(
     body: str,
     *,
     include_full_catalog: bool = True,
     catalog_section_title: str = "Keyword Catalog",
+    default_app: Optional[str] = None,
 ) -> str:
     """Wrap a caller-provided user prompt with the keyword catalog.
 
     `include_full_catalog=False` returns just the keyword name list --
     cheaper for the drafter role where the LLM doesn't need full args/docs.
+
+    `default_app`, when set, prepends a one-section "Persona context"
+    block so the LLM frames generated steps around the right Salesforce
+    app for this user license.
     """
     if include_full_catalog:
         catalog_text = keyword_catalog.compact_json()
@@ -296,7 +324,9 @@ def build_user_prompt_with_catalog(
         names = keyword_catalog.keyword_names()
         catalog_text = "\n".join(f"- {n}" for n in names)
 
+    persona_block = render_persona_context(default_app)
     return (
+        f"{persona_block}"
         f"## {catalog_section_title}\n\n"
         f"{catalog_text}\n\n"
         f"## User request\n\n"

@@ -8,6 +8,7 @@ import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
 import { api, type MemberOut, type InvitationRow } from "@/lib/api";
 import { useMe, membershipFor, roleAtLeast } from "@/lib/useMe";
+import PeerCombobox, { type PeerSelection } from "@/components/members/PeerCombobox";
 
 const ROLE_LABEL: Record<MemberOut["role"], string> = {
   pm: "Project Manager",
@@ -29,6 +30,11 @@ export default function ProjectMembersPage({
   // Add-member form
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState("");
+  // Tracks whether the user picked an existing teammate from the combobox
+  // (id !== null) vs. typed a free-text email (id === null). The submit
+  // handler doesn't currently branch on this, but it lets us surface a
+  // "Inviting <Name>" affordance below the form when a row is picked.
+  const [addPicked, setAddPicked] = useState<PeerSelection | null>(null);
   const [addRole, setAddRole] = useState<MemberOut["role"]>("member");
   const [adding, setAdding] = useState(false);
 
@@ -98,7 +104,7 @@ export default function ProjectMembersPage({
       // notification; if not, the invite waits until they sign in for the
       // first time and they auto-accept on first login.
       await api.projects.invite(name, { email: addEmail.trim(), role: addRole });
-      setAddEmail(""); setAddRole("member"); setShowAdd(false);
+      setAddEmail(""); setAddPicked(null); setAddRole("member"); setShowAdd(false);
       load();
       refresh();
     } catch (e: unknown) {
@@ -184,16 +190,27 @@ export default function ProjectMembersPage({
             className="mb-6"
           >
             <AnimatedCard glow="purple">
-              <h3 className="text-sm font-semibold text-white mb-3">Add member by email</h3>
+              <h3 className="text-sm font-semibold text-white mb-3">Add member</h3>
               <div className="grid grid-cols-12 gap-3 items-end">
                 <div className="col-span-12 sm:col-span-7">
-                  <label className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 block">Email</label>
-                  <input
-                    type="email"
+                  <label className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 block">
+                    Teammate
+                  </label>
+                  <PeerCombobox
+                    projectName={name}
                     value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    placeholder="teammate@astounddigital.com"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
+                    onChange={(next) => {
+                      setAddEmail(next);
+                      // Typing edits the email -> the previous "picked" record
+                      // no longer matches. Clear it so the affordance below
+                      // disappears until the user picks again.
+                      if (addPicked && next.trim().toLowerCase() !== addPicked.email.toLowerCase()) {
+                        setAddPicked(null);
+                      }
+                    }}
+                    onSelect={(picked) => setAddPicked(picked)}
+                    placeholder="Type a name or paste an email…"
+                    autoFocus
                   />
                 </div>
                 <div className="col-span-7 sm:col-span-3">
@@ -220,9 +237,16 @@ export default function ProjectMembersPage({
                   </button>
                 </div>
               </div>
+              {addPicked && addPicked.id !== null && (
+                <p className="text-xs text-emerald-300 mt-3">
+                  Inviting <span className="font-semibold text-white">{addPicked.name || addPicked.email}</span>
+                  <span className="text-slate-500"> &middot; {addPicked.email}</span>
+                </p>
+              )}
               <p className="text-xs text-slate-500 mt-3">
-                Sends an invitation. If the invitee has already signed in, they get an in-app notification.
-                Otherwise, the invite is waiting and they'll be auto-added on their first login.
+                Start typing to find a teammate, or paste any astounddigital.com email.
+                If they have signed in before, the invite shows up in their bell immediately;
+                otherwise it auto-applies on their first login.
               </p>
             </AnimatedCard>
           </motion.div>

@@ -133,12 +133,15 @@ Select App Tab
 
 Open New Dialog
     [Documentation]    Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Dismisses overlays, scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.
+    ...
+    ...    Record-type picker handling: if Salesforce shows a "Choose Record Type" picker after clicking New (multiple record types and no user default), this keyword auto-clicks **Next** with the pre-selected default. Pass ``auto_select_default_record_type=${FALSE}`` when the caller intends to pick a specific record type with ``Select Account Record Type`` etc. -- in that case this keyword returns immediately after clicking New so the caller can drive the picker themselves.
     [Tags]    modal    navigation
-    [Arguments]    ${dialogName}
+    [Arguments]    ${dialogName}    ${auto_select_default_record_type}=${TRUE}
     ${newBtn}=    Resolve Tiered Locator    ${newRecordTier1}    ${newRecordTier2}    ${newRecord}
     Wait Until Element Is Visible    ${newBtn}    timeout=15s
     Wait For Lightning Spinners Absent    timeout=8s
-    # Dismiss any stale overlay (record-type picker) in one pass
+    # Dismiss any *stale* overlay left over from a prior interaction.
+    # (The picker that's about to appear after we click New is handled below.)
     ${overlay}=    Run Keyword And Return Status    Page Should Contain Element    ${sfRecordTypeOverlay}
     IF    ${overlay}
         Run Keyword And Ignore Error    Press Keys    xpath://body    ESCAPE
@@ -150,6 +153,17 @@ Open New Dialog
         ${nr}=    Get Webelement    ${newBtn}
         Execute Javascript    arguments[0].scrollIntoView({block:'center'}); arguments[0].click();    ARGUMENTS    ${nr}
     END
+    # Caller wants to drive the record-type picker themselves (e.g. the
+    # BC Commercial Account flow which calls Select Account Record Type
+    # next). Return now -- they're responsible for waiting for the form
+    # title once the picker has been navigated.
+    IF    not ${auto_select_default_record_type}    RETURN
+    # Default behaviour: if the picker appeared (Pentair Lead has Business
+    # / Ship To, etc.), click Next with the pre-selected default record
+    # type. No-op when there's no picker. This MUST happen before we wait
+    # for the "New <Type>" form title -- the title only renders after the
+    # picker is dismissed, so without this the wait below would time out.
+    Continue Past Record Type Picker If Present    timeout=5s
     ${newRecordDialogTitle}=    Replace String    ${newRecordDialogTitleLocator}    <record-name>    ${dialogName}
     Wait Until Element Is Visible    ${newRecordDialogTitle}    timeout=15s
     Scroll Element Into View With Fallback    ${newRecordDialogTitle}
@@ -169,6 +183,126 @@ Open Item
     Wait Until Element Is Visible    ${itemInLauncher}    timeout=10s
     Click Element    ${itemInLauncher}
     Wait Until Element Is Visible    ${sandboxlaunch360logo}    timeout=15s
+
+Set Address Via Lookup
+    [Documentation]    Set an address on a Lead/Account/Contact form, with a
+    ...    two-tier strategy:
+    ...
+    ...    1. Try Salesforce Lightning's Google Places autocomplete (a
+    ...       single search input above the address-component fields).
+    ...       Type the full address, click the first listbox option, let
+    ...       SF auto-fill Street / City / State / Country / Zip.
+    ...    2. Fall back to direct per-field fill -- some org layouts
+    ...       (e.g. Pentair) configure ``lightning-input-address`` WITHOUT
+    ...       the autocomplete sub-input, so only the per-field combobox
+    ...       inputs exist. Parse the trailing components from the address
+    ...       string and fill Country / State/Province / City / Zip
+    ...       directly via their ``aria-label``-matched comboboxes.
+    ...
+    ...    Address parsing for tier-2 expects the form
+    ...    ``"<street>, <city>, <state-code-or-name>[, <country>]"`` --
+    ...    e.g. ``"18 King Street, San Francisco, CA"`` or
+    ...    ``"100 Queen Street West, Toronto, ON, Canada"``. State codes
+    ...    are auto-mapped to full names via the ``Select State Or
+    ...    Province`` keyword's built-in mapping table.
+    ...
+    ...    Tier-1 tolerates three placeholder variants
+    ...    (``Search Address...`` / ``Search Address`` / aria-label only)
+    ...    and three suggestion DOM shapes (``role='option'``,
+    ...    ``lightning-base-combobox-item``, ``li[role='option']``). On a
+    ...    complete miss within 4s, drops to tier-2 silently.
+    [Tags]    interaction    address    lookup    google-places
+    [Arguments]    ${address}
+    ${addressInput}=    Set Variable
+    ...    xpath:(//*[contains(@class,'modal-container')]//input[@placeholder='Search Address...' or @placeholder='Search Address' or contains(@aria-label,'Address') or contains(@aria-label,'address')])[1]
+    ${tier1Available}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${addressInput}    timeout=4s
+    IF    ${tier1Available}
+        # Tier 1: Google Places autocomplete path.
+        Scroll Element Into View    ${addressInput}
+        Clear Element Text    ${addressInput}
+        Input Text    ${addressInput}    ${address}
+        ${listboxOption}=    Set Variable
+        ...    xpath:(//*[contains(@class,'modal-container')]//div[@role='listbox']//*[@role='option'] | //*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option'] | //*[contains(@class,'modal-container')]//li[@role='option'])[1]
+        ${optionVisible}=    Run Keyword And Return Status
+        ...    Wait Until Element Is Visible    ${listboxOption}    timeout=8s
+        IF    ${optionVisible}
+            Scroll Element Into View    ${listboxOption}
+            Click Element    ${listboxOption}
+            Run Keyword And Ignore Error
+            ...    Wait For Lightning Spinners Absent    timeout=10s
+        ELSE
+            Press Keys    ${addressInput}    ARROW_DOWN
+            Press Keys    ${addressInput}    RETURN
+            Run Keyword And Ignore Error
+            ...    Wait For Lightning Spinners Absent    timeout=10s
+        END
+        Log    Set Address Via Lookup: tier-1 (Google Places) succeeded.    INFO
+        RETURN
+    END
+
+    # Tier 2: per-field fill. Pentair-style layout where the autocomplete
+    # input simply isn't rendered. Parse the address string components.
+    Log    Set Address Via Lookup: no autocomplete input found, falling back to per-field fill for "${address}".    INFO
+    @{parts}=    Split String    ${address}    separator=,    max_split=3
+    ${street}=    Set Variable If    ${parts.__len__()} > 0    ${{$parts[0].strip()}}    ${EMPTY}
+    ${city}=     Set Variable If    ${parts.__len__()} > 1    ${{$parts[1].strip()}}    ${EMPTY}
+    ${state_raw}=    Set Variable If    ${parts.__len__()} > 2    ${{$parts[2].strip()}}    ${EMPTY}
+    ${country}=    Set Variable If    ${parts.__len__()} > 3    ${{$parts[3].strip()}}    United States
+
+    # Country first -- State/Province is dependent in standard SF picklists.
+    Run Keyword And Ignore Error
+    ...    Set Combobox By Aria Label    Country    ${country}
+    Run Keyword And Ignore Error
+    ...    Set Combobox By Aria Label    State/Province    ${state_raw}
+    # Street + City + Zip are plain text inputs; no Zip in our address
+    # string format so leave Zip alone (Salesforce doesn't require it).
+    Run Keyword And Ignore Error
+    ...    Set Text Input By Name    street    ${street}
+    Run Keyword And Ignore Error
+    ...    Set Text Input By Name    city    ${city}
+
+Set Combobox By Aria Label
+    [Documentation]    Type a value into a combobox identified by its
+    ...    ``aria-label`` (e.g. ``Country``, ``State/Province``) and pick
+    ...    the matching option from the listbox. Used by tier-2 of
+    ...    ``Set Address Via Lookup``. Tries multiple option-text shapes:
+    ...    exact value, value as code (``CA``), value as full name (mapped
+    ...    via ``Select State Or Province``'s state table when applicable).
+    [Tags]    interaction    combobox    address
+    [Arguments]    ${aria_label}    ${value}
+    ${combobox}=    Set Variable
+    ...    xpath:(//*[contains(@class,'modal-container')]//input[@aria-label='${aria_label}' and @role='combobox'])[1]
+    Wait Until Element Is Visible    ${combobox}    timeout=8s
+    Scroll Element Into View    ${combobox}
+    # Open the dropdown by clicking the input.
+    Click Element    ${combobox}
+    Clear Element Text    ${combobox}
+    Input Text    ${combobox}    ${value}
+    # Listbox-option shapes Salesforce uses for combobox-item selection.
+    ${option}=    Set Variable
+    ...    xpath:(//*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option' and @data-value='${value}'] | //*[contains(@class,'modal-container')]//lightning-base-combobox-item[@role='option' and contains(.,'${value}')] | //*[contains(@class,'modal-container')]//li[@role='option' and contains(.,'${value}')])[1]
+    ${found}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${option}    timeout=4s
+    IF    ${found}
+        Click Element    ${option}
+    ELSE
+        # Keyboard fallback: ARROW_DOWN + ENTER picks the highlighted match.
+        Press Keys    ${combobox}    ARROW_DOWN
+        Press Keys    ${combobox}    RETURN
+    END
+
+Set Text Input By Name
+    [Documentation]    Type ``${value}`` into a plain ``<input type="text">``
+    ...    identified by its ``name`` attribute (e.g. ``street``, ``city``).
+    [Tags]    interaction    text input    address
+    [Arguments]    ${name}    ${value}
+    ${field}=    Set Variable
+    ...    xpath:(//*[contains(@class,'modal-container')]//input[@name='${name}' and @type='text'])[1]
+    Wait Until Element Is Visible    ${field}    timeout=8s
+    Scroll Element Into View    ${field}
+    Clear Element Text    ${field}
+    Input Text    ${field}    ${value}
 
 Enter Into Search Field
     [Documentation]    Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.
@@ -776,13 +910,23 @@ Verify Related Records Creation
     Verify Table Cell Record    ${successToastMessageOnRecordDetailsPage}
 
 Verify Table Cell Record
-    [Documentation]    Verify the presence of a record ID in a table cell on a page. It checks if the specified record ID appears within a table. This keyword is useful when verifying the presence of newly created records or ensuring that a record exists in a table based on its ID.
+    [Documentation]    Verify the presence of a record in a table cell on a page. The lookup is tolerant of case differences, leading/trailing whitespace, and Lightning's search-highlight <mark> wrapping (which splits the link text across multiple text nodes). When the record is found but its displayed name does not match the queried string exactly, a WARN is logged so the report shows what was actually matched (e.g. queried "Yadu NAndan", matched "Yadu Nandan").
     [Tags]    verification    records    utilities
     [Arguments]    ${recordIdArg}    ${recordIdPos}=1
     ${tableCellLocator}=    Replace String    ${tableCellLocator}    <record-id>    ${recordIdArg}
     ${tableCellLocator}=    Replace String    ${tableCellLocator}    <pos>    ${recordIdPos}
     Wait Until Page Contains Element    ${tableCellLocator}    timeout=10s
     Page Should Contain Element    ${tableCellLocator}
+    ${getStatus}    ${actualText}=    Run Keyword And Ignore Error    Get Text    ${tableCellLocator}
+    IF    '${getStatus}' == 'PASS'
+        ${actualNorm}=    Evaluate    " ".join($actualText.split())
+        ${queriedNorm}=    Evaluate    " ".join($recordIdArg.split())
+        IF    '${actualNorm.lower()}' != '${queriedNorm.lower()}'
+            Log    Resolved queried record '${recordIdArg}' to displayed name '${actualNorm}' (case/spelling tolerated).    WARN
+        ELSE
+            Log    Verified record '${actualNorm}' is present in the table.    INFO
+        END
+    END
 
 Return Back To Parent
     [Documentation]    Navigates back to the parent record from a related record view. It reloads the page, waits for the breadcrumb (indicating the parent record) to become visible, and clicks on it to return to the parent record's details page. After navigating back, it ensures the parent record is visible and confirms successful navigation.
@@ -1055,6 +1199,31 @@ Wait For Record Type Overlay Cleared
         Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${combined}    timeout=${timeout}
     END
 
+Continue Past Record Type Picker If Present
+    [Documentation]    After ``Open New Dialog``, Salesforce shows a "Choose Record Type" picker (``forceChangeRecordType`` overlay) when the object has multiple record types AND the user has no per-record-type default. This keyword detects that picker and clicks **Next** with the *currently-selected* record type -- which is Salesforce's own default for this user/profile. When no picker is present (single record type, or the user has a default), this is a no-op.
+    ...
+    ...    Default timeout is **3 s** -- the picker, if it's coming, appears within a few hundred ms of the New click; waiting longer just adds dead time to every Open New Dialog call on orgs with single record types.
+    ...
+    ...    Use this from PO "Open New X From Sales App" keywords that do NOT take an explicit record type. Flows that DO care which record type to pick (e.g. ``Select Account Record Type    BC Commercial``) should NOT use this helper -- they should pick the record type explicitly *before* the picker is dismissed.
+    [Tags]    utilities    modal    record-type
+    [Arguments]    ${timeout}=3s
+    ${pickerSelector}=    Set Variable    css:div.forceChangeRecordType, section.forceChangeRecordType
+    ${pickerVisible}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${pickerSelector}    timeout=${timeout}
+    IF    not ${pickerVisible}
+        # No picker -- the New form opened directly, nothing to do.
+        RETURN
+    END
+    # Picker is showing. Salesforce pre-selects the user's default record
+    # type (or the first one when there is no default). Just click Next.
+    # Select Dialog Button uses the SLDS modal-footer button finder so it
+    # works regardless of whether Next is rendered as <button> or <lightning-button>.
+    Select Dialog Button    Next
+    # Wait for the picker to actually go away before returning so the next
+    # keyword (typically Enter Text on a form field) doesn't race the
+    # picker's fade-out animation and click through to the wrong layer.
+    Run Keyword And Ignore Error    Wait Until Element Is Not Visible    ${pickerSelector}    timeout=10s
+
 Click In Shadow Root
     [Documentation]    Clicks an element inside a **shadow root** that standard Selenium locators cannot reach. ``${host_css_selector}`` is a **CSS selector** for the light-DOM host element whose ``shadowRoot`` contains the target. ``${inner_css_selector}`` is resolved inside ``host.shadowRoot.querySelector``. Centralizes shadow-pierce JS so individual tests never contain ad-hoc shadow scripts.
     [Tags]    utilities    shadow dom
@@ -1197,30 +1366,149 @@ Open Quick Action
     Wait Until Element Is Visible    ${overflow}    timeout=8s
     Click Element    ${overflow}
 
+Verify Lead Owner On Detail Page
+    [Documentation]    Verify the current Lead detail page shows ``${expected_owner}``
+    ...                somewhere in its visible text. Uses
+    ...                ``Wait Until Page Contains`` because the Owner field
+    ...                renders inside a Lightning Web Component slot
+    ...                projection that Selenium's ``Get Text`` doesn't
+    ...                traverse reliably -- but the value IS present in
+    ...                the rendered visible page text, which
+    ...                ``Page Should Contain`` reads cleanly.
+    ...
+    ...                Routing rules in Salesforce can take a few seconds
+    ...                to fire async on first save, so we ``Reload Page``
+    ...                + wait up to 30 s by default. This is the ROBUST
+    ...                alternative to
+    ...                ``Verify Field Value On Detail Page    Lead Owner ...``
+    ...                for routing-rule tests. Use this for any assertion
+    ...                where the expected value is a unique string (e.g. a
+    ...                queue name like ``Pool-NA-ISR-West``) -- substring
+    ...                match is precise enough.
+    [Tags]    verification    lead    owner    routing
+    [Arguments]    ${expected_owner}    ${timeout}=30s
+    # Reload so any post-save async-routing update is reflected. Wrap in
+    # Run Keyword And Ignore Error because Reload sometimes throws on
+    # very slow networks; the subsequent Wait Until Page Contains will
+    # report the real verdict either way.
+    Run Keyword And Ignore Error    Reload Page
+    Wait For Lightning Spinners Absent    timeout=15s
+    Wait Until Page Contains    ${expected_owner}    timeout=${timeout}
+
 Verify Field Value On Detail Page
     [Documentation]    Asserts that ``${field_label}`` on the current record detail page shows
-    ...                ``${expected_value}``. Tolerates output cell variants (read-only span vs
-    ...                lightning-formatted-text vs anchor for lookup references). Use for
-    ...                "Verify Lead Source is Web on the detail page". Comparison is exact
-    ...                after trimming surrounding whitespace; pass the value as it appears in
-    ...                the UI.
+    ...                ``${expected_value}``. Comparison is exact after trimming whitespace.
+    ...
+    ...                Locator strategy (in priority order):
+    ...
+    ...                1. **Gold standard** -- ``data-target-selection-name="sfdc:RecordField.<SObject>.<APIName>"``.
+    ...                   This is Salesforce Lightning's canonical detail-page field id;
+    ...                   stable across layouts, versions, and orgs. We map common field
+    ...                   labels to API names automatically (e.g. "Lead Owner" -> "OwnerId",
+    ...                   "Lead Status" -> "Status"). For lookup fields like Owner, the
+    ...                   value lives inside ``force-owner-lookup //span.owner-name``;
+    ...                   we read THAT specifically, bypassing the inline "Change Owner"
+    ...                   button entirely.
+    ...                2. **Label-based** -- legacy xpath that walks from the label text to
+    ...                   the value cell. Used when the SObject can't be inferred (caller
+    ...                   passed a custom field label, or this isn't a standard SObject
+    ...                   detail page). Skips well-known action-button texts to avoid the
+    ...                   "Change Owner" miss bug.
+    ...
+    ...                Optional ``${sobject}`` arg lets the caller specify the SObject
+    ...                explicitly when the URL doesn't make it obvious; defaults to "Lead"
+    ...                because that's the most common case in this project today.
     [Tags]    verification    detail-page
-    [Arguments]    ${field_label}    ${expected_value}
+    [Arguments]    ${field_label}    ${expected_value}    ${sobject}=Lead
+    # Map common field labels to their Salesforce API names. Aliases
+    # (e.g. "Owner" / "Lead Owner" both -> "OwnerId") so the LLM/user
+    # can use either label.
+    ${api_name_map}=    Create Dictionary
+    ...    Lead Owner=OwnerId
+    ...    Owner=OwnerId
+    ...    Account Owner=OwnerId
+    ...    Case Owner=OwnerId
+    ...    Opportunity Owner=OwnerId
+    ...    Contact Owner=OwnerId
+    ...    Lead Status=Status
+    ...    Status=Status
+    ...    Lead Source=LeadSource
+    ...    Source=LeadSource
+    ...    Company=Company
+    ...    First Name=FirstName
+    ...    Last Name=LastName
+    ...    Phone=Phone
+    ...    Email=Email
+    ...    Title=Title
+    ...    Website=Website
+    ...    Stage=StageName
+    ...    Stage Name=StageName
+    ...    Amount=Amount
+    ...    Close Date=CloseDate
+    ...    Account Name=Name
+    ...    Industry=Industry
+    ...    Type=Type
+    ...    Rating=Rating
+    ${api_name}=    Get From Dictionary    ${api_name_map}    ${field_label}    default=${EMPTY}
+    ${actual}=    Set Variable    ${EMPTY}
+    ${found}=    Set Variable    ${FALSE}
+
+    # Tier 1: data-target-selection-name (canonical SF detail-page id) +
+    # JavaScript ``textContent`` extraction. ``Get Text`` on a Lightning
+    # output cell often returns "" because the value sits inside a Web
+    # Component slot projection that Selenium's text reader doesn't
+    # traverse cleanly. ``textContent`` walks every node regardless of
+    # shadow/slot boundaries -- the bulletproof read.
+    IF    "${api_name}" != "${EMPTY}"
+        ${field_root_xpath}=    Set Variable
+        ...    xpath://*[@data-target-selection-name='sfdc:RecordField.${sobject}.${api_name}']
+        ${visible}=    Run Keyword And Return Status
+        ...    Wait Until Element Is Visible    ${field_root_xpath}    timeout=8s
+        IF    ${visible}
+            ${selector}=    Set Variable    [data-target-selection-name="sfdc:RecordField.${sobject}.${api_name}"]
+            ${raw_text}=    Execute Javascript    return (document.querySelector('${selector}') || {textContent: ''}).textContent || '';
+            ${raw_text}=    Convert To String    ${raw_text}
+            # Strip the label prefix ("Lead Owner ...") and the action-
+            # button assistive text ("... Change Owner") to leave just
+            # the value.
+            ${stripped}=    Set Variable    ${raw_text}
+            FOR    ${noise}    IN    ${field_label}    Change Owner    Change User    Edit    Delete    Clone    Share    Sharing
+                ${stripped}=    Replace String    ${stripped}    ${noise}    ${EMPTY}
+            END
+            ${actual}=    Strip String    ${stripped}
+            IF    "${actual}" != "${EMPTY}"
+                ${found}=    Set Variable    ${TRUE}
+            END
+        END
+    END
+
+    # Tier 2: label-based descent with action-button-text skip.
     @{candidates}=    Create List
     ...    //records-record-layout-item[.//*[normalize-space()='${field_label}']]//*[contains(@class,'slds-form-element__static') or self::lightning-formatted-text or self::a]
     ...    //div[contains(@class,'slds-form-element')][.//span[normalize-space()='${field_label}']]//*[contains(@class,'slds-form-element__static') or self::lightning-formatted-text or self::a]
     ...    //*[contains(@class,'test-id__field-label')][normalize-space()='${field_label}']/following::*[contains(@class,'test-id__field-value')][1]
-    ${found}=    Set Variable    ${FALSE}
-    FOR    ${loc}    IN    @{candidates}
-        ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc}    timeout=4s
-        IF    ${ok}
-            ${actual}=    Get Text    ${loc}
-            ${actual}=    Strip String    ${actual}
-            Should Be Equal As Strings    ${actual}    ${expected_value}
-            ...    msg=Field "${field_label}" expected "${expected_value}" but got "${actual}"
-            ${found}=    Set Variable    ${TRUE}
-            Exit For Loop
+    @{skip_texts}=    Create List    Change Owner    Change User    Edit    Delete    Clone    Share    Sharing
+    IF    not ${found}
+        FOR    ${loc}    IN    @{candidates}
+            ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc}    timeout=4s
+            IF    not ${ok}    CONTINUE
+            @{matches}=    Get WebElements    ${loc}
+            FOR    ${el}    IN    @{matches}
+                ${candidate}=    Get Text    ${el}
+                ${candidate}=    Strip String    ${candidate}
+                ${is_skip}=    Run Keyword And Return Status    Should Contain    ${skip_texts}    ${candidate}
+                IF    "${candidate}" == "${EMPTY}" or ${is_skip}    CONTINUE
+                ${actual}=    Set Variable    ${candidate}
+                ${found}=    Set Variable    ${TRUE}
+                BREAK
+            END
+            IF    ${found}    BREAK
         END
+    END
+
+    IF    ${found}
+        Should Be Equal As Strings    ${actual}    ${expected_value}
+        ...    msg=Field "${field_label}" expected "${expected_value}" but got "${actual}"
     END
     IF    not ${found}
         Fail    Could not locate "${field_label}" output cell on the detail page.

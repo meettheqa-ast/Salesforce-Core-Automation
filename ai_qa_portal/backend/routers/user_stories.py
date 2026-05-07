@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
+
+logger = logging.getLogger("ai_qa_portal.user_stories")
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -434,12 +438,36 @@ def build_scripts_for_story(
 
     built: list[BuildScriptsResult] = []
     now = datetime.now(timezone.utc)
-    for tc in runnable:
+    # Batch builds skip the ``robot --dryrun`` gate by default. Reasoning:
+    # the AST validator (still on) catches the big-impact issues
+    # (hallucinated keywords, undefined variables, bad imports). The
+    # dryrun adds ~1-2 s per attempt, and a 3-attempt validation budget
+    # times N test cases puts the synchronous request into timeout
+    # territory on the frontend. Operators who want full validation can
+    # set ``AI_QA_BATCH_DRYRUN=1`` to flip this back on.
+    skip_dryrun_default = os.environ.get("AI_QA_BATCH_DRYRUN", "0").strip().lower() not in (
+        "1", "true", "yes"
+    )
+    for idx, tc in enumerate(runnable, start=1):
         try:
-            robot = _builder.build_robot_script(tc, persona=None, org=None)
+            robot = _builder.build_robot_script(
+                tc, persona=None, org=None, skip_dryrun=skip_dryrun_default,
+            )
         except Exception as exc:  # noqa: BLE001 -- LLM/IO; surface in response
+            # Log on the backend with both the test-case id and a short
+            # exception class so operators can correlate batch failures
+            # with provider-side issues (rate limits, timeouts, ...).
+            logger.warning(
+                "build_scripts: case %d/%d FAILED  tc=%s title=%r  %s: %s",
+                idx, len(runnable), tc.id, tc.title, type(exc).__name__,
+                str(exc)[:200],
+            )
             skipped.append(
-                {"test_case_id": str(tc.id), "title": tc.title, "reason": f"build-failed: {exc}"}
+                {
+                    "test_case_id": str(tc.id),
+                    "title": tc.title,
+                    "reason": f"{type(exc).__name__}: {str(exc)[:200]}",
+                }
             )
             continue
         fname = f"{_filename_slug(tc.title)}_{tc.id.hex[:8]}.robot"
