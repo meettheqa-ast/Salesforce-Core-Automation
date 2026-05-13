@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from app_config import ROOT, _HAS_WORKSPACE, _pm
+from app_config import _HAS_WORKSPACE, ROOT, _pm
 
 
 @dataclass(frozen=True)

@@ -8,7 +8,12 @@ import AnimatedCard from "@/components/cards/AnimatedCard";
 import StatusDonut, { DONUT_COLORS } from "@/components/charts/StatusDonut";
 import RobotCodeEditor from "@/components/editor/RobotCodeEditor";
 import GlassSelect from "@/components/ui/GlassSelect";
+import CreateSprintModal from "@/components/sprints/CreateSprintModal";
+import CreateStoryModal from "@/components/user-stories/CreateStoryModal";
+import AddTestCaseModal from "@/components/test-cases/AddTestCaseModal";
+import VisualRegressionPanel from "@/components/projects/VisualRegressionPanel";
 import { api } from "@/lib/api";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 
 /** Filter state for the test-cases panel. Mirrors a `?filter=<id>` URL
  *  param so a click-through from the project list page lands here on
@@ -64,6 +69,7 @@ type ConfirmTarget =
 type ProjectTestCases = Awaited<ReturnType<typeof api.projects.testCases>>;
 type StoryGroup = ProjectTestCases["stories"][number];
 type TCRow = StoryGroup["test_cases"][number];
+type TagRow = { id: string; name: string; color?: string; scope: "static" | "custom" };
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -112,6 +118,18 @@ export default function ProjectDetailPage() {
   const [sprintsForProject, setSprintsForProject] = useState<
     Array<{ id: string; name: string; state: string; story_count: number }>
   >([]);
+  // Portal UUID for this project -- needed by the create-side modals
+  // (sprint / story / test-case picker) which all key off project_id.
+  // Populated by the same portalProjectId resolution that already drives
+  // the sprints panel below.
+  const [portalProjectId, setPortalProjectId] = useState<string>("");
+  // Visibility flags for the three "+ Add X" modals on this page.
+  const [showCreateSprint, setShowCreateSprint] = useState(false);
+  const [showCreateStory, setShowCreateStory] = useState(false);
+  const [showAddTestCase, setShowAddTestCase] = useState(false);
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [newTagName, setNewTagName] = useState("");
+  const [tagsBusy, setTagsBusy] = useState(false);
 
   /** The Test cases panel renders this filtered slice of `projectTCs.stories`.
    *  When the filter is "all" we just pass the original stories through;
@@ -175,6 +193,9 @@ export default function ProjectDetailPage() {
       // first then fan out to sprints + stories (for per-sprint counts).
       api.projects.portalProjectId(name).then((r) => {
         const pid = r.project_id;
+        // Cache the portal project id so the new "+ Add X" modals on
+        // this page can pre-fill it without a second lookup.
+        setPortalProjectId(pid);
         return Promise.all([
           api.sprints.list(pid).catch(() => []),
           api.userStories.list(pid).catch(() => [] as Array<{ sprint_id: string | null }>),
@@ -193,9 +214,46 @@ export default function ProjectDetailPage() {
             })),
           );
         });
-      }).catch(() => setSprintsForProject([]));
+      }).catch(() => {
+        setSprintsForProject([]);
+        setPortalProjectId("");
+      });
     });
   }, [name, loadEnvironments]);
+
+  useEffect(() => {
+    if (!portalProjectId) {
+      setTags([]);
+      return;
+    }
+    api.tags.list(portalProjectId).then((rows) => setTags(rows as TagRow[])).catch(() => setTags([]));
+  }, [portalProjectId]);
+
+  // Refresh the per-project rollups after a create. Cheap to refetch --
+  // these endpoints are already used on initial load.
+  const refreshAfterCreate = useCallback(() => {
+    api.projects.testCases(name).then(setProjectTCs).catch(() => {});
+    if (portalProjectId) {
+      Promise.all([
+        api.sprints.list(portalProjectId).catch(() => []),
+        api.userStories.list(portalProjectId).catch(() => [] as Array<{ sprint_id: string | null }>),
+      ]).then(([sprints, stories]) => {
+        const counts: Record<string, number> = {};
+        for (const st of stories) {
+          const sid = st.sprint_id;
+          if (sid) counts[sid] = (counts[sid] || 0) + 1;
+        }
+        setSprintsForProject(
+          (sprints as any[]).map((s) => ({
+            id: s.id,
+            name: s.name,
+            state: s.state,
+            story_count: counts[s.id] || 0,
+          })),
+        );
+      }).catch(() => {});
+    }
+  }, [name, portalProjectId]);
 
   useEffect(() => {
     if (!selectedEnv) {
@@ -346,6 +404,37 @@ export default function ProjectDetailPage() {
   };
 
   const deletingEnv = personas.length === 1 && personas[0] === DEFAULT_PERSONA;
+
+  const addTag = async () => {
+    if (!portalProjectId || !newTagName.trim()) return;
+    setTagsBusy(true);
+    try {
+      await api.tags.create({ project_id: portalProjectId, name: newTagName.trim() });
+      setNewTagName("");
+      const rows = await api.tags.list(portalProjectId);
+      setTags(rows as TagRow[]);
+      flash("ok", "Tag created");
+    } catch (e: unknown) {
+      flash("err", e instanceof Error ? e.message : "Could not create tag");
+    } finally {
+      setTagsBusy(false);
+    }
+  };
+
+  const removeTag = async (tag: TagRow) => {
+    if (!portalProjectId || tag.scope === "static") return;
+    setTagsBusy(true);
+    try {
+      await api.tags.delete(tag.id, portalProjectId);
+      const rows = await api.tags.list(portalProjectId);
+      setTags(rows as TagRow[]);
+      flash("ok", "Tag deleted");
+    } catch (e: unknown) {
+      flash("err", e instanceof Error ? e.message : "Could not delete tag");
+    } finally {
+      setTagsBusy(false);
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
@@ -643,23 +732,27 @@ export default function ProjectDetailPage() {
               Sprints{" "}
               <span className="text-slate-500 font-normal">({sprintsForProject.length})</span>
             </h3>
-            <Link
-              href={`/sprints?project=${encodeURIComponent(name)}`}
-              className="text-[11px] text-purple-300 hover:text-purple-200"
-            >
-              Manage sprints &rarr;
-            </Link>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={!portalProjectId}
+                onClick={() => setShowCreateSprint(true)}
+                className="text-[11px] px-3 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold disabled:opacity-50"
+              >
+                + New sprint
+              </button>
+              <Link
+                href={`/sprints?project=${encodeURIComponent(name)}`}
+                className="text-[11px] text-purple-300 hover:text-purple-200"
+              >
+                Manage sprints &rarr;
+              </Link>
+            </div>
           </div>
           {sprintsForProject.length === 0 ? (
             <p className="text-xs text-slate-500">
-              No sprints yet for this project.{" "}
-              <Link
-                href={`/sprints?project=${encodeURIComponent(name)}`}
-                className="text-purple-400 hover:text-purple-300 underline underline-offset-2"
-              >
-                Create one
-              </Link>{" "}
-              to organise stories into iterations.
+              No sprints yet for this project. Click{" "}
+              <span className="text-purple-300">+ New sprint</span> above to organise stories into iterations.
             </p>
           ) : (
             <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
@@ -671,7 +764,7 @@ export default function ProjectDetailPage() {
                 .map((s) => (
                   <Link
                     key={s.id}
-                    href={`/sprints/${encodeURIComponent(s.id)}`}
+                    href={`/sprints/${encodeURIComponent(s.id)}?project=${encodeURIComponent(name)}`}
                     className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/40 transition-colors"
                   >
                     <div className="min-w-0">
@@ -700,8 +793,13 @@ export default function ProjectDetailPage() {
         </AnimatedCard>
       </div>
 
+      {/* Phase 3: Visual regression. Panel hides itself when the
+          feature is off OR when there's no drift to act on, so it
+          adds zero noise to projects that don't use it. */}
+      <VisualRegressionPanel projectSlug={name} />
+
       {/* Test cases (project-wide, grouped by user story, filterable) */}
-      {projectTCs && projectTCs.total > 0 && (
+      {projectTCs && (
         <div className="mt-6">
           <AnimatedCard glow="cyan" delay={0.15}>
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -713,14 +811,37 @@ export default function ProjectDetailPage() {
                     : `${filteredStories.reduce((n, s) => n + s.test_cases.length, 0)} of ${projectTCs.total}`})
                 </span>
               </h3>
-              <div className="flex flex-wrap gap-2 text-[11px]">
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
                 {projectTCs.scripts_built > 0 && (
                   <span className="px-2 py-0.5 rounded-full bg-cyan-600/20 text-cyan-200">
                     {projectTCs.scripts_built} script(s) built
                   </span>
                 )}
+                <button
+                  type="button"
+                  disabled={!portalProjectId}
+                  onClick={() => setShowCreateStory(true)}
+                  className="px-3 py-1 rounded-lg glass text-slate-200 hover:text-white hover:bg-purple-500/15 disabled:opacity-50"
+                >
+                  + New story
+                </button>
+                <button
+                  type="button"
+                  disabled={!portalProjectId}
+                  onClick={() => setShowAddTestCase(true)}
+                  className="px-3 py-1 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold disabled:opacity-50"
+                >
+                  + Add test case
+                </button>
               </div>
             </div>
+            {projectTCs.total === 0 && (
+              <p className="text-xs text-slate-500">
+                No test cases yet for this project. Use{" "}
+                <span className="text-purple-300">+ New story</span> to author one, then{" "}
+                <span className="text-purple-300">+ Add test case</span> to attach cases to it.
+              </p>
+            )}
 
             {activeFilter !== "all" && filteredStories.length === 0 && (
               <div className="text-center py-6 text-sm text-slate-400">
@@ -761,7 +882,7 @@ export default function ProjectDetailPage() {
                         </span>
                       </button>
                       <Link
-                        href={`/user-stories/${encodeURIComponent(story.id)}`}
+                        href={`/user-stories/${encodeURIComponent(story.id)}?project=${encodeURIComponent(name)}`}
                         className="text-[10px] text-purple-400 hover:text-purple-300 px-2"
                       >
                         Open story →
@@ -791,9 +912,12 @@ export default function ProjectDetailPage() {
                                 stale
                               </span>
                             )}
-                            <span className="text-sm text-slate-100 flex-1 min-w-0 truncate">
+                            <Link
+                              href={`/test-cases/${encodeURIComponent(tc.id)}?project=${encodeURIComponent(name)}`}
+                              className="text-sm text-slate-100 flex-1 min-w-0 truncate hover:text-cyan-200"
+                            >
                               {tc.title}
-                            </span>
+                            </Link>
                             {tc.tags.slice(0, 3).map((t) => (
                               <span
                                 key={t}
@@ -842,6 +966,62 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
+      {/* Tags management */}
+      {portalProjectId && (
+        <div className="mt-6">
+          <AnimatedCard glow="purple" delay={0.18}>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="text-sm font-bold text-white">
+                Tags <span className="text-slate-500 font-normal">({tags.length})</span>
+              </h3>
+              <div className="flex items-center gap-2">
+                <input
+                  value={newTagName}
+                  onChange={(e) => setNewTagName(e.target.value)}
+                  placeholder="New tag name"
+                  className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200"
+                />
+                <button
+                  type="button"
+                  onClick={addTag}
+                  disabled={tagsBusy || !newTagName.trim()}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600/35 text-cyan-100 text-xs disabled:opacity-40"
+                >
+                  Add tag
+                </button>
+              </div>
+            </div>
+            {tags.length === 0 ? (
+              <p className="text-xs text-slate-500">No tags yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((t) => (
+                  <span
+                    key={t.id}
+                    className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full ${
+                      t.scope === "static" ? "bg-slate-600/25 text-slate-300" : "bg-purple-600/25 text-purple-200"
+                    }`}
+                  >
+                    {t.name}
+                    {t.scope === "custom" && (
+                      <button
+                        type="button"
+                        onClick={() => removeTag(t)}
+                        disabled={tagsBusy}
+                        className="text-slate-400 hover:text-red-300"
+                        title="Delete custom tag"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </AnimatedCard>
+        </div>
+      )}
+
       {/* Saved Tests */}
       <div className="mt-6">
         <AnimatedCard glow="purple" delay={0.2}>
@@ -850,7 +1030,7 @@ export default function ProjectDetailPage() {
             <div className="text-center py-6">
               <p className="text-slate-500 text-sm">No tests saved yet.</p>
               <Link
-                href="/generate"
+                href={`/generate?project=${encodeURIComponent(name)}`}
                 className="text-xs text-purple-400 hover:text-purple-300 mt-2 inline-block"
               >
                 Generate your first test →
@@ -996,6 +1176,39 @@ export default function ProjectDetailPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Create-side modals. All three use the project's portal UUID
+          which we resolved on mount. They reload the relevant rollups
+          via refreshAfterCreate so the panels above repaint
+          immediately with the new sprint / story / test case. */}
+      <CreateSprintModal
+        open={showCreateSprint}
+        onClose={() => setShowCreateSprint(false)}
+        projectId={portalProjectId || undefined}
+        onCreated={(sprint) => {
+          refreshAfterCreate();
+          notifyTreeRefresh({ kind: "sprint", projectId: sprint.project_id });
+        }}
+      />
+      <CreateStoryModal
+        open={showCreateStory}
+        onClose={() => setShowCreateStory(false)}
+        projectId={portalProjectId || undefined}
+        redirectAfterCreate={false}
+        onCreated={(story) => {
+          refreshAfterCreate();
+          notifyTreeRefresh({
+            kind: "story",
+            projectId: story.project_id,
+            sprintId: story.sprint_id || undefined,
+          });
+        }}
+      />
+      <AddTestCaseModal
+        open={showAddTestCase}
+        onClose={() => setShowAddTestCase(false)}
+        projectId={portalProjectId}
+      />
     </div>
   );
 }

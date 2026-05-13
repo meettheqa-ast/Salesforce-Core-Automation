@@ -65,7 +65,7 @@ history**. That is by design. From [`.gitignore`](../.gitignore):
 | `Results/` | Run artefacts (current runners). Same reasoning as above. |
 | `Tests/Generated/` | LLM-generated suites. Regenerated on demand; safe to wipe. |
 | `_local_data/` | Bind-mount target used by `docker-compose.yml`. Whatever the live container writes lands here. |
-| `.env`, `ai_qa_portal/.env` | API keys, `FERNET_KEY`, Google client secrets. |
+| `.env`, `ai_qa_portal/.env` | LLM API keys (`CURSOR_API_KEY`, `GEMINI_API_KEY`, etc.), `FERNET_KEY`, Google client secrets. |
 | `Resources/TestData/EnvData.robot` | Runtime credential injection point for the legacy Streamlit runner; rewritten on every run. |
 | `venv/` | Python virtualenv. |
 | `output/`, root-level `log.html`, `output.xml`, `report.html` | Stray Robot outputs when somebody runs `robot` from the repo root by accident. |
@@ -644,13 +644,15 @@ That's all the user-generated state. `Resources/`, `Tests/`,
 | `FERNET_KEY` env var | Without the same value, encrypted `password` and `security_token` fields in `config.json` and `personas.json` won't decrypt. The data is irrecoverably lost. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | NextAuth on the frontend won't authenticate against a different OAuth client. |
 | `AUTH_SECRET` (frontend `.env.local`) | If you generate a new one on the new machine, every existing session token becomes invalid -- users have to sign in again, which is acceptable. |
+| `CURSOR_API_KEY` (and any other LLM provider keys you rely on) | Without these the backend has no usable primary provider; generation falls all the way through to the last configured fallback (or fails outright if no key is set). Migrating them is mandatory if you want generation to keep working out of the box. |
 
 ### Cold migration order of operations
 
 1. Stop both backend and frontend on the source machine.
 2. `tar`/copy `Saved_Projects/` and `ai_qa_portal/data/` to the destination.
 3. Copy `.env` (or at least `FERNET_KEY` + `GOOGLE_CLIENT_ID` +
-   `GOOGLE_CLIENT_SECRET`) to the destination.
+   `GOOGLE_CLIENT_SECRET` + `CURSOR_API_KEY` + any other LLM provider
+   keys you rely on) to the destination.
 4. Bring up the backend on the destination and verify `/health` returns
    `200 {"status":"ok"}`.
 5. Sign in to verify auth works against the migrated `users.db`.

@@ -20,10 +20,7 @@ provider-agnostic."""
 
 from __future__ import annotations
 
-from typing import Optional
-
 from .base import ExternalIssueProvider
-
 
 _PROVIDERS: dict[str, ExternalIssueProvider] = {}
 
@@ -35,7 +32,7 @@ def register_provider(provider: ExternalIssueProvider) -> None:
     _PROVIDERS[provider.source_name] = provider
 
 
-def get_provider(source: str) -> Optional[ExternalIssueProvider]:
+def get_provider(source: str) -> ExternalIssueProvider | None:
     """Lookup by canonical source name. Returns None when no provider
     is registered, so callers can branch on integration availability
     without try/except."""

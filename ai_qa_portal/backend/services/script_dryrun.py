@@ -30,7 +30,6 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from ai_qa_portal.backend.services.script_validator import ValidationError, ValidationReport
 
@@ -113,7 +112,6 @@ def _parse_console(text: str, suite_path: Path) -> list[ValidationError]:
         line = lines[i]
         m = _ERROR_LINE_RE.match(line.strip())
         if m:
-            file_name = m.group("file") or str(suite_path)
             line_no = int(m.group("line")) if m.group("line") else 0
             rest = m.group("rest").strip()
             kind, symbol = _classify(rest)
@@ -184,7 +182,7 @@ def dryrun(
     suite_path: Path | str,
     *,
     timeout: float = 30.0,
-    python_executable: Optional[str] = None,
+    python_executable: str | None = None,
 ) -> ValidationReport:
     """Run ``robot --dryrun`` against ``suite_path`` and parse the results.
 

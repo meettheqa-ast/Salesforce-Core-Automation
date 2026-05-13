@@ -1,0 +1,51 @@
+{
+  "//": "Workspace settings for Cursor / VS Code. Checked in so every contributor sees the same Python linter behaviour. ESLint and Robot Framework configuration live in their own files (frontend/eslint.config.mjs, .robocop, robotidy.toml).",
+
+  "//-python-linting": "Switch from pylint (697 false-positive Problems on this codebase due to weak FastAPI/SQLAlchemy/Enum analysis) to ruff + basedpyright. ruff covers correctness via pyflakes-class rules in pyproject.toml; basedpyright is responsible for type-level checks. If pylint is still installed, the disables in pyproject.toml keep it from spamming the Problems panel either.",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.flake8Enabled": false,
+  "python.linting.banditEnabled": false,
+  "python.linting.mypyEnabled": false,
+  "python.linting.lintOnSave": true,
+
+  "//-python-analysis": "basedpyright (via ms-python.python) handles type-aware diagnostics. Mode 'basic' is the right default for a codebase that doesn't have full type coverage yet; bump to 'strict' once the migration is complete.",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.indexing": true,
+  "python.analysis.extraPaths": ["."],
+
+  "//-ruff": "Ruff is installed via 'py -3 -m pip install ruff' (also runs from the agent-side lint hook). The 'charliermarsh.ruff' VS Code extension picks up [tool.ruff] from pyproject.toml automatically.",
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": false,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  "//-explorer": "Hide noise-generating folders in the file tree so they don't compete with source files for attention. Files are still searchable; this is purely a display hint.",
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/*.pyc": true,
+    "**/.next/dev": true,
+    "**/node_modules": true,
+    "_local_data": true
+  },
+  "search.exclude": {
+    "**/.next": true,
+    "**/_local_data": true,
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/Saved_Projects": true,
+    "**/Results": true,
+    "frontend/.next": true
+  },
+
+  "//-recommend-installing": "The agent-side lint hook in .cursor/hooks.json depends on these dev tools being present. Install with: py -3 -m pip install ruff basedpyright; npm i -g (optional, npx works) eslint",
+  "python.experiments.optOutFrom": []
+}

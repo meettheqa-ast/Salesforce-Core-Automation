@@ -1,0 +1,24 @@
+*** Settings ***
+Documentation       {{ suite_doc | default("Create a single Opportunity and verify it on the detail page.") }}
+Library             SeleniumLibrary
+Resource            ../../Resources/Common/GlobalKeywords.robot
+Resource            ../../Resources/PO/Platform/SalesPO.robot
+
+Test Setup          Begin Web Test
+Test Teardown       End Web Test
+
+
+*** Test Cases ***
+{{ test_title }}
+    [Documentation]    {{ documentation }}
+    [Tags]    {{ tags | join("    ") }}
+    GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
+{% if stage %}
+    Set Suite Variable    ${opportunityStageOption}    {{ stage }}
+{% endif %}
+    SalesPO.Open New Opportunity From Sales App
+    {{ create_opportunity_call }}
+    SalesPO.Verify Opportunity
+{% if stage %}
+    Verify Field Value On Detail Page    Stage    {{ stage }}    Opportunity
+{% endif %}

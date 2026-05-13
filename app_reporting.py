@@ -269,6 +269,7 @@ def publish_results_to_zephyr(
     successfully synced.  Never raises — logs warnings on failure.
     """
     import logging
+
     import requests
 
     logger = logging.getLogger(__name__)

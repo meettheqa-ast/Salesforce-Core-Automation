@@ -348,7 +348,7 @@ export default function StoryExecutionPanel() {
               ]}
             />
             <p className="text-xs text-slate-500">
-              Tip: pick the <span className="text-slate-300">Smoke</span> tag to run the project's smoke suite.
+              Tip: pick the <span className="text-slate-300">Smoke</span> tag to run the project&apos;s smoke suite.
             </p>
             <button
               type="button"

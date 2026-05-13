@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -41,8 +41,8 @@ def test_test_case_generator_parses_llm_json(monkeypatch):
         status=UserStoryStatus.active,
         version=1,
         prev_version_id=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     out = asyncio.run(gen.generate(story))
     assert len(out) == 1
@@ -66,8 +66,8 @@ def test_test_case_generator_invalid_json_raises(monkeypatch):
         status=UserStoryStatus.active,
         version=1,
         prev_version_id=None,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     with pytest.raises(ValueError, match="invalid JSON"):
         asyncio.run(gen.generate(story))
@@ -77,7 +77,7 @@ def test_story_versioner_archives_and_stales(tmp_path):
     store = JsonFileBackend(str(tmp_path))
     pid = uuid4()
     sid = uuid4()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     story = UserStory(
         id=sid,
         project_id=pid,
@@ -121,11 +121,53 @@ def test_story_versioner_archives_and_stales(tmp_path):
     assert updated_tc.stale is True
 
 
+def test_story_versioner_preserves_sprint_id_and_owner(tmp_path):
+    """Editing a story currently in a sprint must keep it in that sprint
+    AND keep its owner. Both fields used to default to None / "" on the
+    new version row, which silently sent stories to backlog and stripped
+    them of visibility on every edit."""
+    store = JsonFileBackend(str(tmp_path))
+    pid = uuid4()
+    sid = uuid4()
+    sprint_id = uuid4()
+    now = datetime.now(UTC)
+    story = UserStory(
+        id=sid,
+        project_id=pid,
+        title="V1",
+        description="Old",
+        status=UserStoryStatus.active,
+        version=1,
+        prev_version_id=None,
+        created_at=now,
+        updated_at=now,
+        owner_user_id="user-123",
+        sprint_id=sprint_id,
+    )
+    store.save_user_story(story.model_dump(mode="json"))
+
+    ver = StoryVersioner()
+    new_story, _stale = ver.update_story(
+        story,
+        UserStoryUpdate(description="New body"),
+        store,
+    )
+    assert new_story.sprint_id == sprint_id, (
+        "edited story must stay in its sprint, not silently fall to backlog"
+    )
+    assert new_story.owner_user_id == "user-123", (
+        "edited story must keep its owner, not become legacy/admin-only"
+    )
+    # And the old version is still archived (sanity).
+    assert new_story.version == 2
+    assert new_story.prev_version_id == sid
+
+
 def test_get_test_cases_by_tag_smoke_filter(tmp_path):
     store = JsonFileBackend(str(tmp_path))
     pid = uuid4()
     sid = uuid4()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     store.save_user_story(
         UserStory(
             id=sid,

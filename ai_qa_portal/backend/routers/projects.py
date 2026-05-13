@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 import project_manager
-
 from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.project_registry import ensure_project_uuid
 from ai_qa_portal.backend.services.auth import (
     assert_project_role_at_least,
-    effective_project_role,
     get_current_user,
 )
 from ai_qa_portal.backend.services.db import (
@@ -31,7 +28,6 @@ from ai_qa_portal.backend.storage.json_file_backend import JsonFileBackend
 from ..models.schemas import ProjectCreate, ProjectMeta, TestInfo
 from ..models.test_case import TestCase
 from ..models.user_story import UserStory
-
 
 _store = JsonFileBackend(settings.data_dir)
 
@@ -277,8 +273,8 @@ class _TestCaseRow(BaseModel):
     status: str
     stale: bool
     tags: list[str]
-    script_path: Optional[str] = None
-    script_built_at: Optional[datetime] = None
+    script_path: str | None = None
+    script_built_at: datetime | None = None
     heal_attempts: int = 0
 
 
@@ -458,9 +454,9 @@ def save_credentials(
     # without needing the user to re-edit through /personas. Best-effort -- we
     # never want a credentials save to fail because the portal mirror is off.
     try:
+        from ai_qa_portal.backend.config import settings as _settings
         from ai_qa_portal.backend.project_registry import ensure_project_uuid
         from ai_qa_portal.backend.storage.json_file_backend import JsonFileBackend
-        from ai_qa_portal.backend.config import settings as _settings
         proj_uuid = ensure_project_uuid(project_name)
         store = JsonFileBackend(_settings.data_dir)
         items = store.read("personas").get("items", [])

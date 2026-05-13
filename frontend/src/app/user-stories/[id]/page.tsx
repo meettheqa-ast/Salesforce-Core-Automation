@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import EditTestCasesModal, { type TestCaseDraft } from "@/components/test-cases/EditTestCasesModal";
 import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
 
@@ -24,15 +25,37 @@ type TestCaseRow = {
   script_built_at?: string | null;
 };
 
+const ACTIVITY_LABELS: Record<string, string> = {
+  story_created: "Story created",
+  story_updated: "Story updated",
+  story_assigned: "Owner reassigned",
+  story_comment_added: "Comment added",
+  story_cases_generated: "AI test cases generated",
+  story_scripts_built: "Robot scripts generated",
+};
+
+function parseActivityMetadata(raw: string): Record<string, any> {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
 export default function UserStoryDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = decodeURIComponent(params.id as string);
+  const projectSlug = searchParams.get("project") || "";
 
   const [story, setStory] = useState<any>(null);
   const [tcs, setTcs] = useState<TestCaseRow[]>([]);
   const [genLoading, setGenLoading] = useState(false);
   const [buildLoading, setBuildLoading] = useState(false);
+  const [buildBusy, setBuildBusy] = useState<Record<string, boolean>>({});
   const [statusBusy, setStatusBusy] = useState<Record<string, boolean>>({});
+  const [selectedCases, setSelectedCases] = useState<string[]>([]);
   const [scriptOpen, setScriptOpen] = useState<Record<string, string>>({});
   const [scriptLoading, setScriptLoading] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
@@ -40,6 +63,17 @@ export default function UserStoryDetailPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [meId, setMeId] = useState("");
+  const [comments, setComments] = useState<Array<{
+    id: string;
+    author_email: string;
+    body: string;
+    mentions: string[];
+    created_at: string;
+  }>>([]);
+  const [newComment, setNewComment] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [activity, setActivity] = useState<Array<any>>([]);
 
   // Bulk edit / add modal state. `editAllOpen` carries an "openMode"
   // because the same modal serves both flows: "manual" pre-loads one
@@ -59,9 +93,19 @@ export default function UserStoryDetailPage() {
   const [orgPickerForCase, setOrgPickerForCase] = useState<string | null>(null);
   const [orgPickerSelected, setOrgPickerSelected] = useState<string>("");
   // When set, a run is live and BulkExecutionStream is rendered with this URL.
+  // ``tcId`` is null when the run is the whole-story "Run all approved" flow
+  // (which still uses BulkExecutionStream but isn't tied to one test case).
   const [activeRun, setActiveRun] = useState<
-    { tcId: string; tcTitle: string; streamUrl: string } | null
+    { tcId: string | null; tcTitle: string; streamUrl: string; runHealContext?: { org_id: string; persona_id: string | null } } | null
   >(null);
+  // Story-level "Run all approved" picker. Opens an inline org/persona/auto-heal
+  // chooser; on confirm it builds the SSE URL via api.runs.userStoryStreamUrl
+  // and feeds it into the existing BulkExecutionStream below.
+  const [storyRunPickerOpen, setStoryRunPickerOpen] = useState(false);
+  const [storyRunOrgId, setStoryRunOrgId] = useState("");
+  const [storyRunPersonaId, setStoryRunPersonaId] = useState("");
+  const [storyRunAutoHeal, setStoryRunAutoHeal] = useState(false);
+  const [storyRunPersonas, setStoryRunPersonas] = useState<Array<{ id: string; name: string }>>([]);
   // Sprint reassignment state. The chip is always visible; clicking it
   // toggles `sprintMenuOpen` to show a dropdown of active+planned
   // sprints in this project plus a "(No sprint)" option.
@@ -153,11 +197,43 @@ export default function UserStoryDetailPage() {
   const load = useCallback(() => {
     api.userStories.get(id).then(setStory).catch(() => setStory(null));
     api.testCases.list(id).then(setTcs).catch(() => setTcs([]));
+    api.userStories.comments(id).then(setComments).catch(() => setComments([]));
+    api.userStories.activity(id).then((r) => setActivity(r.items || [])).catch(() => setActivity([]));
   }, [id]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    api.me().then((m) => setMeId(m.id)).catch(() => setMeId(""));
+  }, []);
+
+  // Auto-open the test-case author when arriving via
+  // `/user-stories/[id]?addCase=1`. The project-hub `+ Add test case`
+  // flow lands the user here after picking a story so the existing
+  // EditTestCasesModal is the single authoring surface.
+  useEffect(() => {
+    if (searchParams.get("addCase") === "1") {
+      setEditAllOpen("manual");
+    }
+  }, [searchParams]);
+
+  // Story-run persona list keyed off the picker's chosen org. Mirrors
+  // the per-test-case run flow; persona is optional (server resolves a
+  // default), so we don't gate the run button on this.
+  useEffect(() => {
+    if (!story?.project_id || !storyRunOrgId) {
+      setStoryRunPersonas([]);
+      return;
+    }
+    api.personas
+      .list(story.project_id, storyRunOrgId)
+      .then((rows: Array<{ id: string; name: string }>) =>
+        setStoryRunPersonas(rows.map((p) => ({ id: p.id, name: p.name }))),
+      )
+      .catch(() => setStoryRunPersonas([]));
+  }, [story?.project_id, storyRunOrgId]);
 
   const counts = useMemo(() => {
     const draft = tcs.filter((t) => t.status === "draft" && !t.stale).length;
@@ -166,6 +242,10 @@ export default function UserStoryDetailPage() {
     const stale = tcs.filter((t) => t.stale).length;
     const built = tcs.filter((t) => !!t.script_path).length;
     return { draft, approved, rejected, stale, built, total: tcs.length };
+  }, [tcs]);
+
+  useEffect(() => {
+    setSelectedCases((prev) => prev.filter((id2) => tcs.some((tc) => tc.id === id2)));
   }, [tcs]);
 
   const generate = async () => {
@@ -224,6 +304,73 @@ export default function UserStoryDetailPage() {
     }
   };
 
+  const toggleSelectedCase = (tcId: string) => {
+    setSelectedCases((prev) =>
+      prev.includes(tcId) ? prev.filter((id2) => id2 !== tcId) : [...prev, tcId],
+    );
+  };
+
+  const selectableIds = useMemo(
+    () => tcs.filter((t) => t.status === "approved" && !t.stale).map((t) => t.id),
+    [tcs],
+  );
+  const allSelectableChecked =
+    selectableIds.length > 0 && selectableIds.every((id2) => selectedCases.includes(id2));
+
+  const toggleSelectAll = () => {
+    if (!allSelectableChecked) {
+      setSelectedCases(selectableIds);
+      return;
+    }
+    setSelectedCases([]);
+  };
+
+  const buildSingleScript = async (tcId: string) => {
+    setBuildBusy((s) => ({ ...s, [tcId]: true }));
+    setErr("");
+    try {
+      await api.testCases.buildScript(tcId);
+      const fresh = await api.testCases.list(id);
+      setTcs(fresh);
+      setMsg("Script generated.");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not generate script");
+    } finally {
+      setBuildBusy((s) => ({ ...s, [tcId]: false }));
+    }
+  };
+
+  const buildSelectedScripts = async () => {
+    const targets = selectedCases.filter((tcId) =>
+      tcs.some((tc) => tc.id === tcId && tc.status === "approved" && !tc.stale),
+    );
+    if (targets.length === 0) {
+      setErr("Select at least one approved, non-stale test case.");
+      return;
+    }
+    setBuildLoading(true);
+    setErr("");
+    setMsg("");
+    let ok = 0;
+    let failed = 0;
+    await Promise.all(
+      targets.map(async (tcId) => {
+        try {
+          await api.testCases.buildScript(tcId);
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }),
+    );
+    const fresh = await api.testCases.list(id).catch(() => null);
+    if (fresh) setTcs(fresh);
+    setBuildLoading(false);
+    setSelectedCases([]);
+    if (failed > 0) setErr(`Generated ${ok} script(s); ${failed} failed.`);
+    else setMsg(`Generated ${ok} script(s).`);
+  };
+
   /** Decide whether we have everything needed to launch a run, and either
    *  start streaming or open the org picker. The persona is intentionally
    *  unset so the backend resolver picks the project default; users can
@@ -253,6 +400,28 @@ export default function UserStoryDetailPage() {
       streamUrl: url,
     });
     setOrgPickerForCase(null);
+  };
+
+  /** Story-level "Run all approved" launcher. Builds the SSE URL via
+   *  api.runs.userStoryStreamUrl and routes it through the same
+   *  BulkExecutionStream component the per-tc + sprint flows use. */
+  const launchStoryRun = () => {
+    if (!storyRunOrgId) {
+      setErr("Pick an org first.");
+      return;
+    }
+    const url = api.runs.userStoryStreamUrl(id, {
+      org_id: storyRunOrgId,
+      persona_id: storyRunPersonaId || null,
+      auto_heal: storyRunAutoHeal,
+    });
+    setActiveRun({
+      tcId: null,
+      tcTitle: story?.title ?? "User story",
+      streamUrl: url,
+      runHealContext: { org_id: storyRunOrgId, persona_id: storyRunPersonaId || null },
+    });
+    setStoryRunPickerOpen(false);
   };
 
   const closeRun = () => {
@@ -289,16 +458,73 @@ export default function UserStoryDetailPage() {
       });
       setEditOpen(false);
       setMsg(r.message || "Updated");
-      window.location.href = `/user-stories/${encodeURIComponent(r.new_story.id)}`;
+      const qs = projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : "";
+      window.location.href = `/user-stories/${encodeURIComponent(r.new_story.id)}${qs}`;
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Update failed");
     }
   };
 
+  const assignToMe = async () => {
+    setErr("");
+    try {
+      await api.userStories.assign(id, meId || undefined);
+      setMsg("Story ownership updated.");
+      load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not assign story");
+    }
+  };
+
+  const addComment = async () => {
+    const text = newComment.trim();
+    if (!text) return;
+    setCommentBusy(true);
+    setErr("");
+    try {
+      await api.userStories.addComment(id, text);
+      setNewComment("");
+      setMsg("Comment posted.");
+      load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Could not post comment");
+    } finally {
+      setCommentBusy(false);
+    }
+  };
+
+  const activityMessage = (entry: any) => {
+    const label = ACTIVITY_LABELS[entry.action] || entry.action;
+    const meta = parseActivityMetadata(String(entry.metadata_json || ""));
+    if (entry.action === "story_updated" && meta.version) {
+      return `${label} to v${meta.version}`;
+    }
+    if (entry.action === "story_assigned" && meta.owner_user_id) {
+      return `${label} (${meta.owner_user_id})`;
+    }
+    if (entry.action === "story_cases_generated" && typeof meta.count === "number") {
+      return `${label}: ${meta.count}`;
+    }
+    if (entry.action === "story_scripts_built") {
+      const built = typeof meta.built === "number" ? meta.built : 0;
+      const skipped = typeof meta.skipped === "number" ? meta.skipped : 0;
+      return `${label}: ${built} built, ${skipped} skipped`;
+    }
+    if (entry.action === "story_comment_added" && meta.preview) {
+      return `${label}: ${String(meta.preview)}`;
+    }
+    return label;
+  };
+
   if (!story) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-20 text-slate-500 text-sm">
-        <Link href="/user-stories" className="text-purple-400 hover:underline">← Back</Link>
+        <Link
+          href={projectSlug ? `/projects/${encodeURIComponent(projectSlug)}` : "/user-stories"}
+          className="text-purple-400 hover:underline"
+        >
+          ← Back
+        </Link>
         <p className="mt-4">Story not found or still loading…</p>
       </div>
     );
@@ -306,8 +532,15 @@ export default function UserStoryDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
-      <Link href="/user-stories" className="text-sm text-slate-500 hover:text-purple-400 mb-4 inline-block">
-        ← All stories
+      <Link
+        href={
+          projectSlug
+            ? `/projects/${encodeURIComponent(projectSlug)}`
+            : "/user-stories"
+        }
+        className="text-sm text-slate-500 hover:text-purple-400 mb-4 inline-block"
+      >
+        ← {projectSlug ? "Back to project" : "All stories"}
       </Link>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
@@ -318,6 +551,9 @@ export default function UserStoryDetailPage() {
             <div className="flex flex-wrap gap-2 mt-3 items-center">
               <span className="text-xs px-2 py-0.5 rounded bg-purple-600/30 text-purple-200">v{story.version}</span>
               <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{story.status}</span>
+              <span className={`text-xs px-2 py-0.5 rounded ${story.owner_user_id === meId ? "bg-cyan-600/25 text-cyan-200" : "bg-slate-600/30 text-slate-300"}`}>
+                owner: {story.owner_user_id === meId ? "you" : (story.owner_user_id || "unassigned")}
+              </span>
               {/* Sprint chip with click-to-reassign dropdown */}
               <div className="relative">
                 <button
@@ -396,6 +632,14 @@ export default function UserStoryDetailPage() {
             </button>
             <button
               type="button"
+              onClick={assignToMe}
+              disabled={!meId || story.owner_user_id === meId}
+              className="px-4 py-2 rounded-xl glass text-sm text-cyan-200 hover:text-white border border-cyan-500/30 disabled:opacity-40"
+            >
+              {story.owner_user_id === meId ? "Assigned to you" : "Assign to me"}
+            </button>
+            <button
+              type="button"
               onClick={() => setEditAllOpen("manual")}
               className="px-4 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white border border-cyan-500/30"
             >
@@ -427,12 +671,179 @@ export default function UserStoryDetailPage() {
             >
               {buildLoading ? "Building…" : `Generate scripts (${counts.approved})`}
             </button>
+            <button
+              type="button"
+              disabled={buildLoading || selectedCases.length === 0}
+              onClick={buildSelectedScripts}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-sm font-semibold disabled:opacity-40"
+              title="Generate scripts only for selected approved cases"
+            >
+              {buildLoading ? "Working…" : `Generate selected (${selectedCases.length})`}
+            </button>
+            <button
+              type="button"
+              disabled={counts.approved === 0}
+              onClick={() => {
+                setErr("");
+                if (orgs.length === 0) {
+                  setErr("No Salesforce orgs registered for this project. Add one under Settings → Orgs first.");
+                  return;
+                }
+                setStoryRunOrgId((prev) => prev || orgs[0].id);
+                setStoryRunPickerOpen(true);
+              }}
+              title={
+                counts.approved === 0
+                  ? "No approved test cases to run yet."
+                  : "Run every approved test case in this story, in parallel."
+              }
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white text-sm font-semibold disabled:opacity-40"
+            >
+              Run all approved ({counts.approved})
+            </button>
           </div>
         </div>
       </motion.div>
 
+      {/* Inline picker for the story-level "Run all approved" launcher.
+          Mirrors the per-test-case picker pattern -- org is required;
+          persona is optional (server resolves a default). Auto-heal
+          flips the engine into the heal/retry loop on failures. */}
+      <AnimatePresence>
+        {storyRunPickerOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mb-4"
+          >
+            <div className="glass-strong p-4 rounded-xl">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Org</span>
+                  <select
+                    value={storyRunOrgId}
+                    onChange={(e) => setStoryRunOrgId(e.target.value)}
+                    className="block w-48 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200"
+                  >
+                    {orgs.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name || o.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Persona</span>
+                  <select
+                    value={storyRunPersonaId}
+                    onChange={(e) => setStoryRunPersonaId(e.target.value)}
+                    className="block w-48 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200"
+                  >
+                    <option value="">Default resolution</option>
+                    {storyRunPersonas.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-300 ml-2">
+                  <input
+                    type="checkbox"
+                    className="accent-fuchsia-500"
+                    checked={storyRunAutoHeal}
+                    onChange={(e) => setStoryRunAutoHeal(e.target.checked)}
+                  />
+                  <span>
+                    <span className="text-slate-200 font-medium">Auto-heal failures</span>
+                  </span>
+                </label>
+                <div className="ml-auto flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStoryRunPickerOpen(false)}
+                    className="px-3 py-2 rounded-lg glass text-sm text-slate-300 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={launchStoryRun}
+                    disabled={!storyRunOrgId}
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    Run {counts.approved} {counts.approved === 1 ? "case" : "cases"}
+                    {storyRunAutoHeal ? " with auto-heal" : ""}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {msg && <p className="text-emerald-400 text-sm mb-3">{msg}</p>}
       {err && <p className="text-red-400 text-sm mb-3">{err}</p>}
+
+      <div className="grid lg:grid-cols-2 gap-4 mb-5">
+        <div className="glass p-4 rounded-xl border border-white/10">
+          <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">Comments</h3>
+          <div className="flex items-start gap-2 mb-3">
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment... Mention teammates with @email"
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-200 min-h-[72px]"
+            />
+            <button
+              type="button"
+              onClick={addComment}
+              disabled={commentBusy || !newComment.trim()}
+              className="px-3 py-2 rounded-lg bg-cyan-700/60 text-cyan-100 text-xs disabled:opacity-40"
+            >
+              {commentBusy ? "Posting…" : "Post"}
+            </button>
+          </div>
+          {comments.length === 0 ? (
+            <p className="text-xs text-slate-500">No comments yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-auto">
+              {comments.map((c) => (
+                <div key={c.id} className="rounded-lg bg-white/5 border border-white/10 p-2">
+                  <p className="text-[10px] text-slate-500">
+                    {c.author_email} · {new Date(c.created_at).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-slate-200 whitespace-pre-wrap">{c.body}</p>
+                  {c.mentions.length > 0 && (
+                    <p className="text-[10px] text-fuchsia-300 mt-1">mentions: {c.mentions.join(", ")}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="glass p-4 rounded-xl border border-white/10">
+          <h3 className="text-xs uppercase tracking-wider text-slate-500 mb-2">Activity</h3>
+          {activity.length === 0 ? (
+            <p className="text-xs text-slate-500">No activity logged yet.</p>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-auto">
+              {activity.map((a) => (
+                <div key={a.id} className="rounded-lg bg-white/5 border border-white/10 p-2">
+                  <p className="text-[10px] text-slate-300">{activityMessage(a)}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {a.timestamp ? new Date(a.timestamp).toLocaleString() : "—"}
+                  </p>
+                  {a.user_id && (
+                    <p className="text-[10px] text-slate-600">actor: {a.user_id}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Skipped-during-build details. Each row links the case title to
           the underlying reason (rate limit / parse error / etc.) so the
@@ -491,7 +902,10 @@ export default function UserStoryDetailPage() {
                 Close
               </button>
             </div>
-            <BulkExecutionStream streamUrl={activeRun.streamUrl} />
+            <BulkExecutionStream
+              streamUrl={activeRun.streamUrl}
+              healContext={activeRun.runHealContext}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -538,6 +952,22 @@ export default function UserStoryDetailPage() {
       <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-3">
         Test cases ({counts.total})
       </h2>
+      {counts.total > 0 && (
+        <div className="mb-3 flex items-center gap-2">
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={allSelectableChecked}
+              onChange={toggleSelectAll}
+              className="accent-cyan-500"
+            />
+            Select all approved ({selectableIds.length})
+          </label>
+          {selectedCases.length > 0 && (
+            <span className="text-xs text-cyan-300">{selectedCases.length} selected</span>
+          )}
+        </div>
+      )}
 
       {tcs.length === 0 ? (
         <div className="glass p-6 text-sm text-slate-400 rounded-xl">
@@ -563,9 +993,27 @@ export default function UserStoryDetailPage() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                   <div className="min-w-0 flex-1">
-                    <p className="text-white text-sm font-semibold break-words">
+                    <div className="flex items-center gap-2 mb-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedCases.includes(t.id)}
+                        onChange={() => toggleSelectedCase(t.id)}
+                        disabled={t.status !== "approved" || t.stale}
+                        className="accent-cyan-500"
+                        title={
+                          t.status !== "approved" || t.stale
+                            ? "Only approved, non-stale cases are selectable"
+                            : "Select for bulk script generation"
+                        }
+                      />
+                      <span className="text-[10px] text-slate-500">bulk</span>
+                    </div>
+                    <Link
+                      href={`/test-cases/${encodeURIComponent(t.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
+                      className="text-white text-sm font-semibold break-words hover:text-cyan-200"
+                    >
                       {t.title}
-                    </p>
+                    </Link>
                     <div className="flex flex-wrap gap-1 mt-1">
                       <span
                         className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wide ${
@@ -647,6 +1095,21 @@ export default function UserStoryDetailPage() {
                             : "View script"}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      disabled={buildBusy[t.id] || t.status !== "approved" || t.stale}
+                      onClick={() => buildSingleScript(t.id)}
+                      title={
+                        t.status !== "approved"
+                          ? "Approve this test case first"
+                          : t.stale
+                            ? "Test case is stale; update/re-approve first"
+                            : "Generate or refresh this case script"
+                      }
+                      className="px-2.5 py-1 text-xs rounded bg-cyan-700/60 text-cyan-100 disabled:opacity-40"
+                    >
+                      {buildBusy[t.id] ? "Generating…" : t.script_path ? "Re-generate script" : "Generate script"}
+                    </button>
                     {/* Run button: only shown for script-ready cases.
                         Disabled while another run is live, so the
                         BulkExecutionStream isn't fighting two SSE
@@ -792,6 +1255,9 @@ export default function UserStoryDetailPage() {
                   : "Saved changes.",
               );
               load();
+              // Test cases changed; refresh sidebar's case tree under
+              // this story.
+              notifyTreeRefresh({ kind: "test_case", storyId: id });
             }}
           />
         )}

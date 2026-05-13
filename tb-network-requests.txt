@@ -1,0 +1,9 @@
+5. [GET] https://udbneqpyuvclkmklrltg.supabase.co/auth/v1/user => [200] 
+6. [POST] https://testingbuddy.ai/~api/analytics => [200] 
+7. [GET] https://udbneqpyuvclkmklrltg.supabase.co/rest/v1/agent_activities?select=*&user_id=eq.fc0f72e2-194f-4ecb-ae7e-83a344d3b06f&order=created_at.desc&limit=10 => [200] 
+8. [GET] https://udbneqpyuvclkmklrltg.supabase.co/rest/v1/user_stats?select=*&user_id=eq.fc0f72e2-194f-4ecb-ae7e-83a344d3b06f => [200] 
+9. [GET] https://udbneqpyuvclkmklrltg.supabase.co/rest/v1/chat_conversations?select=*&user_id=eq.fc0f72e2-194f-4ecb-ae7e-83a344d3b06f&order=updated_at.desc => [200] 
+10. [GET] https://udbneqpyuvclkmklrltg.supabase.co/auth/v1/user => [200] 
+11. [GET] https://udbneqpyuvclkmklrltg.supabase.co/rest/v1/chat_conversations?select=*&user_id=eq.fc0f72e2-194f-4ecb-ae7e-83a344d3b06f&order=updated_at.desc => [200] 
+
+Note: 4 static requests not shown, run with "static" option to see them.

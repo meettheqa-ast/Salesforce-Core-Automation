@@ -1,0 +1,14 @@
+{
+  "// Why this file": "Cursor / VS Code pops a 'recommended extensions' banner the first time a teammate opens this workspace. Pinning them here keeps the Python linter setup consistent across the team -- without these the .vscode/settings.json above does nothing.",
+  "// On unwantedRecommendations": "ms-python.pylint is disabled here so Cursor doesn't auto-suggest the linter we just spent effort migrating away from. If a contributor already has it installed, the per-workspace setting (python.linting.pylintEnabled=false) keeps it from running.",
+  "recommendations": [
+    "charliermarsh.ruff",
+    "ms-python.python",
+    "detachhead.basedpyright",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.pylint"
+  ]
+}

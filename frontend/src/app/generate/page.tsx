@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams } from "next/navigation";
 import RobotCodeEditor from "@/components/editor/RobotCodeEditor";
 import ExecutionLogStream from "@/components/execution/ExecutionLogStream";
 import StoryExecutionPanel from "@/components/execution/StoryExecutionPanel";
@@ -13,13 +15,7 @@ import StepwisePipeline, {
   type PipelineStep,
 } from "@/components/generate/StepwisePipeline";
 import { api, prepareAuth } from "@/lib/api";
-
-const TEMPLATES = [
-  { label: "Create Lead", prompt: "Create a new Lead with auto-generated data and verify it was created" },
-  { label: "Account CRUD", prompt: "Create an Account named Acme Corp, verify it exists, then delete it" },
-  { label: "Update Opp", prompt: "Create an Opportunity, update its Stage to Closed Won, and verify" },
-  { label: "Verify Contact", prompt: "Create a Contact and verify First Name, Last Name, and Email" },
-];
+import { PageHeader, PageScaffold, PageSection } from "@/components/layout/PageScaffold";
 
 type ExecMode = "background" | "watch";
 type GenMode = "stepwise" | "quick";
@@ -55,6 +51,8 @@ function savePref(key: string, value: string) {
 }
 
 export default function GeneratePage() {
+  const searchParams = useSearchParams();
+  const projectSlug = searchParams.get("project") || "";
   const [creds, setCreds] = useState<WorkspaceCreds | null>(null);
   // Watch is the default so the user can SEE the browser drive Salesforce
   // in real time -- it's what new users expect from a "test automation"
@@ -71,6 +69,7 @@ export default function GeneratePage() {
   const [testPath, setTestPath] = useState("");
   const [error, setError] = useState("");
   const [genComplete, setGenComplete] = useState(false);
+  const [savingScript, setSavingScript] = useState(false);
 
   // Validation surfaces from the new validate-fix-validate pipeline.
   // ``validationOk === null`` means the generator returned no validation
@@ -84,6 +83,10 @@ export default function GeneratePage() {
     message: string;
     closest_matches: string[];
     snippet: string;
+    // Phase 1 Playwright fields. Optional for backwards compatibility;
+    // only populated when ``kind === "locator_not_found"``.
+    page_url?: string;
+    suggested_locator?: string;
   };
   type ValidationAttempt = {
     attempt: number;
@@ -96,6 +99,16 @@ export default function GeneratePage() {
   const [validationErrors, setValidationErrors] = useState<ValidationErr[]>([]);
   const [validationAttempts, setValidationAttempts] = useState<ValidationAttempt[]>([]);
   const [validationTrailOpen, setValidationTrailOpen] = useState(false);
+
+  // Phase 1: locator-validation surface. ``locatorOk`` is null when the
+  // gate didn't run (production default). When the gate ran, the count
+  // + failed numbers drive the pill text. Shadow mode is purely
+  // observational; the user-facing label says "observation only" so
+  // they understand a failed locator wasn't blocking their save.
+  const [locatorOk, setLocatorOk] = useState<boolean | null>(null);
+  const [locatorCount, setLocatorCount] = useState<number>(0);
+  const [locatorFailed, setLocatorFailed] = useState<number>(0);
+  const [locatorShadow, setLocatorShadow] = useState<boolean>(false);
 
   // LLM-provider failover events. Populated when the primary LLM hit a
   // quota / rate-limit / auth / availability error and ``call_llm``
@@ -111,6 +124,29 @@ export default function GeneratePage() {
     error_excerpt: string;
   };
   const [providerSwitches, setProviderSwitches] = useState<ProviderSwitch[]>([]);
+
+  // When the deterministic recipe-first tier matched the prompt, the
+  // backend renders the script directly from a parameterized template
+  // (no LLM call) and surfaces the recipe name. We render a small
+  // "Generated from recipe: X" badge so the user sees the deterministic
+  // path fired and knows the script is reproducible / cheap.
+  const [usedRecipe, setUsedRecipe] = useState<string | null>(null);
+  const [usedRecipeConfidence, setUsedRecipeConfidence] = useState<string | null>(null);
+
+  // Discoverable recipe catalog. Loaded once on mount; clicking a row
+  // pre-fills the prompt textarea with the recipe's sample prompt
+  // (which the matcher then re-matches at submit time -> deterministic
+  // render -> done, no LLM call). Empty array when the backend doesn't
+  // know about recipes (older deploys) -- the panel just hides itself.
+  // ``display_name`` is what we render on cards / in the banner;
+  // ``name`` stays the stable internal id used by the matcher.
+  type RecipeMeta = {
+    name: string;
+    display_name?: string;
+    description: string;
+    sample_prompt: string;
+  };
+  const [recipes, setRecipes] = useState<RecipeMeta[]>([]);
 
   const [phase, setPhase] = useState<PipelinePhase>("idle");
   const [steps, setSteps] = useState<PipelineStep[]>([]);
@@ -156,6 +192,14 @@ export default function GeneratePage() {
     });
   }, []);
 
+  // Load deterministic-recipe catalog once on mount. Failure is silent
+  // (older backends don't have the endpoint; the panel just stays hidden).
+  useEffect(() => {
+    void api.generate.recipes()
+      .then((rs) => Array.isArray(rs) && setRecipes(rs))
+      .catch(() => setRecipes([]));
+  }, []);
+
   useEffect(() => savePref("gen.execMode", execMode), [execMode]);
   useEffect(() => savePref("gen.genMode", genMode), [genMode]);
 
@@ -192,6 +236,12 @@ export default function GeneratePage() {
     setValidationAttempts([]);
     setValidationTrailOpen(false);
     setProviderSwitches([]);
+    setUsedRecipe(null);
+    setUsedRecipeConfidence(null);
+    setLocatorOk(null);
+    setLocatorCount(0);
+    setLocatorFailed(0);
+    setLocatorShadow(false);
   };
 
   const runQuickGenerate = async (rawPrompt: string) => {
@@ -230,6 +280,22 @@ export default function GeneratePage() {
     }
     if (Array.isArray((res as any).provider_switches)) {
       setProviderSwitches((res as any).provider_switches as ProviderSwitch[]);
+    }
+    // Recipe-first short-circuit: backend may have generated the
+    // script deterministically without calling any LLM. Capture both
+    // the recipe name and its match-confidence so the UI can show
+    // a badge and (later) a "see template" deep link.
+    setUsedRecipe(((res as any).used_recipe as string | null) || null);
+    setUsedRecipeConfidence(((res as any).used_recipe_confidence as string | null) || null);
+    // Phase 1: locator validation surface. ``null`` means the gate
+    // didn't run for this generation (default in production); we then
+    // skip rendering the pill entirely.
+    if ("locator_validation_ok" in (res as any)) {
+      const v = (res as any).locator_validation_ok;
+      setLocatorOk(typeof v === "boolean" ? v : null);
+      setLocatorCount(((res as any).locator_validation_count as number) ?? 0);
+      setLocatorFailed(((res as any).locator_validation_failed as number) ?? 0);
+      setLocatorShadow(Boolean((res as any).locator_validation_shadow));
     }
     setPhase("done");
   };
@@ -334,19 +400,33 @@ export default function GeneratePage() {
               if (Array.isArray(obj.provider_switches)) {
                 setProviderSwitches(obj.provider_switches as ProviderSwitch[]);
               }
+              // Phase 1: locator validation result fields. Same shape as
+              // Quick Generate response.
+              if ("locator_validation_ok" in obj) {
+                const v = obj.locator_validation_ok;
+                setLocatorOk(typeof v === "boolean" ? v : null);
+                setLocatorCount((obj.locator_validation_count as number) ?? 0);
+                setLocatorFailed((obj.locator_validation_failed as number) ?? 0);
+                setLocatorShadow(Boolean(obj.locator_validation_shadow));
+              }
               // Result frame doesn't carry a phase change, but we want to
               // close out whatever phase was open so its duration shows up
               // in the timing tape.
               const current = phaseRef.current;
               const startedAt = phaseStartedAtRef.current;
+              const doneAt = performance.now();
               if (current !== "idle" && current !== "done" && startedAt !== null) {
                 setPhaseTimings((prev) => [
                   ...prev,
-                  { phase: current, elapsed_ms: performance.now() - startedAt },
+                  { phase: current, elapsed_ms: doneAt - startedAt },
                 ]);
               }
               phaseRef.current = "done";
               setPhase("done");
+              // Snapshot the final tick so totalElapsedMs in JSX stays
+              // pure (no performance.now() during render) -- React 19's
+              // ``react-hooks/purity`` rule flags it otherwise.
+              setTickMs(doneAt);
             } else if (event === "error") {
               setError(String(obj.message || "Generation failed"));
             }
@@ -419,6 +499,26 @@ export default function GeneratePage() {
     });
   };
 
+  const handleSaveScript = async () => {
+    if (!robotCode.trim()) {
+      setError("Nothing to save yet.");
+      return;
+    }
+    setSavingScript(true);
+    setError("");
+    try {
+      const res = await api.generate.saveScript({
+        robot_code: robotCode,
+        test_path: testPath || undefined,
+      });
+      setTestPath(res.test_path);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not save script");
+    } finally {
+      setSavingScript(false);
+    }
+  };
+
   const handleDiscard = () => {
     sourceRef.current?.close();
     sourceRef.current = null;
@@ -428,16 +528,24 @@ export default function GeneratePage() {
   const generatedFile = testPath ? testPath.split(/[/\\]/).pop() : "";
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
-        <h1 className="text-3xl md:text-4xl font-bold mb-1">
-          <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-            What would you like to test today?
-          </span>
-        </h1>
-        <p className="text-slate-400 text-sm">
-          Configure your workspace, choose a mode, then describe the test in plain English.
-        </p>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <PageHeader
+          eyebrow="AI Test Studio"
+          title="What would you like to test today?"
+          description={
+            projectSlug
+              ? `Project: ${projectSlug}. Configure workspace, choose mode, then describe the scenario in plain English.`
+              : "Configure your workspace, choose a generation mode, then describe the scenario in plain English."
+          }
+          actions={
+            projectSlug ? (
+              <Link href={`/projects/${encodeURIComponent(projectSlug)}`} className="text-xs text-slate-400 hover:text-white">
+                Back to project
+              </Link>
+            ) : undefined
+          }
+        />
       </motion.div>
 
       <WorkspaceBar onChange={setCreds} />
@@ -465,28 +573,59 @@ export default function GeneratePage() {
               { value: "quick", label: "Quick Generate", icon: "⚡" },
             ]}
           />
+          {/* Phase 2: link out to the recording flow as a third option.
+              Kept as a separate page (not a third Segmented option) because
+              it has its own three-state UX that doesn't fit the prompt
+              textarea below. The italic caption is intentionally small but
+              visible -- the icon-only "●" button isn't self-explanatory for
+              first-time users and the native ``title`` tooltip only shows on
+              hover. */}
+          <Link
+            href="/generate/record"
+            className="text-xs px-3 py-1.5 rounded-lg border border-fuchsia-400/30 bg-fuchsia-500/10 text-fuchsia-200 hover:bg-fuchsia-500/20 transition-colors"
+            title="Open the Record page -- click through Salesforce in a real browser and we'll turn it into a Robot script"
+          >
+            <span className="text-base mr-1">●</span> Record
+          </Link>
+          <span className="text-[10px] text-slate-500 italic max-w-[14rem] leading-tight">
+            opens a browser, captures your clicks, returns a Robot script
+          </span>
         </div>
       </div>
 
-      {/* Quick Start + Test name + Auto data */}
-      <div className="glass p-3 mb-4">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Quick start</span>
-          <span className="text-[10px] text-slate-600">click a template to fill the prompt</span>
-        </div>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {TEMPLATES.map((t) => (
-            <button
-              key={t.label}
-              type="button"
-              onClick={() => setPrompt(t.prompt)}
-              className="text-xs px-3 py-1.5 glass rounded-full text-slate-300 hover:text-white hover:bg-purple-500/15 transition-colors"
-              title={t.prompt}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+      {/* Common scenarios + Test name + Auto data.
+
+          The cards in this panel are the deterministic recipe catalog
+          loaded from /api/generate/recipes. Clicking one pre-fills the
+          prompt textarea with a sample that matches the recipe at
+          submit time -- the matcher renders the script directly with
+          NO LLM call. */}
+      <PageSection title="Scenario setup" description="Pick a scenario, name the suite, and control data generation.">
+        {recipes.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold">
+                Common scenarios
+              </span>
+              <span className="text-[10px] text-slate-600">
+                Click to load &mdash; these run instantly without calling the AI
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recipes.map((r) => (
+                <button
+                  key={r.name}
+                  type="button"
+                  onClick={() => setPrompt(r.sample_prompt)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+                  title={`${r.description}\n\nSample prompt:\n${r.sample_prompt}`}
+                >
+                  {r.display_name || r.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-12 gap-2 items-center">
           <div className="col-span-12 sm:col-span-7">
             <div className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Test name (optional)</div>
@@ -508,10 +647,10 @@ export default function GeneratePage() {
             <span className="text-slate-600 text-[10px]">(AI + Faker fills required fields)</span>
           </label>
         </div>
-      </div>
+      </PageSection>
 
       {/* Prompt + Generate */}
-      <div className="glass p-3 mb-4">
+      <PageSection title="Prompt" description="Describe the expected Salesforce flow and desired assertions.">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Prompt</span>
           {!credsReady && (
@@ -535,7 +674,7 @@ export default function GeneratePage() {
             {loading ? (genMode === "stepwise" ? "Streaming…" : "Generating…") : "Generate Script"}
           </button>
         </div>
-      </div>
+      </PageSection>
 
       {/* Stepwise pipeline */}
       <StepwisePipeline
@@ -550,7 +689,7 @@ export default function GeneratePage() {
         }
         totalElapsedMs={
           streamStartedAt !== null
-            ? Math.max(0, (phase === "done" ? tickMs || performance.now() : tickMs) - streamStartedAt)
+            ? Math.max(0, tickMs - streamStartedAt)
             : undefined
         }
       />
@@ -585,6 +724,39 @@ export default function GeneratePage() {
                 {error}
               </div>
             )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Template-first banner. When the deterministic recipe tier
+          matched the prompt, the script was rendered from a
+          parameterized template with NO LLM call. We resolve the
+          backend's stable ``used_recipe`` (snake_case internal id)
+          to the recipe's friendly ``display_name`` via the catalog
+          loaded on mount, falling back to the raw id for older
+          backends that haven't shipped display_name yet. */}
+      <AnimatePresence>
+        {usedRecipe && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-4 p-3 rounded-xl border border-emerald-400/30 bg-emerald-500/5"
+          >
+            <div className="text-xs text-emerald-200">
+              <span className="font-semibold">Generated from template:</span>{" "}
+              <span className="text-cyan-200 font-semibold">
+                {recipes.find((r) => r.name === usedRecipe)?.display_name || usedRecipe}
+              </span>{" "}
+              {usedRecipeConfidence && (
+                <span className="text-slate-500">
+                  ({usedRecipeConfidence} confidence)
+                </span>
+              )}
+              <span className="ml-2 text-slate-400">
+                · No AI call was made — script is deterministic.
+              </span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -662,6 +834,36 @@ export default function GeneratePage() {
                     Validated
                   </span>
                 )}
+                {/* Phase 1 Playwright locator pill. Three states:
+                    - ok=null: gate didn't run (default in production); pill hidden.
+                    - ok=true: green "Locators verified N/N".
+                    - ok=false: red "Locators X/N stale" (or amber if shadow mode).
+                    Sits beside the existing validation pill so users see
+                    "Validated  Locators 12/12" when both gates pass. */}
+                {locatorOk === true && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/30 text-cyan-200"
+                    title="All literal locators in the script resolved on the live Salesforce page."
+                  >
+                    Locators {locatorCount}/{locatorCount} live
+                  </span>
+                )}
+                {locatorOk === false && !locatorShadow && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 border border-red-400/30 text-red-200"
+                    title="One or more locators in this script are NOT on the live Salesforce page; the script will fail at runtime."
+                  >
+                    {locatorFailed} stale locator{locatorFailed === 1 ? "" : "s"}
+                  </span>
+                )}
+                {locatorOk === false && locatorShadow && (
+                  <span
+                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/30 text-amber-200"
+                    title="Locator validation ran in OBSERVATION mode. We detected stale locators but did not block the save -- this is a heads-up, not a hard fail."
+                  >
+                    {locatorFailed} potential stale (observed)
+                  </span>
+                )}
                 {generatedFile && (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">
                     {generatedFile}
@@ -694,6 +896,16 @@ export default function GeneratePage() {
                           {err.message}
                         </div>
                       )}
+                      {/* Phase 1 Playwright: locator failures get a
+                          live-page URL context line so the user knows
+                          which Salesforce page Playwright was checking
+                          against -- crucial for "wrong page" failures
+                          vs "wrong selector" failures. */}
+                      {err.kind === "locator_not_found" && err.page_url && (
+                        <div className="ml-6 text-[10px] text-purple-300">
+                          on page: <span className="text-slate-300">{err.page_url}</span>
+                        </div>
+                      )}
                       {err.snippet && (
                         <div className="ml-6 text-slate-500 text-[10px] truncate">
                           on: <span className="text-slate-300">{err.snippet}</span>
@@ -701,7 +913,9 @@ export default function GeneratePage() {
                       )}
                       {err.closest_matches.length > 0 && (
                         <div className="ml-6 text-[10px] text-cyan-300">
-                          did you mean:{" "}
+                          {err.kind === "locator_not_found"
+                            ? "live elements on the page:"
+                            : "did you mean:"}{" "}
                           {err.closest_matches.map((m, i) => (
                             <span key={i} className="ml-1">
                               <code className="px-1 py-0.5 rounded bg-cyan-500/10 border border-cyan-400/20">
@@ -766,6 +980,14 @@ export default function GeneratePage() {
             <div className="flex items-center justify-end gap-2 mt-3">
               <button
                 type="button"
+                onClick={handleSaveScript}
+                disabled={savingScript}
+                className="px-4 py-2 rounded-xl bg-cyan-700/70 text-cyan-100 text-sm font-semibold disabled:opacity-50"
+              >
+                {savingScript ? "Saving…" : "Save script"}
+              </button>
+              <button
+                type="button"
                 onClick={handleDiscard}
                 className="px-4 py-2 rounded-xl glass text-sm text-slate-300 hover:text-white"
               >
@@ -796,6 +1018,6 @@ export default function GeneratePage() {
 
       {/* Bulk execution by user story / tag */}
       <StoryExecutionPanel />
-    </div>
+    </PageScaffold>
   );
 }

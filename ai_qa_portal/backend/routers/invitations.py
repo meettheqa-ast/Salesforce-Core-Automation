@@ -14,13 +14,13 @@ Routes:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import project_manager
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
+import project_manager
 from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.services.auth import (
     assert_project_role_at_least,
@@ -41,16 +41,15 @@ from ai_qa_portal.backend.services.db import (
     upsert_membership,
 )
 
-
 _DEFAULT_INVITE_TTL_DAYS = 7
 
 
 def _new_expiry() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(days=_DEFAULT_INVITE_TTL_DAYS)
+    return datetime.now(UTC) + timedelta(days=_DEFAULT_INVITE_TTL_DAYS)
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _domain_ok(email: str) -> bool:
@@ -393,7 +392,7 @@ def reject_invitation(
             push_notification(
                 db, user_id=requester.id, type="access_request_rejected",
                 title=f"Your access request for {inv.project_slug} was declined",
-                body="", action_url=f"/projects",
+                body="", action_url="/projects",
             )
     return inv.to_dict()
 

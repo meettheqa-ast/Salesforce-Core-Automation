@@ -15,17 +15,16 @@ demoting the last PM returns 409 with a guiding error.
 
 from __future__ import annotations
 
-import project_manager
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
+import project_manager
 from ai_qa_portal.backend.services.auth import (
     assert_project_role_at_least,
     get_current_user,
 )
 from ai_qa_portal.backend.services.db import (
-    GlobalRole,
     ProjectMembership,
     ProjectRole,
     User,
@@ -36,7 +35,6 @@ from ai_qa_portal.backend.services.db import (
     list_memberships_for_project,
     upsert_membership,
 )
-
 
 router = APIRouter(
     prefix="/api/projects/{project_name}/members",

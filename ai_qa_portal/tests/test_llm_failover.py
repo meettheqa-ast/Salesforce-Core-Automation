@@ -152,9 +152,8 @@ def test_unrelated_error_does_not_failover() -> None:
     def groq_should_not_run(_s, _u, image_bytes=None):  # noqa: ARG001
         raise AssertionError("groq must not be called for a non-failover error")
 
-    with _stub_callers(gemini=gemini_weird, groq=groq_should_not_run):
-        with pytest.raises(WeirdBug):
-            ai_bridge.call_llm("s", "u")
+    with _stub_callers(gemini=gemini_weird, groq=groq_should_not_run), pytest.raises(WeirdBug):
+        ai_bridge.call_llm("s", "u")
     # No switch notes because no successful failover happened.
     assert ai_bridge.drain_provider_notes() == []
 

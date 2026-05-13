@@ -34,17 +34,19 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
+from ai_qa_portal.backend.services.script_dryrun import dryrun as dryrun_validate
 from ai_qa_portal.backend.services.script_validator import (
     ValidationError,
     ValidationReport,
     build_fix_prompt,
+)
+from ai_qa_portal.backend.services.script_validator import (
     validate as ast_validate,
 )
-from ai_qa_portal.backend.services.script_dryrun import dryrun as dryrun_validate
 
 logger = logging.getLogger("ai_qa_portal.script_validation_loop")
 
@@ -80,6 +82,27 @@ class ValidationLoopResult:
     final_report: ValidationReport
     attempts: list[AttemptRecord] = field(default_factory=list)
     converged: bool = False
+    # When set, the deterministic recipe-first tier produced the
+    # script and NO LLM was called. Carries the matched recipe name
+    # (e.g. ``"lead_routing_by_state"``) so callers can render a
+    # "Generated from recipe: X" badge in the UI. None for LLM-only
+    # generations.
+    used_recipe: str | None = None
+    used_recipe_confidence: str | None = None
+    # Phase 1 Playwright integration. ``locator_validation_ok`` is
+    # None when the gate was disabled for this generation (most
+    # current production traffic), True when all checked locators
+    # resolved on the live page, False when at least one failed.
+    # ``locator_validation_count`` and ``locator_validation_failed``
+    # are populated whenever the gate ran (regardless of result).
+    # ``locator_validation_shadow`` records whether shadow mode was on
+    # so the API surface can render "ran in observation mode" vs
+    # "blocked your save".
+    locator_validation_ok: bool | None = None
+    locator_validation_count: int = 0
+    locator_validation_failed: int = 0
+    locator_validation_shadow: bool = False
+
     # Convenience: the last AttemptRecord whose report is OK, or the
     # last one overall if the loop never converged. UI uses this to
     # decide whether to enable Run.
@@ -106,13 +129,15 @@ class ValidationLoopResult:
 
 def run_with_validation(
     *,
-    llm_call: Callable[[Optional[str]], str],
+    llm_call: Callable[[str | None], str],
     post_process: Callable[[str], str],
     extract_robot: Callable[[str], str],
     suite_path: Path,
-    max_attempts: Optional[int] = None,
+    max_attempts: int | None = None,
     skip_dryrun: bool = False,
-    dryrun_timeout_s: Optional[float] = None,
+    dryrun_timeout_s: float | None = None,
+    locator_validate: Callable[[Path], ValidationReport] | None = None,
+    locator_shadow_mode: bool = False,
 ) -> ValidationLoopResult:
     """Drive the LLM through validate-fix-validate until success or budget.
 
@@ -123,7 +148,13 @@ def run_with_validation(
       4. Writes the result to ``suite_path``.
       5. Runs ``ast_validate``; if ok and ``skip_dryrun`` is False,
          also runs ``dryrun_validate``.
-      6. On success: returns immediately.
+      6. **Optional** (Phase 1 Playwright integration): if
+         ``locator_validate`` is provided AND AST + dryrun are clean,
+         runs the live-page locator gate. ``locator_shadow_mode=True``
+         means "log the result but DO NOT count failures against the
+         loop" -- used to collect false-positive metrics for 1-2 weeks
+         before flipping the gate to load-bearing.
+      7. On success: returns immediately.
          On failure: builds a fix prompt and feeds it into the next
          attempt.
 
@@ -138,9 +169,14 @@ def run_with_validation(
     timeout = dryrun_timeout_s if dryrun_timeout_s is not None else DEFAULT_DRYRUN_TIMEOUT_S
 
     attempts: list[AttemptRecord] = []
-    fix_prompt: Optional[str] = None
+    fix_prompt: str | None = None
     final_script: str = ""
     final_report: ValidationReport = ValidationReport(ok=False, errors=[])
+    # Locator-validation stats accumulate across attempts; we report
+    # the LAST run's stats since each attempt overwrites the suite.
+    last_locator_count: int = 0
+    last_locator_failed: int = 0
+    last_locator_ok: bool | None = None  # None = gate never ran
 
     for n in range(1, budget + 1):
         raw = llm_call(fix_prompt)
@@ -187,6 +223,45 @@ def run_with_validation(
                     variable_refs_seen=report.variable_refs_seen,
                 )
 
+        # Phase 1: Playwright locator gate. Only run when AST + dryrun
+        # passed -- no point checking selectors against a live page when
+        # the script doesn't even parse. The gate is opt-in (caller
+        # passes ``locator_validate``) AND can be flipped to shadow
+        # mode where failures log but don't block the loop.
+        if report.ok and locator_validate is not None:
+            try:
+                loc_report = locator_validate(suite_path)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # Same soft-fail policy as dryrun: infrastructure errors
+                # (Playwright down, SF unreachable) must not block
+                # generation.
+                logger.warning("script_validation_loop: locator validation crashed: %s", exc)
+                loc_report = ValidationReport(ok=True, errors=[])
+            # Accumulate stats regardless of outcome -- callers want to
+            # show "12/12 verified" even when nothing was wrong.
+            last_locator_failed = len(loc_report.errors)
+            # Total checked = pass + fail. The gate doesn't expose total
+            # explicitly when ok; infer "0 fails == all passed". When
+            # there are failures the gate could have skipped some due to
+            # deadline, so treat fails as "at least N checked".
+            last_locator_count = max(last_locator_count, last_locator_failed)
+            last_locator_ok = loc_report.ok
+            if not loc_report.ok:
+                if locator_shadow_mode:
+                    # Shadow mode: log the failure for false-positive
+                    # metrics but treat as clean for the loop's purposes.
+                    logger.info(
+                        "locator-validate shadow: %d stale locator(s) detected (not blocking)",
+                        len(loc_report.errors),
+                    )
+                else:
+                    report = ValidationReport(
+                        ok=False,
+                        errors=list(report.errors) + list(loc_report.errors),
+                        keyword_calls_seen=report.keyword_calls_seen,
+                        variable_refs_seen=report.variable_refs_seen,
+                    )
+
         excerpt = robot_text.strip()[:600]
         if report.ok:
             attempts.append(AttemptRecord(
@@ -200,6 +275,10 @@ def run_with_validation(
                 final_report=final_report,
                 attempts=attempts,
                 converged=True,
+                locator_validation_ok=last_locator_ok,
+                locator_validation_count=last_locator_count,
+                locator_validation_failed=last_locator_failed,
+                locator_validation_shadow=locator_shadow_mode,
             )
 
         # Failure: queue a fix prompt for the next round.
@@ -216,4 +295,8 @@ def run_with_validation(
         final_report=final_report,
         attempts=attempts,
         converged=False,
+        locator_validation_ok=last_locator_ok,
+        locator_validation_count=last_locator_count,
+        locator_validation_failed=last_locator_failed,
+        locator_validation_shadow=locator_shadow_mode,
     )

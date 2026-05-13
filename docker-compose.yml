@@ -7,6 +7,27 @@
 #   docker compose --profile web up     # backend + frontend hot-reload
 
 services:
+  # Postgres + pgvector for the portal's relational store and RAG index.
+  # The pgvector image ships the extension pre-built; the app's
+  # `init_db()` runs `CREATE EXTENSION IF NOT EXISTS vector` on boot.
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ai-qa-portal-postgres
+    environment:
+      POSTGRES_DB: portal
+      POSTGRES_USER: portal
+      POSTGRES_PASSWORD: portal
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U portal -d portal"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -24,9 +45,17 @@ services:
       SAVED_PROJECTS_DIR: /data/Saved_Projects
       RFMCP_HOST: 127.0.0.1
       RFMCP_PORT: "8765"
+      # Talk to the postgres service over the compose network. When you
+      # run `docker compose up`, this overrides whatever DATABASE_URL is
+      # set to in .env so the container hits the bundled Postgres rather
+      # than `localhost`.
+      DATABASE_URL: postgresql+psycopg://portal:portal@postgres:5432/portal
     volumes:
       - ./_local_data:/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
       interval: 15s
@@ -52,3 +81,4 @@ services:
 
 volumes:
   web-node-modules:
+  postgres-data:

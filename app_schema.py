@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 _SF_OBJECTS_PATTERN = re.compile(
     r"\b(Lead|Account|Contact|Opportunity|Case|Work\s*Order|Campaign|Task|Event)\b",
     re.IGNORECASE,

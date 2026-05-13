@@ -1,0 +1,220 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - generic [ref=e12]: TB
+        - generic [ref=e13]:
+          - generic [ref=e14]: TestingBuddy AI
+          - generic [ref=e15]: Testing Platform
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Main
+          - list [ref=e20]:
+            - listitem [ref=e21]:
+              - link "Dashboard" [ref=e22] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e23]
+                - generic [ref=e26]: Dashboard
+            - listitem [ref=e27]:
+              - link "Curriculum" [ref=e28] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e29]
+                - generic [ref=e31]: Curriculum
+            - listitem [ref=e32]:
+              - link "Settings" [ref=e33] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e34]
+                - generic [ref=e37]: Settings
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]: 🎯 Planning & Strategy
+            - img [ref=e41]
+          - list [ref=e45]:
+            - listitem [ref=e46]:
+              - button "🎯 Intelligent Test Planning Agent" [ref=e47] [cursor=pointer]:
+                - generic [ref=e48]: 🎯 Intelligent Test Planning Agent
+            - listitem [ref=e49]:
+              - button "📋 Test Strategy Builder Agent" [ref=e50] [cursor=pointer]:
+                - generic [ref=e51]: 📋 Test Strategy Builder Agent
+            - listitem [ref=e52]:
+              - button "🔍 AI Requirement Clarifier Agent" [ref=e53] [cursor=pointer]:
+                - generic [ref=e54]: 🔍 AI Requirement Clarifier Agent
+            - listitem [ref=e55]:
+              - button "📊 STLC Lifecycle Tracker Agent" [ref=e56] [cursor=pointer]:
+                - generic [ref=e57]: 📊 STLC Lifecycle Tracker Agent
+            - listitem [ref=e58]:
+              - button "🛡️ Release Readiness Agent" [ref=e59] [cursor=pointer]:
+                - generic [ref=e60]: 🛡️ Release Readiness Agent
+        - generic [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: ✏️ Test Design & Creation
+          - img [ref=e64]
+        - generic [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: 🤖 Automation & Framework
+          - img [ref=e69]
+        - generic [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: ⚡ Test Execution & Management
+          - img [ref=e74]
+        - generic [ref=e77] [cursor=pointer]:
+          - generic [ref=e78]: 📊 Reporting & Insights
+          - img [ref=e79]
+        - generic [ref=e82] [cursor=pointer]:
+          - generic [ref=e83]: 🔧 Optimization & Maintenance
+          - img [ref=e84]
+        - generic [ref=e87] [cursor=pointer]:
+          - generic [ref=e88]: 🧠 AI Intelligence & Prediction
+          - img [ref=e89]
+      - generic [ref=e92]:
+        - list [ref=e93]:
+          - listitem [ref=e94]:
+            - button "Chat History" [ref=e95] [cursor=pointer]:
+              - img [ref=e96]
+              - generic [ref=e98]: Chat History
+        - generic [ref=e99]:
+          - generic [ref=e101]: M
+          - generic [ref=e102]:
+            - paragraph [ref=e103]: Meet Sheth
+            - paragraph [ref=e104]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e105] [cursor=pointer]:
+          - img [ref=e106]
+          - generic [ref=e109]: Sign Out
+      - button "Toggle Sidebar" [ref=e110]
+    - generic [ref=e111]:
+      - banner [ref=e112]:
+        - button "Toggle Sidebar" [ref=e113] [cursor=pointer]:
+          - img
+          - generic [ref=e114]: Toggle Sidebar
+      - main [ref=e115]:
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - img [ref=e120]
+              - generic [ref=e124]:
+                - heading "Intelligent Test Planning Agent" [level=1] [ref=e125]
+                - paragraph [ref=e126]: Generate comprehensive test plans from Jira requirements using AI
+            - button "View History" [ref=e127] [cursor=pointer]:
+              - img
+              - text: View History
+          - generic [ref=e128]:
+            - tablist [ref=e129]:
+              - tab "1. Setup" [selected] [ref=e130] [cursor=pointer]
+              - tab "2. Fetch Issues" [ref=e131] [cursor=pointer]
+              - tab "3. Review" [ref=e132] [cursor=pointer]
+              - tab "4. Test Plan" [ref=e133] [cursor=pointer]
+            - tabpanel "1. Setup" [ref=e134]:
+              - generic [ref=e135]:
+                - generic [ref=e136]:
+                  - heading "Jira Connection" [level=3] [ref=e137]
+                  - paragraph [ref=e138]: Connect to your Jira instance to fetch requirements
+                - generic [ref=e139]:
+                  - button "Add New Connection" [ref=e140] [cursor=pointer]:
+                    - img
+                    - text: Add New Connection
+                  - button "Continue to Fetch Issues" [disabled]
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - heading "Import from Test Management Tools" [level=3] [ref=e143]
+                  - paragraph [ref=e144]: Connect to your existing test case repositories and management platforms
+                - generic [ref=e146]:
+                  - generic [ref=e147]:
+                    - generic [ref=e149]:
+                      - img [ref=e151]
+                      - generic [ref=e155]:
+                        - heading "Jira" [level=3] [ref=e157]
+                        - generic [ref=e158]: Available
+                    - generic [ref=e159]:
+                      - paragraph [ref=e160]: Import requirements and user stories from Atlassian Jira
+                      - generic [ref=e161]:
+                        - paragraph [ref=e162]: "Key Features:"
+                        - list [ref=e163]:
+                          - listitem [ref=e164]: Requirements import
+                          - listitem [ref=e166]: User stories
+                          - listitem [ref=e168]: Acceptance criteria
+                      - button "Connect" [ref=e170] [cursor=pointer]
+                  - generic [ref=e171]:
+                    - generic [ref=e173]:
+                      - img [ref=e175]
+                      - generic [ref=e179]:
+                        - heading "TestRail" [level=3] [ref=e181]
+                        - generic [ref=e182]: Coming Soon
+                    - generic [ref=e183]:
+                      - paragraph [ref=e184]: Import existing test cases and test suites from TestRail
+                      - generic [ref=e185]:
+                        - paragraph [ref=e186]: "Key Features:"
+                        - list [ref=e187]:
+                          - listitem [ref=e188]: Test cases
+                          - listitem [ref=e190]: Test suites
+                          - listitem [ref=e192]: Test runs
+                      - button "Notify Me" [ref=e194] [cursor=pointer]:
+                        - img
+                        - text: Notify Me
+                  - generic [ref=e195]:
+                    - generic [ref=e197]:
+                      - img [ref=e199]
+                      - generic [ref=e203]:
+                        - heading "Zephyr" [level=3] [ref=e205]
+                        - generic [ref=e206]: Coming Soon
+                    - generic [ref=e207]:
+                      - paragraph [ref=e208]: Sync test cases from Zephyr Scale or Zephyr Squad
+                      - generic [ref=e209]:
+                        - paragraph [ref=e210]: "Key Features:"
+                        - list [ref=e211]:
+                          - listitem [ref=e212]: Test cases
+                          - listitem [ref=e214]: Test cycles
+                          - listitem [ref=e216]: Test execution
+                      - button "Notify Me" [ref=e218] [cursor=pointer]:
+                        - img
+                        - text: Notify Me
+                  - generic [ref=e219]:
+                    - generic [ref=e221]:
+                      - img [ref=e223]
+                      - generic [ref=e227]:
+                        - heading "Xray" [level=3] [ref=e229]
+                        - generic [ref=e230]: Coming Soon
+                    - generic [ref=e231]:
+                      - paragraph [ref=e232]: Import test cases and test plans from Xray for Jira
+                      - generic [ref=e233]:
+                        - paragraph [ref=e234]: "Key Features:"
+                        - list [ref=e235]:
+                          - listitem [ref=e236]: Test cases
+                          - listitem [ref=e238]: Test sets
+                          - listitem [ref=e240]: BDD scenarios
+                      - button "Notify Me" [ref=e242] [cursor=pointer]:
+                        - img
+                        - text: Notify Me
+                  - generic [ref=e243]:
+                    - generic [ref=e245]:
+                      - img [ref=e247]
+                      - generic [ref=e251]:
+                        - heading "Qase" [level=3] [ref=e253]
+                        - generic [ref=e254]: Coming Soon
+                    - generic [ref=e255]:
+                      - paragraph [ref=e256]: Import test cases and test plans from Qase TMS
+                      - generic [ref=e257]:
+                        - paragraph [ref=e258]: "Key Features:"
+                        - list [ref=e259]:
+                          - listitem [ref=e260]: Test cases
+                          - listitem [ref=e262]: Test plans
+                          - listitem [ref=e264]: Test runs
+                      - button "Notify Me" [ref=e266] [cursor=pointer]:
+                        - img
+                        - text: Notify Me
+                  - generic [ref=e267]:
+                    - generic [ref=e269]:
+                      - img [ref=e271]
+                      - generic [ref=e273]:
+                        - heading "Azure DevOps" [level=3] [ref=e275]
+                        - generic [ref=e276]: Coming Soon
+                    - generic [ref=e277]:
+                      - paragraph [ref=e278]: Import test plans and test cases from Azure Test Plans
+                      - generic [ref=e279]:
+                        - paragraph [ref=e280]: "Key Features:"
+                        - list [ref=e281]:
+                          - listitem [ref=e282]: Test plans
+                          - listitem [ref=e284]: Test cases
+                          - listitem [ref=e286]: Test suites
+                      - button "Notify Me" [ref=e288] [cursor=pointer]:
+                        - img
+                        - text: Notify Me

@@ -9,13 +9,15 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from ai_qa_portal.backend.config import GENERATED_SUITE
+from ai_qa_portal.backend.config import GENERATED_SUITE, REPO_ROOT
+from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.models.schemas import (
     GenerateRequest,
     GenerateResponse,
@@ -70,14 +72,32 @@ def _validation_payload_from_loop(result) -> tuple[
     """Translate a ``ValidationLoopResult`` into the schema models the API
     surface uses. Kept in the router so the schemas module stays free of
     runtime service imports."""
-    errors = [
-        ValidationErrorPayload(
-            line=e.line, column=e.column, kind=str(e.kind),
-            symbol=e.symbol, message=e.message,
-            closest_matches=list(e.closest_matches), snippet=e.snippet,
+    errors: list[ValidationErrorPayload] = []
+    for e in result.final_report.errors:
+        # Locator-not-found errors carry extra context (page_url +
+        # suggested_locator) embedded in message + closest_matches; pull
+        # them out into their own payload fields for the frontend.
+        page_url = ""
+        suggested_locator = ""
+        if e.kind == "locator_not_found":
+            # Message format from playwright_validate: "Locator did not
+            # resolve on the live page. page_url=<url>"
+            if "page_url=" in (e.message or ""):
+                try:
+                    page_url = e.message.split("page_url=", 1)[1].strip()
+                except IndexError:
+                    pass
+            if e.closest_matches:
+                suggested_locator = e.closest_matches[0]
+        errors.append(
+            ValidationErrorPayload(
+                line=e.line, column=e.column, kind=str(e.kind),
+                symbol=e.symbol, message=e.message,
+                closest_matches=list(e.closest_matches), snippet=e.snippet,
+                page_url=page_url,
+                suggested_locator=suggested_locator,
+            )
         )
-        for e in result.final_report.errors
-    ]
     attempts = [
         GenerationAttempt(
             attempt=a.attempt,
@@ -91,6 +111,55 @@ def _validation_payload_from_loop(result) -> tuple[
         for a in result.attempts
     ]
     return result.converged, errors, attempts
+
+
+def _build_locator_validate_callable(body) -> tuple[Any | None, bool]:
+    """Build the optional locator-validation callable for the validation
+    loop, gated by the global + per-project Playwright flags.
+
+    Returns ``(callable_or_None, shadow_mode)``. The router passes both
+    to ``generate_test_from_prompt_validated`` so the loop knows whether
+    to run the gate AND whether failures should block.
+
+    Soft-fails: any import / config error -> return ``(None, False)``
+    so the existing two-tier validation pipeline carries on unchanged.
+    """
+    # Late imports to avoid circular dependencies on module load and to
+    # keep the existing fallback path import-clean when Playwright isn't
+    # installed.
+    try:
+        from ai_qa_portal.backend.config import settings
+    except Exception:  # pylint: disable=broad-exception-caught
+        return None, False
+
+    # Master kill switch + feature flag.
+    if not getattr(settings, "playwright_enabled", True):
+        return None, False
+    if not getattr(settings, "pw_locator_validation", False):
+        return None, False
+    # Need credentials to drive a Salesforce login. Without them the
+    # gate would just hang; skip silently.
+    if not body.sandbox_url or not body.username or not body.password:
+        return None, False
+
+    shadow = bool(getattr(settings, "pw_locator_validation_shadow", False))
+
+    try:
+        from ai_qa_portal.backend.services.playwright_validate import validate_locators
+    except ImportError:
+        return None, False
+
+    def _gate(suite_path):
+        return validate_locators(
+            suite_path,
+            sandbox_url=body.sandbox_url,
+            username=body.username,
+            password=body.password,
+            timeout_s=60.0,
+            metrics_label_phase="quick_gen",
+        )
+
+    return _gate, shadow
 
 
 def _drain_provider_switches() -> list[ProviderSwitchPayload]:
@@ -107,6 +176,126 @@ def _drain_provider_switches() -> list[ProviderSwitchPayload]:
     return [ProviderSwitchPayload(**n) for n in drain_provider_notes()]
 
 
+@router.get("/recipes")
+def list_recipes() -> list[dict]:
+    """Return the deterministic recipe registry as a UI-ready list.
+
+    Drives the "Recipes" panel in the /generate page: each entry has a
+    name, description, and sample prompt the user can click to pre-fill
+    the prompt textarea. Selecting a recipe and submitting the
+    pre-filled prompt routes through the same matcher -> render path
+    as a typed prompt would, so there's no separate code path or
+    template-form complexity.
+    """
+    from ai_qa_portal.backend.services import recipe_library
+    return [
+        {
+            "name": r.name,
+            # Fall back to ``name`` when display_name is empty so older
+            # recipes / older deploys keep rendering something useful in
+            # the UI instead of a blank card.
+            "display_name": r.display_name or r.name,
+            "description": r.description,
+            "sample_prompt": r.sample_prompt,
+        }
+        for r in recipe_library.all_recipes()
+    ]
+
+
+@router.post("/save")
+def save_generated_script(body: dict):
+    """Persist edited Robot code to disk (Save Script flow)."""
+    robot_code = (body.get("robot_code") or "").replace("\r\n", "\n")
+    if not robot_code.strip():
+        raise HTTPException(422, "robot_code is required")
+
+    raw_path = str(body.get("test_path") or "").strip()
+    target = Path(raw_path) if raw_path else GENERATED_SUITE
+    if not target.is_absolute():
+        target = (Path.cwd() / target).resolve()
+    else:
+        target = target.resolve()
+
+    repo_root = REPO_ROOT.resolve()
+    try:
+        target.relative_to(repo_root)
+    except ValueError as exc:
+        raise HTTPException(400, "Refusing to save outside repository root") from exc
+    if target.suffix.lower() != ".robot":
+        raise HTTPException(400, "Only .robot files can be saved")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    final = robot_code.rstrip() + "\n"
+    target.write_text(final, encoding="utf-8")
+    return {
+        "ok": True,
+        "test_path": str(target),
+        "bytes_written": len(final.encode("utf-8")),
+    }
+
+
+@router.post("/record/start")
+def start_recording(body: dict):
+    if not settings.playwright_enabled or not settings.pw_recording:
+        raise HTTPException(403, "Recording mode is not enabled")
+    sandbox_url = (body.get("sandbox_url") or "").strip()
+    username = (body.get("username") or "").strip()
+    password = (body.get("password") or "").strip()
+    if not sandbox_url or not username or not password:
+        raise HTTPException(422, "sandbox_url, username, and password are required")
+    try:
+        import pw_mcp_bridge
+
+        session_id = pw_mcp_bridge.record_start(
+            sandbox_url=sandbox_url,
+            username=username,
+            password=password,
+            persona_id=body.get("persona_id"),
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(503, f"Could not start recording session: {exc}") from exc
+    return {"session_id": session_id}
+
+
+@router.get("/record/{session_id}/actions")
+def get_recording_actions(session_id: str):
+    if not settings.playwright_enabled or not settings.pw_recording:
+        raise HTTPException(403, "Recording mode is not enabled")
+    import pw_mcp_bridge
+
+    actions = pw_mcp_bridge.record_actions(session_id)
+    return {"session_id": session_id, "actions": actions, "count": len(actions)}
+
+
+@router.post("/record/{session_id}/stop")
+def stop_recording(session_id: str, body: dict | None = None):
+    if not settings.playwright_enabled or not settings.pw_recording:
+        raise HTTPException(403, "Recording mode is not enabled")
+    import pw_mcp_bridge
+    from ai_qa_portal.backend.services.recording_translator import translate_actions
+
+    actions = pw_mcp_bridge.record_stop(session_id)
+    output_path = GENERATED_SUITE
+    test_name = ((body or {}).get("test_name") or "").strip()
+    translated = translate_actions(
+        actions,
+        output_path=output_path,
+        test_name_hint=test_name,
+    )
+    return {
+        "session_id": session_id,
+        "actions": translated.raw_actions,
+        "robot_code": translated.loop_result.final_script,
+        "validation_ok": translated.loop_result.converged,
+        "validation_errors": [e.model_dump() for e in translated.loop_result.final_report.errors],
+        "validation_attempts": [
+            {"attempt": a.attempt, "ok": a.report.ok, "error_count": len(a.report.errors)}
+            for a in translated.loop_result.attempts
+        ],
+        "test_path": str(output_path),
+    }
+
+
 @router.post("/robot-suite", response_model=GenerateResponse)
 def generate_robot_suite(body: GenerateRequest):
     """Quick-generate: prompt -> validated .robot file.
@@ -115,15 +304,30 @@ def generate_robot_suite(body: GenerateRequest):
     that ships back has been parsed by ``robot.api`` AND ``robot --dryrun``.
     The on-disk file is the FINAL attempt (best-effort even when the
     loop didn't converge) so the user can still inspect what the LLM
-    produced and the UI can render the validator errors inline."""
+    produced and the UI can render the validator errors inline.
+
+    Phase 1: when project + global flags allow it, ALSO runs the
+    Playwright locator gate as a third validation tier. Failures in
+    shadow mode log + surface in the response but do not block; in
+    load-bearing mode they trigger a fix-prompt retry the same way AST
+    or dryrun failures do."""
     try:
         from ai_bridge import (
             generate_test_from_prompt_validated,
             validate_generated_robot,
         )
 
+        # Phase 1: build the optional locator-validation callable. None
+        # when feature is off (current default in production) -- the
+        # call below is byte-for-byte identical to the pre-Phase-1
+        # behaviour in that case.
+        locator_validate, shadow_mode = _build_locator_validate_callable(body)
+
         result = generate_test_from_prompt_validated(
-            body.prompt, default_app=body.default_app,
+            body.prompt,
+            default_app=body.default_app,
+            locator_validate=locator_validate,
+            locator_shadow_mode=shadow_mode,
         )
 
         target = Path(GENERATED_SUITE)
@@ -147,6 +351,12 @@ def generate_robot_suite(body: GenerateRequest):
             validation_errors=validation_errors,
             validation_attempts=attempts,
             provider_switches=_drain_provider_switches(),
+            used_recipe=result.used_recipe,
+            used_recipe_confidence=result.used_recipe_confidence,
+            locator_validation_ok=result.locator_validation_ok,
+            locator_validation_count=result.locator_validation_count,
+            locator_validation_failed=result.locator_validation_failed,
+            locator_validation_shadow=result.locator_validation_shadow,
         )
     except Exception as exc:
         logger.exception("quick-generate failed")
@@ -203,14 +413,34 @@ def _run_with_timeout(fn, *args, timeout: float, label: str):
         pool.shutdown(wait=False, cancel_futures=True)
 
 
-def _quick_generate_fallback(prompt: str, *, default_app: str = "") -> GenerateResponse:
+def _quick_generate_fallback(
+    prompt: str,
+    *,
+    default_app: str = "",
+    body: GenerateRequest | None = None,
+) -> GenerateResponse:
     """Stepwise fallback path. Routes through the SAME validate-fix-validate
     loop as the primary Quick Generate endpoint -- without this parity, a
     wedged RF-MCP would silently bypass the new safety net.
+
+    Phase 1: when ``body`` is provided AND the project flags allow it,
+    the fallback also runs the Playwright locator gate. Stepwise users
+    get the same dependability win as Quick Generate users when MCP is
+    down for any reason.
     """
     from ai_bridge import generate_test_from_prompt_validated, validate_generated_robot
 
-    result = generate_test_from_prompt_validated(prompt, default_app=default_app)
+    locator_validate = None
+    shadow_mode = False
+    if body is not None:
+        locator_validate, shadow_mode = _build_locator_validate_callable(body)
+
+    result = generate_test_from_prompt_validated(
+        prompt,
+        default_app=default_app,
+        locator_validate=locator_validate,
+        locator_shadow_mode=shadow_mode,
+    )
     target = Path(GENERATED_SUITE)
     code = target.read_text(encoding="utf-8") if target.is_file() else result.final_script
 
@@ -227,6 +457,12 @@ def _quick_generate_fallback(prompt: str, *, default_app: str = "") -> GenerateR
         validation_errors=validation_errors,
         validation_attempts=attempts,
         provider_switches=_drain_provider_switches(),
+        used_recipe=result.used_recipe,
+        used_recipe_confidence=result.used_recipe_confidence,
+        locator_validation_ok=result.locator_validation_ok,
+        locator_validation_count=result.locator_validation_count,
+        locator_validation_failed=result.locator_validation_failed,
+        locator_validation_shadow=result.locator_validation_shadow,
     )
 
 
@@ -256,8 +492,8 @@ def generate_mcp_stepwise(body: GenerateRequest):
     Falls back to quick-generate if MCP is unreachable, errors out, or any
     individual step exceeds the per-step timeout.
     """
-    from ai_bridge import break_prompt_into_steps
     import mcp_bridge
+    from ai_bridge import break_prompt_into_steps
 
     notes: list[str] = []
 
@@ -266,7 +502,7 @@ def generate_mcp_stepwise(body: GenerateRequest):
             mcp_bridge.start_mcp_server()
     except Exception as exc:
         logger.warning("RF-MCP unavailable, falling back to quick-generate: %s", exc)
-        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
         resp.lint_errors = list(resp.lint_errors) + [
             f"MCP unavailable: {exc}. Used Quick Generate instead."
         ]
@@ -284,7 +520,7 @@ def generate_mcp_stepwise(body: GenerateRequest):
         )
     except TimeoutError as exc:
         logger.warning("LLM planning timed out, falling back to quick-generate: %s", exc)
-        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
         resp.lint_errors = list(resp.lint_errors) + [
             f"{exc}. Used Quick Generate instead."
         ]
@@ -308,7 +544,7 @@ def generate_mcp_stepwise(body: GenerateRequest):
             notes.append("Reused warm Salesforce session (skipped re-login).")
     except Exception as exc:
         logger.warning("MCP init failed, falling back to quick-generate: %s", exc)
-        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
         resp.lint_errors = list(resp.lint_errors) + [
             f"MCP init failed: {exc}. Used Quick Generate instead."
         ]
@@ -360,17 +596,17 @@ def generate_mcp_stepwise(body: GenerateRequest):
 
     if not robot_code or not robot_code.strip():
         notes.append("MCP returned empty suite; used Quick Generate")
-        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+        resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
         resp.lint_errors = list(resp.lint_errors) + notes
         return resp
 
     from ai_bridge import (
         fix_misplaced_setup_teardown,
+        format_robot_code,
         strip_credential_variable_overrides,
         strip_empty_variable_overrides,
-        strip_llm_robot_garbage,
         strip_hallucinated_csv_variables_from_suite,
-        format_robot_code,
+        strip_llm_robot_garbage,
     )
     robot_code = strip_credential_variable_overrides(robot_code)
     robot_code = strip_empty_variable_overrides(robot_code)
@@ -388,9 +624,10 @@ def generate_mcp_stepwise(body: GenerateRequest):
     # step at runtime against RF-MCP, but ``build_suite`` can still emit
     # surprising shapes (extra Resource imports, mis-quoted args). Running
     # the AST + dryrun gate here gives the user the same structured
-    # feedback Quick Generate now provides.
-    validation_ok, validation_errors, validation_attempts = _validate_existing_suite(
-        Path(GENERATED_SUITE),
+    # feedback Quick Generate now provides. Phase 1: also runs the
+    # locator gate when project flags allow.
+    validation_ok, validation_errors, validation_attempts, locator_stats = (
+        _validate_existing_suite(Path(GENERATED_SUITE), body=body)
     )
     return GenerateResponse(
         robot_code=GENERATED_SUITE.read_text(encoding="utf-8"),
@@ -400,41 +637,90 @@ def generate_mcp_stepwise(body: GenerateRequest):
         validation_errors=validation_errors,
         validation_attempts=validation_attempts,
         provider_switches=_drain_provider_switches(),
+        locator_validation_ok=locator_stats["ok"],
+        locator_validation_count=locator_stats["count"],
+        locator_validation_failed=locator_stats["failed"],
+        locator_validation_shadow=locator_stats["shadow"],
     )
 
 
 def _validate_existing_suite(
     path: Path,
-) -> tuple[bool, list[ValidationErrorPayload], list[GenerationAttempt]]:
+    body: GenerateRequest | None = None,
+) -> tuple[bool, list[ValidationErrorPayload], list[GenerationAttempt], dict]:
     """Run the validator + dryrun against an already-on-disk suite (e.g.
     one built by ``mcp_bridge.build_suite``). No retry loop -- the LLM
     isn't in scope for the Stepwise builder, so we just surface the
-    findings."""
-    from ai_qa_portal.backend.services import script_validator as sv
+    findings.
+
+    Phase 1: when ``body`` is provided AND project flags allow it, also
+    runs the Playwright locator gate. Stepwise users get the same
+    dependability win as Quick Generate users on the post-build path.
+
+    Returns ``(ok, payloads, attempts, locator_stats)``. ``locator_stats``
+    is a dict with ``ok`` (Optional[bool]), ``count``, ``failed``,
+    ``shadow``. Stays ``ok=None`` when the gate didn't run -- caller
+    passes those straight through to the response.
+    """
     from ai_qa_portal.backend.services import script_dryrun as sd
+    from ai_qa_portal.backend.services import script_validator as sv
+
+    locator_stats: dict[str, Any] = {
+        "ok": None, "count": 0, "failed": 0, "shadow": False,
+    }
 
     if not path.is_file():
-        return True, [], []
+        return True, [], [], locator_stats
 
     ast_report = sv.validate(path)
     dry_report = sd.dryrun(path) if ast_report.ok else sv.ValidationReport(ok=True, errors=[])
 
+    # Phase 1: optional locator gate. Only run when AST + dryrun pass --
+    # consistent with the Quick Generate loop's ordering.
+    loc_errors: list = []
+    if ast_report.ok and dry_report.ok and body is not None:
+        locator_validate, shadow = _build_locator_validate_callable(body)
+        if locator_validate is not None:
+            try:
+                loc_report = locator_validate(path)
+                locator_stats["ok"] = loc_report.ok
+                locator_stats["failed"] = len(loc_report.errors)
+                locator_stats["count"] = max(locator_stats["count"], locator_stats["failed"])
+                locator_stats["shadow"] = shadow
+                if not loc_report.ok and not shadow:
+                    loc_errors = list(loc_report.errors)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.warning("stepwise locator gate crashed: %s", exc)
+
     combined = sv.ValidationReport(
-        ok=ast_report.ok and dry_report.ok,
-        errors=list(ast_report.errors) + list(dry_report.errors),
+        ok=ast_report.ok and dry_report.ok and (locator_stats["shadow"] or not loc_errors),
+        errors=list(ast_report.errors) + list(dry_report.errors) + loc_errors,
     )
-    payloads = [
-        ValidationErrorPayload(
-            line=e.line, column=e.column, kind=str(e.kind),
-            symbol=e.symbol, message=e.message,
-            closest_matches=list(e.closest_matches), snippet=e.snippet,
+    payloads: list[ValidationErrorPayload] = []
+    for e in combined.errors:
+        page_url = ""
+        suggested_locator = ""
+        if e.kind == "locator_not_found":
+            if "page_url=" in (e.message or ""):
+                try:
+                    page_url = e.message.split("page_url=", 1)[1].strip()
+                except IndexError:
+                    pass
+            if e.closest_matches:
+                suggested_locator = e.closest_matches[0]
+        payloads.append(
+            ValidationErrorPayload(
+                line=e.line, column=e.column, kind=str(e.kind),
+                symbol=e.symbol, message=e.message,
+                closest_matches=list(e.closest_matches), snippet=e.snippet,
+                page_url=page_url,
+                suggested_locator=suggested_locator,
+            )
         )
-        for e in combined.errors
-    ]
     attempts = [GenerationAttempt(
         attempt=1, ok=combined.ok, error_count=len(combined.errors),
     )]
-    return combined.ok, payloads, attempts
+    return combined.ok, payloads, attempts, locator_stats
 
 
 def _sse(event: str, data: dict | str) -> str:
@@ -451,8 +737,8 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
     Falls back to Quick Generate just like the non-streaming endpoint, but
     surfaces every transition so the UI can show a live pipeline.
     """
-    from ai_bridge import break_prompt_into_steps
     import mcp_bridge
+    from ai_bridge import break_prompt_into_steps
 
     def stream():
         try:
@@ -492,7 +778,7 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             yield _sse("note", {"message": f"RF-MCP unavailable: {exc}. Falling back to Quick Generate."})
             yield _emit_phase("fallback")
             try:
-                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
             except Exception as exc2:
                 logger.exception("quick-generate fallback failed (after RF-MCP unavailable)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
@@ -519,7 +805,7 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             yield _sse("note", {"message": f"{exc}. Falling back to Quick Generate."})
             yield _emit_phase("fallback")
             try:
-                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
             except Exception as exc2:
                 logger.exception("quick-generate fallback failed (after planning timeout)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
@@ -553,7 +839,7 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             yield _sse("note", {"message": f"MCP init failed: {exc}. Falling back to Quick Generate."})
             yield _emit_phase("fallback")
             try:
-                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
             except Exception as exc2:
                 logger.exception("quick-generate fallback failed (after MCP init)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
@@ -624,7 +910,7 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
             yield _sse("note", {"message": "MCP returned empty suite. Falling back to Quick Generate."})
             yield _emit_phase("fallback")
             try:
-                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app)
+                resp = _quick_generate_fallback(body.prompt, default_app=body.default_app, body=body)
             except Exception as exc2:
                 logger.exception("quick-generate fallback failed (after empty MCP build)")
                 yield _sse("error", {"message": _format_generation_error(exc2)})
@@ -639,11 +925,11 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
         try:
             from ai_bridge import (
                 fix_misplaced_setup_teardown,
+                format_robot_code,
                 strip_credential_variable_overrides,
                 strip_empty_variable_overrides,
-                strip_llm_robot_garbage,
                 strip_hallucinated_csv_variables_from_suite,
-                format_robot_code,
+                strip_llm_robot_garbage,
             )
             robot_code = strip_credential_variable_overrides(robot_code)
             robot_code = strip_empty_variable_overrides(robot_code)
@@ -659,14 +945,34 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
 
             # Same validation gate as the non-streaming path. Surfaced as
             # a `phase: validate` event so the UI can show a "Validating"
-            # pill in the live pipeline before "Done".
+            # pill in the live pipeline before "Done". Phase 1: when
+            # the locator gate is enabled for this project, an extra
+            # `phase: locator_check` event fires before "done" so the
+            # frontend pipeline shows the new tier.
             validation_ok = True
             validation_errors: list[ValidationErrorPayload] = []
             validation_attempts: list[GenerationAttempt] = []
+            locator_stats: dict[str, Any] = {
+                "ok": None, "count": 0, "failed": 0, "shadow": False,
+            }
             with contextlib.suppress(Exception):
-                validation_ok, validation_errors, validation_attempts = (
-                    _validate_existing_suite(Path(GENERATED_SUITE))
+                validation_ok, validation_errors, validation_attempts, locator_stats = (
+                    _validate_existing_suite(Path(GENERATED_SUITE), body=body)
                 )
+
+            # Emit the new phase event AFTER the validate step so the
+            # UI orders pills "validate" then "locator_check" then "done".
+            # We emit only when the gate actually ran (count or failed > 0,
+            # or ok is non-None) -- otherwise it'd add a phantom pill.
+            if locator_stats["ok"] is not None:
+                yield _emit_phase("locator_check")
+                yield _sse("note", {
+                    "message": (
+                        f"Locator validation: {locator_stats['count'] - locator_stats['failed']} "
+                        f"of {locator_stats['count']} live"
+                        + (" (shadow mode -- not blocking)" if locator_stats["shadow"] else "")
+                    ),
+                })
 
             resp = GenerateResponse(
                 robot_code=GENERATED_SUITE.read_text(encoding="utf-8"),
@@ -676,6 +982,10 @@ def generate_mcp_stepwise_stream(body: GenerateRequest):
                 validation_errors=validation_errors,
                 validation_attempts=validation_attempts,
                 provider_switches=_drain_provider_switches(),
+                locator_validation_ok=locator_stats["ok"],
+                locator_validation_count=locator_stats["count"],
+                locator_validation_failed=locator_stats["failed"],
+                locator_validation_shadow=locator_stats["shadow"],
             )
         except Exception as exc:
             logger.exception("post-processing pipeline failed (suite path=%s)", GENERATED_SUITE)

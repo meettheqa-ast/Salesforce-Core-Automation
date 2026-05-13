@@ -1,0 +1,224 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1677]:
+      - generic [ref=e1679]:
+        - generic [ref=e1681]: TB
+        - generic [ref=e1682]:
+          - generic [ref=e1683]: TestingBuddy AI
+          - generic [ref=e1684]: Testing Platform
+      - generic [ref=e1685]:
+        - generic [ref=e1686]:
+          - generic [ref=e1687]: Main
+          - list [ref=e1689]:
+            - listitem [ref=e1690]:
+              - link "Dashboard" [ref=e1691] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1692]
+                - generic [ref=e1695]: Dashboard
+            - listitem [ref=e1696]:
+              - link "Curriculum" [ref=e1697] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1698]
+                - generic [ref=e1700]: Curriculum
+            - listitem [ref=e1701]:
+              - link "Settings" [ref=e1702] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e1703]
+                - generic [ref=e1706]: Settings
+        - generic [ref=e1707]:
+          - generic [ref=e1708] [cursor=pointer]:
+            - generic [ref=e1709]: 🎯 Planning & Strategy
+            - img [ref=e1710]
+          - list [ref=e1805]:
+            - listitem [ref=e1806]:
+              - button "🎯 Intelligent Test Planning Agent" [ref=e1807] [cursor=pointer]:
+                - generic [ref=e1808]: 🎯 Intelligent Test Planning Agent
+            - listitem [ref=e1809]:
+              - button "📋 Test Strategy Builder Agent" [ref=e1810] [cursor=pointer]:
+                - generic [ref=e1811]: 📋 Test Strategy Builder Agent
+            - listitem [ref=e1812]:
+              - button "🔍 AI Requirement Clarifier Agent" [ref=e1813] [cursor=pointer]:
+                - generic [ref=e1814]: 🔍 AI Requirement Clarifier Agent
+            - listitem [ref=e1815]:
+              - button "📊 STLC Lifecycle Tracker Agent" [ref=e1816] [cursor=pointer]:
+                - generic [ref=e1817]: 📊 STLC Lifecycle Tracker Agent
+            - listitem [ref=e1818]:
+              - button "🛡️ Release Readiness Agent" [ref=e1819] [cursor=pointer]:
+                - generic [ref=e1820]: 🛡️ Release Readiness Agent
+        - generic [ref=e1712]:
+          - generic [ref=e1713] [cursor=pointer]:
+            - generic [ref=e1714]: ✏️ Test Design & Creation
+            - img [ref=e1715]
+          - list [ref=e1823]:
+            - listitem [ref=e1824]:
+              - button "✏️ Test Case Creator Agent" [ref=e1825] [cursor=pointer]:
+                - generic [ref=e1826]: ✏️ Test Case Creator Agent
+            - listitem [ref=e1827]:
+              - button "🗄️ Test Data Builder Agent" [ref=e1828] [cursor=pointer]:
+                - generic [ref=e1829]: 🗄️ Test Data Builder Agent
+            - listitem [ref=e1830]:
+              - button "🌐 API Mock & Virtualization Agent" [ref=e1831] [cursor=pointer]:
+                - generic [ref=e1832]: 🌐 API Mock & Virtualization Agent
+            - listitem [ref=e1833]:
+              - button "🔎 Exploratory Testing Assistant" [ref=e1834] [cursor=pointer]:
+                - generic [ref=e1835]: 🔎 Exploratory Testing Assistant
+            - listitem [ref=e1836]:
+              - button "🗺️ Requirements Traceability Agent" [ref=e1837] [cursor=pointer]:
+                - generic [ref=e1838]: 🗺️ Requirements Traceability Agent
+        - generic [ref=e1717]:
+          - generic [ref=e1718] [cursor=pointer]:
+            - generic [ref=e1719]: 🤖 Automation & Framework
+            - img [ref=e1720]
+          - list [ref=e1841]:
+            - listitem [ref=e1842]:
+              - button "🤖 Automation Framework Setup Agent" [ref=e1843] [cursor=pointer]:
+                - generic [ref=e1844]: 🤖 Automation Framework Setup Agent
+            - listitem [ref=e1845]:
+              - button "🎯 Selenium Locator Intelligence Agent" [ref=e1846] [cursor=pointer]:
+                - generic [ref=e1847]: 🎯 Selenium Locator Intelligence Agent
+            - listitem [ref=e1848]:
+              - button "🔄 Selenium to Playwright Converter" [ref=e1849] [cursor=pointer]:
+                - generic [ref=e1850]: 🔄 Selenium to Playwright Converter
+            - listitem [ref=e1851]:
+              - button "📤 Postman to Automation Converter Agent" [ref=e1852] [cursor=pointer]:
+                - generic [ref=e1853]: 📤 Postman to Automation Converter Agent
+            - listitem [ref=e1854]:
+              - button "📄 API Code Generator (Swagger Assistant)" [ref=e1855] [cursor=pointer]:
+                - generic [ref=e1856]: 📄 API Code Generator (Swagger Assistant)
+            - listitem [ref=e1857]:
+              - button "✅ API Response Validator Agent" [ref=e1858] [cursor=pointer]:
+                - generic [ref=e1859]: ✅ API Response Validator Agent
+            - listitem [ref=e1860]:
+              - button "🔗 API Dependency Analyzer Agent" [ref=e1861] [cursor=pointer]:
+                - generic [ref=e1862]: 🔗 API Dependency Analyzer Agent
+            - listitem [ref=e1863]:
+              - button "🎤 Voice Command QA Agent" [ref=e1864] [cursor=pointer]:
+                - generic [ref=e1865]: 🎤 Voice Command QA Agent
+        - generic [ref=e1722]:
+          - generic [ref=e1723] [cursor=pointer]:
+            - generic [ref=e1724]: ⚡ Test Execution & Management
+            - img [ref=e1725]
+          - list [ref=e1868]:
+            - listitem [ref=e1869]:
+              - button "🔀 Regression Selector Agent" [ref=e1870] [cursor=pointer]:
+                - generic [ref=e1871]: 🔀 Regression Selector Agent
+            - listitem [ref=e1872]:
+              - button "🚦 CI/CD Quality Gate Agent" [ref=e1873] [cursor=pointer]:
+                - generic [ref=e1874]: 🚦 CI/CD Quality Gate Agent
+            - listitem [ref=e1875]:
+              - button "📈 Test Impact Analyzer Agent" [ref=e1876] [cursor=pointer]:
+                - generic [ref=e1877]: 📈 Test Impact Analyzer Agent
+            - listitem [ref=e1878]:
+              - button "🖥️ Test Environment Orchestrator Agent" [ref=e1879] [cursor=pointer]:
+                - generic [ref=e1880]: 🖥️ Test Environment Orchestrator Agent
+            - listitem [ref=e1881]:
+              - button "⚡ Performance Analyzer Agent" [ref=e1882] [cursor=pointer]:
+                - generic [ref=e1883]: ⚡ Performance Analyzer Agent
+            - listitem [ref=e1884]:
+              - button "🔒 Security Testing Agent" [ref=e1885] [cursor=pointer]:
+                - generic [ref=e1886]: 🔒 Security Testing Agent
+            - listitem [ref=e1887]:
+              - button "♿ Accessibility Auditor Agent" [ref=e1888] [cursor=pointer]:
+                - generic [ref=e1889]: ♿ Accessibility Auditor Agent
+            - listitem [ref=e1890]:
+              - button "🎬 Chrome Recorder Agent" [ref=e1891] [cursor=pointer]:
+                - generic [ref=e1892]: 🎬 Chrome Recorder Agent
+        - generic [ref=e1727]:
+          - generic [ref=e1728] [cursor=pointer]:
+            - generic [ref=e1729]: 📊 Reporting & Insights
+            - img [ref=e1730]
+          - list [ref=e1895]:
+            - listitem [ref=e1896]:
+              - button "📊 Dynamic Test Report Generator Agent" [ref=e1897] [cursor=pointer]:
+                - generic [ref=e1898]: 📊 Dynamic Test Report Generator Agent
+            - listitem [ref=e1899]:
+              - button "🐛 Defect Reporting & Insights Agent" [ref=e1900] [cursor=pointer]:
+                - generic [ref=e1901]: 🐛 Defect Reporting & Insights Agent
+            - listitem [ref=e1902]:
+              - button "🗺️ Test Coverage Mapper" [ref=e1903] [cursor=pointer]:
+                - generic [ref=e1904]: 🗺️ Test Coverage Mapper
+            - listitem [ref=e1905]:
+              - button "📋 Release Note Generator Agent" [ref=e1906] [cursor=pointer]:
+                - generic [ref=e1907]: 📋 Release Note Generator Agent
+            - listitem [ref=e1908]:
+              - button "📖 Test Documentation Agent" [ref=e1909] [cursor=pointer]:
+                - generic [ref=e1910]: 📖 Test Documentation Agent
+            - listitem [ref=e1911]:
+              - button "📜 Log Intelligence Agent" [ref=e1912] [cursor=pointer]:
+                - generic [ref=e1913]: 📜 Log Intelligence Agent
+        - generic [ref=e1732]:
+          - generic [ref=e1733] [cursor=pointer]:
+            - generic [ref=e1734]: 🔧 Optimization & Maintenance
+            - img [ref=e1735]
+          - list [ref=e1916]:
+            - listitem [ref=e1917]:
+              - button "🔧 Self-Healing Automation Agent" [ref=e1918] [cursor=pointer]:
+                - generic [ref=e1919]: 🔧 Self-Healing Automation Agent
+            - listitem [ref=e1920]:
+              - button "✨ Test Maintenance Advisor Agent" [ref=e1921] [cursor=pointer]:
+                - generic [ref=e1922]: ✨ Test Maintenance Advisor Agent
+            - listitem [ref=e1923]:
+              - button "⚠️ Flaky Test Detector Agent" [ref=e1924] [cursor=pointer]:
+                - generic [ref=e1925]: ⚠️ Flaky Test Detector Agent
+            - listitem [ref=e1926]:
+              - button "🔍 Test Case Optimizer Agent" [ref=e1927] [cursor=pointer]:
+                - generic [ref=e1928]: 🔍 Test Case Optimizer Agent
+            - listitem [ref=e1929]:
+              - button "💻 Automation Code Review Agent" [ref=e1930] [cursor=pointer]:
+                - generic [ref=e1931]: 💻 Automation Code Review Agent
+            - listitem [ref=e1932]:
+              - button "📁 Test Case Versioning Agent" [ref=e1933] [cursor=pointer]:
+                - generic [ref=e1934]: 📁 Test Case Versioning Agent
+        - generic [ref=e1738] [cursor=pointer]:
+          - generic [ref=e1739]: 🧠 AI Intelligence & Prediction
+          - img [ref=e1740]
+      - generic [ref=e1743]:
+        - list [ref=e1744]:
+          - listitem [ref=e1745]:
+            - button "Chat History" [ref=e1746] [cursor=pointer]:
+              - img [ref=e1747]
+              - generic [ref=e1749]: Chat History
+        - generic [ref=e1750]:
+          - generic [ref=e1752]: M
+          - generic [ref=e1753]:
+            - paragraph [ref=e1754]: Meet Sheth
+            - paragraph [ref=e1755]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e1756] [cursor=pointer]:
+          - img [ref=e1757]
+          - generic [ref=e1760]: Sign Out
+      - button "Toggle Sidebar" [ref=e1761]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e1767]:
+          - generic [ref=e1769]:
+            - generic [ref=e1770]:
+              - heading "TestingBuddy AI" [level=1] [ref=e1771]
+              - paragraph [ref=e1772]: Your Expert QA Testing Assistant
+            - generic [ref=e1773]:
+              - generic [ref=e1774]:
+                - img [ref=e1775]
+                - text: 0 day streak
+              - generic [ref=e1777]: 0 total days
+          - generic [ref=e1782]:
+            - img [ref=e1786]
+            - generic [ref=e1789]:
+              - heading "TestingBuddy AI" [level=1] [ref=e1790]:
+                - text: TestingBuddy AI
+                - img [ref=e1791]
+              - paragraph [ref=e1793]: Your Expert QA Testing Assistant
+              - paragraph [ref=e1794]: I'm here to help you with test automation, best practices, debugging, and everything QA-related. Ask me anything!
+            - generic [ref=e1795]:
+              - paragraph [ref=e1796]: "Try asking:"
+              - generic [ref=e1797]:
+                - button "How do I write better Playwright selectors?" [ref=e1798] [cursor=pointer]
+                - button "What's the difference between E2E and integration tests?" [ref=e1799] [cursor=pointer]
+                - button "Help me debug a flaky test" [ref=e1800] [cursor=pointer]
+                - button "Best practices for test data management" [ref=e1801] [cursor=pointer]
+                - button "Explain Page Object Model pattern" [ref=e1802] [cursor=pointer]

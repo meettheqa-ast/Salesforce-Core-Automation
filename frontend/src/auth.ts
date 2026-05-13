@@ -7,8 +7,19 @@
  * because `hd` is not a security boundary -- a malicious user can still
  * post-process URLs.
  *
- * Tokens are HS256-signed with NEXTAUTH_SECRET (same env var the FastAPI
- * backend reads to verify them in `ai_qa_portal/backend/services/auth.py`).
+ * Auth handoff to the backend:
+ *   1. NextAuth keeps the Google `id_token` on the JWT cookie session
+ *      (`account.id_token` is captured in the `jwt` callback below).
+ *   2. The Next.js route `/api/auth/jwt` returns that ID token to the
+ *      browser, where `frontend/src/lib/api.ts` caches it.
+ *   3. The FastAPI backend verifies the ID token against Google's JWKS
+ *      (`verify_google_id_token` in `ai_qa_portal/backend/services/auth.py`).
+ *      It does NOT issue or verify a separate portal JWT, and
+ *      NEXTAUTH_SECRET is never read by the backend.
+ *
+ * Token expires roughly every hour; on 401 the API client clears its cache
+ * and bounces the user to /login (no silent refresh -- that would require
+ * a Google refresh-token flow we haven't enabled).
  */
 
 import NextAuth from "next-auth";

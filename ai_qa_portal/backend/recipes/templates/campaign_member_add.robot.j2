@@ -1,0 +1,30 @@
+*** Settings ***
+Documentation       {{ suite_doc | default("Seed a Campaign via API, link a Lead as a CampaignMember, verify the linkage.") }}
+Library             SeleniumLibrary
+Resource            ../../Resources/Common/GlobalKeywords.robot
+Resource            ../../Resources/Common/GlobalApi.robot
+Resource            ../../Resources/PO/Platform/SalesPO.robot
+Resource            ../../Resources/PO/Platform/CampaignPO.robot
+
+Test Setup          Begin Web Test
+Test Teardown       Run Keywords
+...                 GlobalApi.API Cleanup Record    Lead    ${leadId}
+...                 AND    GlobalApi.API Cleanup Record    Campaign    ${campaignId}
+...                 AND    End Web Test
+
+
+*** Variables ***
+${campaignId}       ${EMPTY}
+${leadId}           ${EMPTY}
+
+
+*** Test Cases ***
+{{ test_title }}
+    [Documentation]    {{ documentation }}
+    [Tags]    {{ tags | join("    ") }}
+    GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
+    ${campaignId}=    GlobalApi.API Seed Campaign    Name=${campaignName}
+    Set Suite Variable    ${campaignId}
+    ${leadId}=    GlobalApi.API Seed Lead On Campaign    CampaignId=${campaignId}    LastName=${leadLastName}    Company=${leadCompany}
+    Set Suite Variable    ${leadId}
+    Log    Linked Lead ${leadId} to Campaign ${campaignId}.    INFO

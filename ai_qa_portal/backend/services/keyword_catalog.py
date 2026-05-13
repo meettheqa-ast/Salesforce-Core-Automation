@@ -24,10 +24,9 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from threading import Lock
-from typing import Iterable, Optional
 
 from ai_qa_portal.backend.config import REPO_ROOT
 
@@ -61,14 +60,14 @@ _LIBRARY_IMPORT_RE = re.compile(
 class ParsedKeyword:
     keyword_name: str
     arguments: list[str] = field(default_factory=list)
-    documentation: Optional[str] = None
+    documentation: str | None = None
     tags: list[str] = field(default_factory=list)
     source_file: str = ""
     # When the keyword originates from a Python ``Library`` import rather than
     # a Robot resource file, this carries the library's class/module name (as
     # reported by libdoc). Used by ``compact_for_prompt`` to qualify the
     # keyword as ``LibraryName.Keyword Name`` so the LLM emits a unique call.
-    source_library: Optional[str] = None
+    source_library: str | None = None
 
     def to_dict(self) -> dict:
         """Match the schema of the existing keyword_catalog.json so the LLM
@@ -123,7 +122,7 @@ def _extract_library_paths(text: str, robot_file: Path) -> list[Path]:
     return out
 
 
-def _libdoc_for(target: str) -> Optional[object]:
+def _libdoc_for(target: str) -> object | None:
     """Build a libdoc document for ``target`` (a file path OR a bare library
     name like ``"BuiltIn"``). Returns ``None`` if the lookup fails.
 
@@ -212,7 +211,7 @@ def _parse_robot_file(
     path: Path,
     repo_root: Path,
     *,
-    library_sink: Optional[set[Path]] = None,
+    library_sink: set[Path] | None = None,
 ) -> list[ParsedKeyword]:
     """Extract keyword definitions from a single .robot file.
 
@@ -264,9 +263,9 @@ def _parse_robot_file(
 
 def _parse_keywords_block(body: str, source_file: str) -> list[ParsedKeyword]:
     keywords: list[ParsedKeyword] = []
-    current: Optional[ParsedKeyword] = None
+    current: ParsedKeyword | None = None
     # Continuation accumulators -- a single setting can span multiple `...` lines.
-    pending_setting: Optional[str] = None  # "doc" | "args" | "tags"
+    pending_setting: str | None = None  # "doc" | "args" | "tags"
     pending_doc: list[str] = []
     pending_args: list[str] = []
     pending_tags: list[str] = []
@@ -450,7 +449,7 @@ def build_catalog(force: bool = False) -> dict:
                 logger.warning("keyword_catalog: fallback JSON unreadable: %s", exc)
 
         result = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "project_root_hint": REPO_ROOT.name,
             "scanned_paths": scanned_paths,
             "scanned_libraries": sorted(p.relative_to(REPO_ROOT).as_posix() if _is_under(p, REPO_ROOT) else p.as_posix() for p in library_paths),
@@ -538,7 +537,7 @@ def all_known_keywords() -> dict[str, list[str]]:
     return out
 
 
-def compact_json(catalog: Optional[dict] = None) -> str:
+def compact_json(catalog: dict | None = None) -> str:
     """Full pretty-printed catalog JSON. Kept for non-prompt callers
     (debug pages, exports). DO NOT use this for LLM prompts -- it dumps
     every keyword's full documentation, tags, source path and metadata,
@@ -553,7 +552,7 @@ def compact_json(catalog: Optional[dict] = None) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
-def compact_for_prompt(catalog: Optional[dict] = None, *, max_doc_chars: int = 140) -> str:
+def compact_for_prompt(catalog: dict | None = None, *, max_doc_chars: int = 140) -> str:
     """Lean catalog JSON for LLM prompts.
 
     Each entry has just three fields:
@@ -607,7 +606,7 @@ def compact_for_prompt(catalog: Optional[dict] = None, *, max_doc_chars: int = 1
     return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
 
 
-def keyword_names(catalog: Optional[dict] = None) -> list[str]:
+def keyword_names(catalog: dict | None = None) -> list[str]:
     """Just the keyword names, alphabetised. Cheap summary for the
     test-case drafter where full arg/doc payload is noise."""
     data = catalog if catalog is not None else build_catalog()

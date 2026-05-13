@@ -319,7 +319,7 @@ export default function PeerCombobox({
               !showFreeTextFallback &&
               trimmed.length > 0 && (
                 <div className="px-3 py-2 text-xs text-slate-500">
-                  No matches. Type a full email to invite someone who hasn't
+                  No matches. Type a full email to invite someone who hasn&apos;t
                   signed in yet.
                 </div>
               )}

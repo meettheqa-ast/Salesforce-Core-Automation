@@ -225,14 +225,14 @@ SalesPO.Open New Lead From Sales App
 SalesPO.Create A New Lead                                <-- saves and closes modal
 Open Dropdown    Lead Status                             <-- modal gone, hangs
 Select Dropdown Option    Lead Status    Sales Lead      <-- never runs
-Set Address Via Lookup    18 King Street, San Francisco, CA   <-- modal gone
+Set Address Via Lookup    18 King Street, San Francisco, California   <-- modal gone
 ```
 
 Right:
 
 ```robot
 SalesPO.Open New Lead From Sales App
-SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, CA
+SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, California
 SalesPO.Verify Lead Created Successfully
 ```
 
@@ -350,23 +350,30 @@ street), pick a well-known real address in that state. Anything that
 Google Places resolves cleanly works; below are battle-tested
 defaults:
 
-| State (code) | Address to pass to `address=` |
+**HARD RULE -- always use the FULL state name in `address=`, never the
+2-letter code.** Salesforce's State picklist is searched by prefix
+against the visible label. The code ``CA`` prefix-matches ``Canada``
+**before** ``California`` (alphabetical order in the listbox), so
+``..., CA`` silently sets the wrong state and routing rules then fire
+to the wrong queue. Pass ``California`` (full name) every time.
+
+| State | Address to pass to `address=` |
 |---|---|
-| `CA` -- California | `18 King Street, San Francisco, CA` |
-| `WA` -- Washington | `400 Broad Street, Seattle, WA` |
-| `OR` -- Oregon | `1 SW Columbia Street, Portland, OR` |
-| `NV` -- Nevada | `1 N Las Vegas Boulevard, Las Vegas, NV` |
-| `AZ` -- Arizona | `1 E Washington Street, Phoenix, AZ` |
-| `TX` -- Texas | `901 Main Street, Dallas, TX` |
-| `IL` -- Illinois | `233 S Wacker Drive, Chicago, IL` |
-| `MN` -- Minnesota | `1 Main Street SE, Minneapolis, MN` |
-| `LA` -- Louisiana | `701 Poydras Street, New Orleans, LA` |
-| `NY` -- New York | `350 5th Avenue, New York, NY` |
-| `FL` -- Florida | `701 Brickell Avenue, Miami, FL` |
-| `PA` -- Pennsylvania | `1 Logan Square, Philadelphia, PA` |
-| `ME` -- Maine | `1 Monument Square, Portland, ME` |
-| `ON` -- Ontario, Canada | `100 Queen Street West, Toronto, ON, Canada` |
-| `BC` -- British Columbia, Canada | `200 Burrard Street, Vancouver, BC, Canada` |
+| California | `18 King Street, San Francisco, California` |
+| Washington | `400 Broad Street, Seattle, Washington` |
+| Oregon | `1 SW Columbia Street, Portland, Oregon` |
+| Nevada | `1 N Las Vegas Boulevard, Las Vegas, Nevada` |
+| Arizona | `1 E Washington Street, Phoenix, Arizona` |
+| Texas | `901 Main Street, Dallas, Texas` |
+| Illinois | `233 S Wacker Drive, Chicago, Illinois` |
+| Minnesota | `1 Main Street SE, Minneapolis, Minnesota` |
+| Louisiana | `701 Poydras Street, New Orleans, Louisiana` |
+| New York | `350 5th Avenue, New York, New York` |
+| Florida | `701 Brickell Avenue, Miami, Florida` |
+| Pennsylvania | `1 Logan Square, Philadelphia, Pennsylvania` |
+| Maine | `1 Monument Square, Portland, Maine` |
+| Ontario, Canada | `100 Queen Street West, Toronto, Ontario, Canada` |
+| British Columbia, Canada | `200 Burrard Street, Vancouver, British Columbia, Canada` |
 
 Pick *any* row from the table that matches the user's named state.
 For the West-Coast / Central / East-Coast routing prompts (where the
@@ -391,7 +398,7 @@ ends up empty.
 
 ```robot
 # User says: "Set State to CA" / "Address in California" / "ZIP 94105"
-Set Address Via Lookup    18 King Street, San Francisco, CA
+Set Address Via Lookup    18 King Street, San Francisco, California
 # After the keyword returns, Street / City / State / Country / Zip
 # are all populated. Do not call Open Dropdown / Select Dropdown Option
 # on State or Country afterward -- they're already set correctly.
@@ -511,6 +518,60 @@ When the user says *"create three Leads with different names"*, prefer
 calling `SalesPO.Create A New Lead` three times with **named overrides**
 (see Recipe 4) rather than building a `*** Variables ***` block of
 `${leadFirstName1}`/`${leadFirstName2}` aliases.
+
+### 13b. Per-test data uniqueness in multi-test suites
+
+`SalesData.robot`'s Faker-backed defaults (``${leadFirstName}``,
+``${leadLastName}``, ``${leadCompany}``, etc.) are evaluated **once at
+suite-import time**. So in a suite with 4 test cases that all call
+``SalesPO.Create A New Lead`` with no arg overrides, every test creates
+a Lead with the **same** First Name / Last Name / Company. That defeats
+the purpose of having multiple tests AND makes the resulting records
+indistinguishable in Salesforce list views.
+
+**The fix**: call `Generate Lead Test Data` as the **first step of each
+test** in multi-test suites. It re-rolls Faker at TEST scope (using
+``Set Test Variable``) so every test gets a unique identity. The
+keyword takes an optional ``scenario_tag`` -- set it to a short
+distinctive word from the test title and Salesforce records become
+self-identifying.
+
+```robot
+*** Test Cases ***
+Verify West Coast Sales Lead Routing
+    Generate Lead Test Data    scenario_tag=WestRoute
+    SalesPO.Open New Lead From Sales App
+    SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, California
+    GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-ISR-West
+
+Verify Central Sales Lead Routing
+    Generate Lead Test Data    scenario_tag=CentralRoute
+    SalesPO.Open New Lead From Sales App
+    SalesPO.Create A New Lead    status=Sales Lead    address=901 Main Street, Dallas, Texas
+    GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-ISR-Central
+```
+
+After this, the resulting Salesforce records look like
+``Smith_WestRoute @ WestRoute_Acme_4821`` and
+``Jones_CentralRoute @ CentralRoute_Globex_9173`` -- impossible to
+confuse, easy to sweep up afterward.
+
+**When to use it (rules)**:
+
+* **Multi-test suite with shared flow** (routing tests, status
+  variants, source variants, picklist combinatorics) → emit
+  ``Generate Lead Test Data    scenario_tag=<short-tag>`` as test step
+  #1, derived from the distinctive word in the test title (e.g.
+  *"Verify West Coast..."* → ``WestCoast`` or ``WestRoute``).
+* **Single-test suite** → don't bother. The suite-level Faker default
+  already produces a unique value for that one test.
+* **Suite where every test inherently uses different identities** (you
+  override `first_name=`/`last_name=`/`company=` explicitly per test)
+  → don't bother either; the explicit args already differentiate.
+
+**Tag naming**: short PascalCase, no spaces (gets concatenated into
+last name and company). 4-12 characters works well. ``WestRoute``,
+``UnassignedQueue``, ``MarketingSrc`` are all fine.
 
 ### 14. Generic Salesforce REST operations (any SObject)
 
@@ -772,14 +833,22 @@ The transformation rules:
 
 1. The prompt names a **state code** (`CA`) -- per the HARD RULE in
    recipe 6b, this means an `address=` arg is REQUIRED. Pick from the
-   state-code → address mapping table; CA → ``18 King Street, San
-   Francisco, CA``.
+   state → address mapping table and pass the **full state name** (not
+   the 2-letter code) -- ``CA`` becomes ``18 King Street, San
+   Francisco, California``. Never emit ``..., CA`` because Salesforce's
+   State picklist prefix-matches ``Canada`` first.
 2. The prompt names a Lead Status (`Sales Lead`) -- pass `status=`.
 3. **Translate the queue name to its Pentair-specific form**: prompts
    say "Pool-NA-West" / "Pool-NA-Central" / "Pool-NA-East", but the
    actual queue names in this org are **`Pool-NA-ISR-West`** /
    `Pool-NA-ISR-Central` / `Pool-NA-ISR-East`. Use the actual names in
    the assertion. The `Unassigned Lead Queue` is unchanged.
+4. **Multi-test routing suite** (the canonical case: West / Central /
+   East / Unassigned all in one suite) -- per Recipe 13b, emit
+   ``Generate Lead Test Data    scenario_tag=<short-tag>`` as test step
+   #1 of every test so each lead has a unique scenario-tagged identity.
+   Tag examples: ``WestRoute``, ``CentralRoute``, ``EastRoute``,
+   ``UnassignedQueue``.
 
 ```robot
 *** Settings ***
@@ -793,12 +862,18 @@ Verify West Coast Lead Routes To Pool NA ISR West
     [Documentation]    Lead with State=CA + Status=Sales Lead must route to Pool-NA-ISR-West.
     [Tags]    critical    lead    routing
     GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
+    # Re-roll Faker at TEST scope and tag the data so this lead is
+    # trivially distinguishable from the Central / East / Unassigned
+    # leads created by the other tests in this suite. Without this,
+    # every test in the suite would create a Lead with the SAME name
+    # and company (suite-level Faker is evaluated once at import).
+    GlobalKeywords.Generate Lead Test Data    scenario_tag=WestRoute
     SalesPO.Open New Lead From Sales App
     # ALL routing-relevant fields go on the SAME line as named args. The
     # keyword opens the modal, fills everything (address via auto-detected
     # lookup OR per-field fallback for Pentair, and the Status picklist),
     # then saves. After it returns the Lead exists; the modal is gone.
-    SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, CA
+    SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, California
     GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-ISR-West
 ```
 
@@ -809,20 +884,30 @@ SalesPO.Create A New Lead    status=Sales Lead       <-- missing address=
 Open Dropdown    State/Province                     <-- modal is gone
 Select Dropdown Option    State/Province    CA      <-- silent fail
 GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-West   <-- wrong queue name
+
+# ALSO wrong -- 2-letter state code in address=, prefix-matches "Canada"
+# before "California" in the State picklist, sets WRONG state, routing
+# rule fires to the wrong queue.
+SalesPO.Create A New Lead    status=Sales Lead    address=18 King Street, San Francisco, CA
 ```
 
 For Central / East-Coast / Canadian variants, use the same shape but
-swap the address row from recipe 6b's table AND the expected queue name:
+swap the address row from recipe 6b's table AND the expected queue
+name. Each test case starts with its own ``Generate Lead Test Data``
+call:
 
 ```robot
-# TX (Pool-NA-ISR-Central):
-SalesPO.Create A New Lead    status=Sales Lead    address=901 Main Street, Dallas, TX
+# Texas (Pool-NA-ISR-Central):
+GlobalKeywords.Generate Lead Test Data    scenario_tag=CentralRoute
+SalesPO.Create A New Lead    status=Sales Lead    address=901 Main Street, Dallas, Texas
 GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-ISR-Central
-# NY (Pool-NA-ISR-East):
-SalesPO.Create A New Lead    status=Sales Lead    address=350 5th Avenue, New York, NY
+# New York (Pool-NA-ISR-East):
+GlobalKeywords.Generate Lead Test Data    scenario_tag=EastRoute
+SalesPO.Create A New Lead    status=Sales Lead    address=350 5th Avenue, New York, New York
 GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Pool-NA-ISR-East
-# ON (Out-of-scope -> default queue):
-SalesPO.Create A New Lead    status=Sales Lead    address=100 Queen Street West, Toronto, ON, Canada
+# Ontario, Canada (Out-of-scope -> default queue):
+GlobalKeywords.Generate Lead Test Data    scenario_tag=UnassignedQueue
+SalesPO.Create A New Lead    status=Sales Lead    address=100 Queen Street West, Toronto, Ontario, Canada
 GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    Unassigned Lead Queue
 ```
 

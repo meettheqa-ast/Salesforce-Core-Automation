@@ -22,7 +22,20 @@ class TestCaseGenerator:
     invents are framed in terms of actually-implementable actions.
     """
 
-    async def generate(self, user_story: UserStory) -> list[GeneratedTestCase]:
+    async def generate(
+        self,
+        user_story: UserStory,
+        *,
+        db=None,
+        project_slug: str | None = None,
+    ) -> list[GeneratedTestCase]:
+        """Draft test cases for one user story.
+
+        ``db`` + ``project_slug`` are optional. When both are present, we
+        fetch retrieval-augmented context for the story (Jira backlog
+        text, related comments, uploaded docs) and pass it through to the
+        LLM so drafted steps match the team's terminology.
+        """
         from ai_bridge import call_llm
 
         system_prompt = assembler.build_system_prompt("drafter")
@@ -30,12 +43,30 @@ class TestCaseGenerator:
             f"User story title: {user_story.title}\n\n"
             f"Description:\n{user_story.description}"
         )
+        rag_block = ""
+        if db is not None and project_slug:
+            try:
+                from .rag_retrieval import format_passages_block, retrieve
+                passages = retrieve(
+                    db,
+                    project_slug=project_slug,
+                    query=f"{user_story.title}\n{user_story.description}",
+                    sprint_id=str(user_story.sprint_id) if getattr(user_story, "sprint_id", None) else None,
+                    story_id=str(user_story.id),
+                    limit=6,
+                )
+                rag_block = format_passages_block(passages)
+            except Exception:
+                # Drafter should never block on a retrieval miss.
+                rag_block = ""
+
         # Drafter gets just the keyword names -- enough to anchor steps
         # to real capabilities without spending tokens on full signatures.
         user_prompt = assembler.build_user_prompt_with_catalog(
             user_body,
             include_full_catalog=False,
             catalog_section_title="Available keyword names (for reference)",
+            rag_context=rag_block,
         )
 
         response = await asyncio.to_thread(call_llm, system_prompt, user_prompt)

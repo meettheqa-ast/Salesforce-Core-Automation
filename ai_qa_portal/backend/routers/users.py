@@ -31,7 +31,6 @@ from ai_qa_portal.backend.services.db import (
     get_db,
 )
 
-
 router = APIRouter(
     prefix="/api/users",
     tags=["users"],

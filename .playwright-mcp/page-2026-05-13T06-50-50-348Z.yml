@@ -1,0 +1,81 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - generic [ref=e12]: TB
+        - generic [ref=e13]:
+          - generic [ref=e14]: TestingBuddy AI
+          - generic [ref=e15]: Testing Platform
+      - generic [ref=e121]:
+        - generic [ref=e122]:
+          - button "New Chat" [ref=e123] [cursor=pointer]:
+            - img
+            - text: New Chat
+          - generic [ref=e124]:
+            - img [ref=e125]
+            - textbox "Search conversations..." [ref=e128]
+        - generic [ref=e133] [cursor=pointer]:
+          - img [ref=e134]
+          - generic [ref=e136]:
+            - paragraph [ref=e138]: New Conversation
+            - paragraph [ref=e140]: 5/12/2026
+          - generic [ref=e141]:
+            - button [ref=e142]:
+              - img
+            - button [ref=e143]:
+              - img
+            - button [ref=e144]:
+              - img
+            - button [ref=e145]:
+              - img
+            - button [ref=e146]:
+              - img
+      - generic [ref=e74]:
+        - list [ref=e75]:
+          - listitem [ref=e76]:
+            - button "AI Agents" [active] [ref=e147] [cursor=pointer]:
+              - img [ref=e78]
+              - generic [ref=e80]: AI Agents
+        - generic [ref=e81]:
+          - generic [ref=e83]: M
+          - generic [ref=e84]:
+            - paragraph [ref=e85]: Meet Sheth
+            - paragraph [ref=e86]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+          - generic [ref=e91]: Sign Out
+      - button "Toggle Sidebar" [ref=e92]
+    - generic [ref=e93]:
+      - banner [ref=e94]:
+        - button "Toggle Sidebar" [ref=e95] [cursor=pointer]:
+          - img
+          - generic [ref=e96]: Toggle Sidebar
+      - main [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - heading "Settings" [level=1] [ref=e102]
+              - paragraph [ref=e103]: Manage your account and preferences
+            - generic [ref=e104]:
+              - generic [ref=e105]:
+                - img [ref=e106]
+                - text: 0 day streak
+              - generic [ref=e108]: 0 total days
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - heading "Profile Information" [level=3] [ref=e112]
+              - paragraph [ref=e113]: Update your account details and preferences
+            - generic [ref=e114]:
+              - generic [ref=e115]:
+                - text: Full Name
+                - textbox "Full Name" [ref=e116]:
+                  - /placeholder: Your full name
+                  - text: Meet Sheth
+              - generic [ref=e117]:
+                - text: Email
+                - textbox "Email" [disabled] [ref=e118]: m.sheth@astounddigital.com
+                - paragraph [ref=e119]: Email cannot be changed
+              - button "Save Changes" [ref=e120] [cursor=pointer]

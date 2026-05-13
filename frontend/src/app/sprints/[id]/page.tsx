@@ -13,12 +13,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
 import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
+import AddStoryToSprintModal from "@/components/sprints/AddStoryToSprintModal";
 import { api } from "@/lib/api";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 
 type Sprint = {
   id: string;
@@ -51,7 +53,9 @@ const STATE_PILL: Record<Sprint["state"], string> = {
 
 export default function SprintDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const id = decodeURIComponent(params.id as string);
+  const projectSlug = searchParams.get("project") || "";
 
   const [sprint, setSprint] = useState<Sprint | null>(null);
   const [stories, setStories] = useState<StoryRow[]>([]);
@@ -65,6 +69,7 @@ export default function SprintDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", goal: "", state: "planned", start_date: "", end_date: "" });
   const [err, setErr] = useState<string | null>(null);
+  const [showAddStory, setShowAddStory] = useState(false);
 
   const load = useCallback(() => {
     api.sprints.get(id).then((s: Sprint) => {
@@ -102,7 +107,12 @@ export default function SprintDetailPage() {
   if (!sprint) {
     return (
       <div className="max-w-6xl mx-auto px-6 py-20 text-slate-500 text-sm">
-        <Link href="/sprints" className="text-purple-400 hover:underline">← Back to sprints</Link>
+        <Link
+          href={projectSlug ? `/projects/${encodeURIComponent(projectSlug)}` : "/sprints"}
+          className="text-purple-400 hover:underline"
+        >
+          ← Back to sprints
+        </Link>
         <p className="mt-4">Sprint not found or still loading…</p>
       </div>
     );
@@ -162,8 +172,11 @@ export default function SprintDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
-      <Link href="/sprints" className="text-sm text-slate-500 hover:text-purple-400 mb-3 inline-block">
-        ← All sprints
+      <Link
+        href={projectSlug ? `/projects/${encodeURIComponent(projectSlug)}` : "/sprints"}
+        className="text-sm text-slate-500 hover:text-purple-400 mb-3 inline-block"
+      >
+        ← {projectSlug ? "Back to project" : "All sprints"}
       </Link>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
@@ -271,14 +284,26 @@ export default function SprintDetailPage() {
       )}
 
       {/* Stories in this sprint */}
-      <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider mb-3">
-        Stories ({stories.length})
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider">
+          Stories ({stories.length})
+        </h2>
+        {sprint && (
+          <button
+            type="button"
+            onClick={() => setShowAddStory(true)}
+            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-500 text-white text-xs font-semibold"
+          >
+            + Add story
+          </button>
+        )}
+      </div>
 
       {stories.length === 0 ? (
         <AnimatedCard className="mb-8 border border-dashed border-white/10">
           <p className="text-sm text-slate-400">
-            No stories in this sprint yet. Open a story and assign it from there.
+            No stories in this sprint yet. Click{" "}
+            <span className="text-purple-300">+ Add story</span> above to create a new one or pull from the backlog.
           </p>
         </AnimatedCard>
       ) : (
@@ -289,7 +314,7 @@ export default function SprintDetailPage() {
               className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10"
             >
               <Link
-                href={`/user-stories/${encodeURIComponent(s.id)}`}
+                href={`/user-stories/${encodeURIComponent(s.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
                 className="flex items-center gap-2 min-w-0 flex-1 hover:text-purple-300"
               >
                 <span className="text-sm text-slate-100 truncate">{s.title}</span>
@@ -369,6 +394,27 @@ export default function SprintDetailPage() {
         onClose={() => setStreamUrl(null)}
         healContext={orgId ? { org_id: orgId, persona_id: personaId || null } : undefined}
       />
+
+      {/* + Add story modal: tabbed Create new / Assign existing.
+          Only mountable once we know the sprint's project_id. */}
+      {sprint && (
+        <AddStoryToSprintModal
+          open={showAddStory}
+          onClose={() => setShowAddStory(false)}
+          sprintId={sprint.id}
+          projectId={sprint.project_id}
+          onChanged={() => {
+            load();
+            // Sprint stories changed (create OR assign-existing). Both
+            // kinds of mutation invalidate the project's branch.
+            notifyTreeRefresh({
+              kind: "story",
+              projectId: sprint.project_id,
+              sprintId: sprint.id,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

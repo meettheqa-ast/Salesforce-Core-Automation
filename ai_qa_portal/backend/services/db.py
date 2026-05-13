@@ -1,49 +1,102 @@
-"""SQLAlchemy engine + ORM models for users + RBAC tables.
+"""SQLAlchemy engine + ORM models for portal core tables.
+
+Backed by **Postgres + pgvector** when ``DATABASE_URL`` is set (production /
+Docker default), or by **SQLite** at ``{DATA_DIR}/users.db`` as a local-dev
+fallback when ``DATABASE_URL`` is empty.
 
 Tables:
-  users               -- one row per Google identity (Phase 1 base)
-  project_memberships -- (project_id <- slug, user_id, role) per project (Phase 2a)
+  users                -- one row per Google identity
+  project_memberships  -- (project_slug, user_id, role) per project
+  project_invitations  -- pending invites / requests
+  runs                 -- index of Robot Framework executions
+  audit_log            -- append-only security audit trail
+  notifications        -- in-app notifications
 
-SQLite file lives next to the existing JSON stores at ``{DATA_DIR}/users.db`` so
-the same Fly volume / Docker mount keeps it persistent.
+Schema migrations are owned by Alembic (``ai_qa_portal/backend/alembic/``);
+``init_db()`` is kept as an idempotent dev convenience that calls
+``Base.metadata.create_all`` so the legacy SQLite path stays self-bootstrapping.
+On Postgres, ``init_db()`` ALSO ensures the ``vector`` extension exists when
+``settings.pgvector_auto_install`` is True.
 
-Schema migrations are minimal: ``Base.metadata.create_all`` is idempotent, and
-new columns on existing tables are added by a tiny inline ALTER pass in
-``init_db`` so we don't have to ship Alembic for two columns.
+The new tables introduced by Phases 2-7 (jira_*, github_*, schedules,
+schedule_runs, context_files, context_file_rows, test_data_tables,
+test_data_rows, embeddings) live in ``ai_qa_portal.backend.services.db_models``
+and are imported below so they register on the shared ``Base.metadata`` and
+participate in ``create_all`` / Alembic autogeneration.
 """
 
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+import logging
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterator
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, create_engine, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    create_engine,
+    text,
+)
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from ai_qa_portal.backend.config import settings
 
+logger = logging.getLogger("ai_qa_portal.db")
+
+
+# --- Engine factory --------------------------------------------------------
 
 def _db_url() -> str:
+    """Return the SQLAlchemy URL. Prefer ``settings.database_url`` (Postgres
+    in production); fall back to a per-user SQLite file under ``data_dir`` so
+    local dev keeps working without a Postgres install.
+    """
+    if settings.database_url:
+        return settings.database_url
     data_dir = Path(settings.data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     return f"sqlite:///{(data_dir / 'users.db').as_posix()}"
 
 
-# `check_same_thread=False` is required because FastAPI's threadpool may dispatch
-# requests across threads; SQLite's per-connection guard would otherwise raise.
-engine = create_engine(
-    _db_url(),
-    connect_args={"check_same_thread": False},
-    future=True,
-)
+def _is_postgres(url: str) -> bool:
+    return url.startswith(("postgresql://", "postgresql+psycopg://", "postgres://"))
+
+
+def _is_sqlite(url: str) -> bool:
+    return url.startswith("sqlite:")
+
+
+def _make_engine() -> Engine:
+    url = _db_url()
+    if _is_postgres(url):
+        # ``pool_pre_ping`` recycles dead connections after a Postgres
+        # restart or a managed-DB failover. Without it, the first request
+        # after a network blip raises ``OperationalError`` until the pool
+        # rotates.
+        return create_engine(url, future=True, pool_pre_ping=True)
+    # SQLite needs `check_same_thread=False` because FastAPI's threadpool
+    # dispatches requests across threads and SQLite's per-connection guard
+    # would otherwise raise.
+    return create_engine(
+        url,
+        connect_args={"check_same_thread": False},
+        future=True,
+    )
+
+
+engine = _make_engine()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
 class Base(DeclarativeBase):
-    pass
+    """Shared declarative base for every ORM table in the portal."""
 
 
 # --- Roles -----------------------------------------------------------------
@@ -105,7 +158,7 @@ class User(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     last_login_at: Mapped[datetime | None] = mapped_column(
@@ -148,7 +201,7 @@ class ProjectMembership(Base):
     role: Mapped[str] = mapped_column(String(16), default=ProjectRole.member.value, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -210,7 +263,7 @@ class ProjectInvitation(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     # Set when status moves to accepted/approved/rejected/revoked.
@@ -251,7 +304,7 @@ class RunRecord(Base):
     status: Mapped[str] = mapped_column(String(16), default="started", nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
     )
     finished_at: Mapped[datetime | None] = mapped_column(
@@ -291,7 +344,7 @@ class AuditLog(Base):
     metadata_json: Mapped[str] = mapped_column(String(2048), default="")
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
@@ -327,7 +380,7 @@ class Notification(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
     )
@@ -345,13 +398,11 @@ class Notification(Base):
         }
 
 
-# --- Init + tiny inline migrations ----------------------------------------
+# --- Init + dialect-aware migration helpers --------------------------------
 
-def _ensure_user_columns() -> None:
-    """Add Phase 2a columns to an existing `users` table without Alembic.
-
-    SQLite is permissive about adding nullable columns. We check `PRAGMA
-    table_info(users)` and ALTER TABLE for any missing column. Idempotent.
+def _ensure_user_columns_sqlite() -> None:
+    """Legacy SQLite-only path. On Postgres, Alembic owns schema migrations
+    so this is skipped.
     """
     expected = {
         "global_role": "VARCHAR(16) NOT NULL DEFAULT 'user'",
@@ -366,10 +417,61 @@ def _ensure_user_columns() -> None:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
 
 
+def _ensure_pgvector_extension() -> None:
+    """Best-effort ``CREATE EXTENSION IF NOT EXISTS vector``. Requires the DB
+    user to hold CREATE on the database (Postgres grants this implicitly for
+    DB owners). Failures are logged and swallowed so a missing-privilege
+    situation doesn't block startup -- if the extension is installed out of
+    band, the embeddings table will still work.
+    """
+    if not settings.pgvector_auto_install:
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        logger.info("pgvector extension is available.")
+    except Exception as exc:  # noqa: BLE001 -- best-effort
+        logger.warning(
+            "Could not ensure pgvector extension (%s). If embeddings fail at "
+            "query time, install it manually with `CREATE EXTENSION vector;` "
+            "as a superuser, or set PGVECTOR_AUTO_INSTALL=false to silence "
+            "this warning.",
+            exc,
+        )
+
+
+def _import_extension_models() -> None:
+    """Import the new SQLAlchemy models so they register on ``Base.metadata``.
+
+    These live in their own package to keep this file readable; they cover
+    Jira ingestion, GitHub connections, schedules, context files, test data
+    tables, and the pgvector-backed embeddings table.
+    """
+    # Imported for side effect of registering tables; pyflakes is silenced
+    # by the noqa marker.
+    from ai_qa_portal.backend.services import db_models  # noqa: F401
+
+
 def init_db() -> None:
-    """Create tables if they do not exist. Idempotent; safe to call on every boot."""
+    """Create tables if they do not exist. Idempotent; safe to call on every boot.
+
+    Behaviour matrix:
+      * Postgres: ensures the pgvector extension, then runs ``create_all`` so
+        a fresh deploy without Alembic still boots. Production deployments
+        should run ``alembic upgrade head`` explicitly and treat
+        ``create_all`` as a backstop.
+      * SQLite (legacy local dev): runs ``create_all`` plus the inline
+        ALTER-TABLE pass for Phase 2a columns.
+    """
+    _import_extension_models()
+    url = _db_url()
+    if _is_postgres(url):
+        _ensure_pgvector_extension()
+        Base.metadata.create_all(bind=engine)
+        return
     Base.metadata.create_all(bind=engine)
-    _ensure_user_columns()
+    if _is_sqlite(url):
+        _ensure_user_columns_sqlite()
 
 
 def get_db() -> Iterator[Session]:

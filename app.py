@@ -23,14 +23,15 @@ import json
 import os
 from pathlib import Path
 
+from app_analytics import render_project_analytics_dashboard
 from app_catalog import rebuild_keyword_catalog, render_capabilities_cheat_sheet
 from app_config import (
-    CLARIFY_SESSION_KEY,
-    PENDING_GEN_CTX_KEY,
-    PENDING_ROBOT_EDITOR_KEY,
     _HAS_ORG_INSPECTOR,
     _HAS_SMOKE,
     _HAS_WORKSPACE,
+    CLARIFY_SESSION_KEY,
+    PENDING_GEN_CTX_KEY,
+    PENDING_ROBOT_EDITOR_KEY,
     _detect_smoke_fn,
     _org_inspector_mod,
     _pm,
@@ -41,7 +42,6 @@ from app_csv import (
     render_csv_preview_scrollable,
     sync_csv_session_cache,
 )
-from app_analytics import render_project_analytics_dashboard
 from app_pipeline import (
     build_augmented_prompt,
     clear_pending_generation,

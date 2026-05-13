@@ -9,19 +9,23 @@ how user_stories.py and personas.py inherit ownership.
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session  # pylint: disable=unused-import  # used in Depends-typed params
 
 from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.services.auth import (
-    assert_user_owns_project,
+    assert_user_can_create_in_project,  # pylint: disable=unused-import  # used at create_sprint
     get_current_user,
 )
-from ai_qa_portal.backend.services.db import User
+from ai_qa_portal.backend.services.db import (  # pylint: disable=unused-import  # get_db used in Depends
+    User,
+    get_db,
+)
+
 from ..models.sprint import Sprint, SprintCreate, SprintState, SprintUpdate
 from ..models.test_case import TestCase
 from ..models.user_story import UserStory, UserStoryStatus
@@ -79,10 +83,12 @@ def _load_story_for_owner(story_id: UUID, user: User) -> UserStory:
 def create_sprint(
     body: SprintCreate,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Create a sprint under a project. Owner check via the project."""
-    assert_user_owns_project(current_user, body.project_id)
-    now = datetime.now(timezone.utc)
+    """Create a sprint under a project. Admins, filesystem owners (legacy),
+    and TL+ DB members may create."""
+    assert_user_can_create_in_project(db, current_user, body.project_id)
+    now = datetime.now(UTC)
     sprint = Sprint(
         id=uuid4(),
         project_id=body.project_id,
@@ -102,7 +108,7 @@ def create_sprint(
 @router.get("", response_model=list[Sprint])
 def list_sprints(
     project_id: UUID = Query(..., description="Project UUID"),
-    state: Optional[SprintState] = Query(None),
+    state: SprintState | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
     rows = _store.list_sprints(project_id)
@@ -150,7 +156,7 @@ def update_sprint(
             # Normalise to ISO date string for JSON round-trip
             v = v.isoformat() if hasattr(v, "isoformat") else v
         row[k] = v
-    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    row["updated_at"] = datetime.now(UTC).isoformat()
     _store.save_sprint(row)
     return Sprint.model_validate(row)
 
@@ -169,13 +175,13 @@ def delete_sprint(
     cleared = 0
     for srow in story_rows:
         srow["sprint_id"] = None
-        srow["updated_at"] = datetime.now(timezone.utc).isoformat()
+        srow["updated_at"] = datetime.now(UTC).isoformat()
         _store.save_user_story(srow)
         cleared += 1
 
     row = _store.get_sprint(sprint_id)
     row["state"] = SprintState.cancelled.value
-    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    row["updated_at"] = datetime.now(UTC).isoformat()
     _store.save_sprint(row)
     return {
         "sprint_id": str(sprint.id),
@@ -204,7 +210,7 @@ def assign_story_to_sprint(
         )
     row = _store.get_user_story(story_id)
     row["sprint_id"] = str(sprint_id)
-    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    row["updated_at"] = datetime.now(UTC).isoformat()
     _store.save_user_story(row)  # save_user_story handles index moves
     return UserStory.model_validate(row)
 
@@ -225,7 +231,7 @@ def remove_story_from_sprint(
         return story
     row = _store.get_user_story(story_id)
     row["sprint_id"] = None
-    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    row["updated_at"] = datetime.now(UTC).isoformat()
     _store.save_user_story(row)
     return UserStory.model_validate(row)
 
@@ -239,8 +245,8 @@ class _TestCaseRow(BaseModel):
     status: str
     stale: bool
     tags: list[str]
-    script_path: Optional[str] = None
-    script_built_at: Optional[datetime] = None
+    script_path: str | None = None
+    script_built_at: datetime | None = None
     heal_attempts: int = 0
 
 

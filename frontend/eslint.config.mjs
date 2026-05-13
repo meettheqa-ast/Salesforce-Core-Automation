@@ -15,6 +15,16 @@ const eslintConfig = defineConfig([
     files: ["src/app/**/*.tsx", "src/components/**/*.tsx"],
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
+      // ``react-hooks/set-state-in-effect`` (new in React 19 / Next 16)
+      // flags the pattern ``useEffect(() => { fetchX().then(setX); }, [...])``
+      // which is the dominant data-fetch-on-mount pattern used across
+      // this portal. Refactoring every page to use Suspense / TanStack
+      // Query is a much larger migration; until that happens we keep
+      // the rule as a *warning* so it still surfaces in the Problems
+      // panel for awareness, but doesn't mark every page red in the
+      // file tree. Real bugs in new code will still appear; just not
+      // as a blocking-style ``error``.
+      "react-hooks/set-state-in-effect": "warn",
     },
   },
   globalIgnores([

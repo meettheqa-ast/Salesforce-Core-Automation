@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import AnimatedCard from "@/components/cards/AnimatedCard";
 import { api, type AuditLogRow } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 export default function AdminAuditPage() {
   const { me } = useMe();
@@ -26,27 +26,29 @@ export default function AdminAuditPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter.action, filter.target_type]);
+  useEffect(() => { load();   }, [filter.action, filter.target_type]);
 
   if (me && !me.is_admin) {
-    return <div className="max-w-2xl mx-auto px-6 py-16 text-center text-slate-400">Admin only</div>;
+    return (
+      <PageScaffold>
+        <div className="py-12 text-center text-slate-400">Admin only</div>
+      </PageScaffold>
+    );
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
-        <Link href="/admin" className="hover:text-white">Admin</Link>
-        <span>/</span>
-        <span className="text-slate-300">Audit log</span>
-      </div>
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
-        <h1 className="text-3xl font-bold">
-          <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-            Audit log
-          </span>
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">Last 200 events. Filter by action or target type.</p>
-      </motion.div>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <PageHeader
+          eyebrow="Admin"
+          title="Audit log"
+          description="Last 200 events. Filter by action or target type."
+          actions={
+            <Link href="/admin" className="text-xs text-slate-400 hover:text-white">
+              Back to admin
+            </Link>
+          }
+        />
 
       <div className="flex gap-3 mb-4">
         <input
@@ -90,6 +92,7 @@ export default function AdminAuditPage() {
           ))}
         </div>
       )}
-    </div>
+      </motion.div>
+    </PageScaffold>
   );
 }

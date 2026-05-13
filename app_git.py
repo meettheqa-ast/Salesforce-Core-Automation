@@ -25,7 +25,7 @@ def commit_test_to_branch(
     (missing git repo, dirty index, etc.).  Never raises — logs warnings instead.
     """
     try:
-        from git import Repo, InvalidGitRepositoryError, GitCommandNotFound
+        from git import GitCommandNotFound, InvalidGitRepositoryError, Repo
     except ImportError:
         logger.warning("GitPython is not installed — skipping git commit.")
         return False
@@ -78,7 +78,7 @@ def push_branch_to_remote(
     remote is missing, credentials fail, or GitPython is unavailable.
     """
     try:
-        from git import Repo, InvalidGitRepositoryError
+        from git import InvalidGitRepositoryError, Repo
     except ImportError:
         logger.warning("GitPython is not installed — skipping push.")
         return False
@@ -113,7 +113,7 @@ def sync_local_workspace(
     Returns ``True`` on success, ``False`` on any failure.
     """
     try:
-        from git import Repo, InvalidGitRepositoryError
+        from git import InvalidGitRepositoryError, Repo
     except ImportError:
         logger.warning("GitPython is not installed — skipping sync.")
         return False

@@ -91,6 +91,13 @@ def detect_smoke_intent(prompt: str) -> dict | None:
 
 # All supported providers: id → (env key for API key, env key for model, default model)
 LLM_PROVIDERS: dict[str, tuple[str, str, str]] = {
+    # Ollama is a local LLM runtime -- the "API key" slot is repurposed
+    # to point at the Ollama base URL (default http://localhost:11434).
+    # No external account / quota / cost: free forever, runs entirely on
+    # the user's machine. Recommended FIRST in the failover chain so the
+    # cloud providers are only touched when local inference is
+    # unavailable. See README "Local LLM setup" for install steps.
+    "ollama":      ("OLLAMA_BASE_URL",     "OLLAMA_MODEL",      "qwen2.5-coder:7b"),
     "gemini":      ("GEMINI_API_KEY",      "GEMINI_MODEL",      "gemini-2.5-flash"),
     "openai":      ("OPENAI_API_KEY",      "OPENAI_MODEL",      "gpt-4o"),
     "groq":        ("GROQ_API_KEY",        "GROQ_MODEL",        "llama-3.3-70b-versatile"),
@@ -99,16 +106,20 @@ LLM_PROVIDERS: dict[str, tuple[str, str, str]] = {
     "openrouter":  ("OPENROUTER_API_KEY",  "OPENROUTER_MODEL",  "meta-llama/llama-3.3-70b-instruct"),
     "anthropic":   ("ANTHROPIC_API_KEY",   "ANTHROPIC_MODEL",   "claude-sonnet-4-20250514"),
     "cohere":      ("COHERE_API_KEY",      "COHERE_MODEL",      "command-r-plus"),
-    # Cursor Cloud Agents API. Routes prompts through your Cursor
-    # subscription (same account you're logged into in the IDE). Spawns
-    # a cloud agent against ``CURSOR_AGENT_REPO`` and returns the agent's
-    # assistant text. Higher latency than direct LLM APIs because each
-    # call cold-starts an agent container; recommended last in the
-    # failover chain.
+    # Cursor LLM provider. Routes prompts through your Cursor
+    # subscription (same account you're logged into in the IDE) via two
+    # paths -- ``_call_cursor`` is a dispatcher in front of:
+    #   * the @cursor/sdk Node sidecar (default; warm latency ~1-2s,
+    #     no repo target required), and
+    #   * the legacy Cloud Agents REST API (fallback; cold starts ~30s,
+    #     requires CURSOR_AGENT_REPO).
+    # When CURSOR_API_KEY is set, ``_default_primary_provider()``
+    # promotes Cursor to first place in the failover chain.
     "cursor":      ("CURSOR_API_KEY",      "CURSOR_MODEL",      "composer-2"),
 }
 
 PROVIDER_LABELS: dict[str, str] = {
+    "ollama": "Ollama (local)",
     "gemini": "Gemini",
     "openai": "OpenAI (ChatGPT)",
     "groq": "Groq",
@@ -566,10 +577,7 @@ def fix_misplaced_setup_teardown(robot_source: str) -> str:
             if stripped.startswith("***") and "settings" not in stripped.lower():
                 in_settings = False
                 settings_end_idx = len(cleaned)
-            elif re.match(r"^Test\s+Setup\b", stripped, re.I):
-                cleaned.append(line)
-                continue
-            elif re.match(r"^Test\s+Teardown\b", stripped, re.I):
+            elif re.match(r"^Test\s+Setup\b", stripped, re.I) or re.match(r"^Test\s+Teardown\b", stripped, re.I):
                 cleaned.append(line)
                 continue
 
@@ -988,12 +996,236 @@ def _call_cohere(
     return resp.message.content[0].text or ""
 
 
+def _ollama_base_url() -> str:
+    """Return the Ollama HTTP base URL. ``OLLAMA_BASE_URL`` env var
+    overrides; default is the standard local install (port 11434).
+    Trailing slashes are stripped so callers can append paths cleanly.
+    """
+    return (os.environ.get("OLLAMA_BASE_URL") or "http://localhost:11434").rstrip("/")
+
+
+# Cached reachability flag. The /api/tags ping is cheap (~1ms on a
+# loopback) but doing it every chain build amplifies that into
+# user-visible latency on a hot generate loop. Cache for 60s -- long
+# enough to avoid spamming, short enough that the user can start
+# Ollama AFTER the backend is up and have it picked up automatically.
+_ollama_reachable_cache: tuple[bool, float] | None = None
+_OLLAMA_REACHABILITY_TTL_S = 60.0
+
+
+def _ollama_is_reachable(force: bool = False) -> bool:
+    """Best-effort check whether Ollama is running at the configured
+    base URL. Used by ``_has_api_key("ollama")`` so an unreachable
+    local server is silently dropped from the failover chain instead
+    of producing a noisy connection error on every call.
+    """
+    global _ollama_reachable_cache  # pylint: disable=global-statement
+    import time as _t
+
+    if not force and _ollama_reachable_cache is not None:
+        ok, ts = _ollama_reachable_cache
+        if (_t.monotonic() - ts) < _OLLAMA_REACHABILITY_TTL_S:
+            return ok
+
+    import requests
+    try:
+        resp = requests.get(f"{_ollama_base_url()}/api/tags", timeout=2.0)
+        ok = resp.status_code == 200
+    except Exception:  # pylint: disable=broad-exception-caught
+        ok = False
+
+    _ollama_reachable_cache = (ok, _t.monotonic())
+    return ok
+
+
+def _call_ollama(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    """Call a local Ollama-served model.
+
+    Ollama is a local LLM runtime -- no API key, no quota, no cost. It
+    serves an OpenAI-compatible-ish HTTP API on (default)
+    ``http://localhost:11434``. We talk to its native ``/api/chat``
+    endpoint with ``stream=False`` so the call returns a single
+    aggregated response (simpler than streaming + matches the rest of
+    the providers in this module).
+
+    Image inputs: Ollama supports vision-capable models (llava, bakllava
+    family) via a top-level ``images`` array of base64-encoded bytes.
+    If the configured model isn't vision-capable the image is ignored;
+    we don't error because the user might have the image in the prompt
+    history but be asking a code question.
+
+    Required env (all optional):
+      ``OLLAMA_BASE_URL`` -- defaults to ``http://localhost:11434``.
+      ``OLLAMA_MODEL``    -- model name. Default ``qwen2.5-coder:7b``;
+        good code quality at ~4.5 GB. Other strong options:
+        ``llama3.1:8b-instruct`` (general-purpose, ~4.7 GB),
+        ``phi3:medium`` (smaller, faster on CPU).
+
+    Auth-error path: when the configured model isn't pulled, Ollama
+    returns 404 with body ``{"error": "model 'xxx' not found"}``. We
+    raise with a clear message so the failover layer can move on AND
+    the operator sees what to do (``ollama pull <model>``).
+    """
+    import requests
+
+    hydrate_llm_env()
+    base_url = _ollama_base_url()
+    # Reuse the standard helper for model resolution; api_key slot
+    # stores the URL but we don't actually use that field at call time
+    # (the URL goes via OLLAMA_BASE_URL).
+    model = (os.environ.get("OLLAMA_MODEL") or LLM_PROVIDERS["ollama"][2]).strip()
+
+    messages: list[dict] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    if image_bytes:
+        import base64
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        messages[-1]["images"] = [b64]  # Ollama spec: images on the user message
+
+    body = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {
+            # Match cloud providers' temperature so output style is
+            # comparable across the failover chain.
+            "temperature": 0.2,
+        },
+    }
+
+    timeout_s = float(os.environ.get("OLLAMA_REQUEST_TIMEOUT_S", "120"))
+    try:
+        resp = requests.post(
+            f"{base_url}/api/chat",
+            json=body,
+            timeout=timeout_s,
+        )
+    except requests.exceptions.ConnectionError as exc:
+        # Mark cache stale so the next call will re-probe quickly.
+        global _ollama_reachable_cache  # pylint: disable=global-statement
+        _ollama_reachable_cache = (False, 0.0)
+        raise RuntimeError(
+            f"Ollama is not reachable at {base_url}. "
+            f"Start it with `ollama serve` or set OLLAMA_BASE_URL to a "
+            f"running instance. Underlying error: {exc}"
+        ) from exc
+
+    if resp.status_code == 404:
+        # Most common 404: model not pulled. Surface the actionable
+        # message so the user knows what to do.
+        try:
+            detail = resp.json().get("error", "")
+        except Exception:  # pylint: disable=broad-exception-caught
+            detail = resp.text[:200]
+        raise RuntimeError(
+            f"Ollama model {model!r} is not available. "
+            f"Pull it with `ollama pull {model}` or set OLLAMA_MODEL "
+            f"to a model already on disk. Server said: {detail}"
+        )
+
+    if resp.status_code >= 400:
+        raise RuntimeError(
+            f"Ollama returned HTTP {resp.status_code}: {resp.text[:200]}"
+        )
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Ollama returned non-JSON response: {resp.text[:200]}"
+        ) from exc
+
+    return (data.get("message") or {}).get("content") or ""
+
+
 def _call_cursor(
     system_prompt: str,
     user_content: str,
     image_bytes: bytes | None = None,
 ) -> str:
-    """Route the prompt through the Cursor Cloud Agents API.
+    """Dispatcher: try the ``@cursor/sdk`` Node sidecar; fall back to REST.
+
+    The Cursor SDK is TypeScript-only, so the SDK path is implemented
+    as a tiny Node sidecar (``cursor_sdk_sidecar/``) that we IPC to
+    over loopback HTTP. The legacy REST path lives in
+    ``_call_cursor_rest`` below and is preserved verbatim so:
+
+    * no-Node hosts keep working (the dispatcher quietly falls
+      through),
+    * ``CURSOR_USE_SDK=false`` still gives operators a hard escape
+      hatch when the sidecar misbehaves, and
+    * any test that monkeypatches the REST behaviour continues to
+      operate against the same call shape.
+
+    Dispatch contract:
+
+    * Real SDK failures (``CursorSdkError`` raised from a started,
+      authenticated sidecar) propagate as-is. ``CursorSdkError``
+      subclasses ``RuntimeError`` and the failover classifier in
+      ``call_llm`` keys off the formatted exception message, so quota
+      / rate-limit / 5xx hints from the SDK's response body flow
+      through the same path as every other provider's failures.
+    * Infrastructure issues (Node missing, import error, sidecar
+      can't be spawned) silently fall through to ``_call_cursor_rest``
+      -- these are never the user's fault and shouldn't poison the
+      Cursor provider for the failover loop.
+    """
+    use_sdk = (os.environ.get("CURSOR_USE_SDK", "true") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    if use_sdk:
+        try:
+            import cursor_sdk_bridge as _sdk
+        except ImportError as exc:
+            _logger.warning(
+                "Cursor SDK bridge import failed (%s); falling back to REST.", exc,
+            )
+        else:
+            if _sdk.is_node_available():
+                try:
+                    _sdk.ensure_sidecar()
+                    model = (
+                        os.environ.get("CURSOR_MODEL")
+                        or LLM_PROVIDERS["cursor"][2]
+                    ).strip()
+                    timeout_s = float(os.environ.get("CURSOR_SDK_TIMEOUT_S", "180"))
+                    return _sdk.call_cursor_sdk(
+                        system=system_prompt,
+                        user=user_content,
+                        model=model,
+                        timeout_s=timeout_s,
+                    )
+                except _sdk.CursorSdkError:
+                    # Real provider failure -- let the failover classifier
+                    # in call_llm see the original CursorSdkError so the
+                    # retryable / quota / auth heuristics fire correctly.
+                    raise
+                except Exception as exc:  # noqa: BLE001 -- defensive
+                    # Anything else is bridge / spawn infrastructure;
+                    # don't poison the provider, just route to REST.
+                    _logger.warning(
+                        "Cursor SDK sidecar unavailable (%s); falling back to REST.",
+                        exc,
+                    )
+            else:
+                _logger.info(
+                    "Cursor SDK sidecar disabled: Node not available -- using REST.",
+                )
+    return _call_cursor_rest(system_prompt, user_content, image_bytes)
+
+
+def _call_cursor_rest(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+) -> str:
+    """Route the prompt through the Cursor Cloud Agents REST API.
 
     Why this exists: lets users on a Cursor subscription reuse the same
     quota for our portal's LLM calls. No new account, just an API key
@@ -1017,10 +1249,10 @@ def _call_cursor(
         completion (default 180; cloud-agent cold start adds 30-60 s on
         top of LLM latency).
 
-    Latency note: cold starts mean Cursor is ~10-30 x slower per call
-    than a direct Claude/OpenAI call. Recommended placement: end of the
-    ``LLM_FAILOVER_ORDER`` so it only fires when faster providers are
-    exhausted -- keeps the validator-loop budget reasonable.
+    Latency note: cold starts mean the REST path is ~10-30 x slower
+    per call than the SDK sidecar (warm Node process) or a direct
+    Claude/OpenAI call. The dispatcher above prefers the SDK first;
+    this body is the no-Node / forced-fallback path.
     """
     import base64
     import json
@@ -1187,6 +1419,7 @@ def _call_cursor(
 
 
 _PROVIDER_CALLERS: dict[str, callable] = {
+    "ollama": _call_ollama,
     "gemini": _call_gemini,
     "google": _call_gemini,
     "openai": _call_openai,
@@ -1348,7 +1581,16 @@ def _mark_exhausted(provider: str, cooldown_s: float) -> None:
 def _has_api_key(provider: str) -> bool:
     """True when the provider has a usable API key in env. Gemini also
     accepts ``GOOGLE_API_KEY`` for backward compat with the official
-    Google SDK examples."""
+    Google SDK examples.
+
+    Ollama is special: it has no API key concept. The provider is
+    "available" iff the local Ollama HTTP server responds at the
+    configured ``OLLAMA_BASE_URL``. Result is cached for 60s in
+    ``_ollama_is_reachable`` so the failover-chain build doesn't
+    spam health probes.
+    """
+    if provider == "ollama":
+        return _ollama_is_reachable()
     info = LLM_PROVIDERS.get(provider)
     if info is None:
         return False
@@ -1357,6 +1599,32 @@ def _has_api_key(provider: str) -> bool:
     if provider == "gemini" and os.environ.get("GOOGLE_API_KEY", "").strip():
         return True
     return False
+
+
+def _default_primary_provider() -> str:
+    """Pick the default primary LLM provider when ``LLM_PROVIDER`` env
+    var is unset.
+
+    Preference order:
+      1. ``cursor`` -- if ``CURSOR_API_KEY`` is set. The @cursor/sdk
+         Node sidecar (warm latency ~1-2s) handles the call; the REST
+         path is the automatic fallback when Node is unavailable. We
+         put Cursor first because in practice every user who has
+         configured the key wants the SDK to be the primary -- this
+         avoids a "why isn't Cursor being used?" surprise on every
+         deploy.
+      2. ``ollama`` -- local-first when Cursor isn't configured. Free,
+         no quota, no external API; the right primary in dev setups
+         where the user installed Ollama but hasn't bothered with
+         cloud keys.
+      3. ``gemini`` -- the historical default (matches existing user
+         setups; failover handles if it's also missing a key).
+    """
+    if (os.environ.get("CURSOR_API_KEY") or "").strip():
+        return "cursor"
+    if _ollama_is_reachable():
+        return "ollama"
+    return "gemini"
 
 
 def _build_failover_chain(primary: str) -> list[str]:
@@ -1430,7 +1698,7 @@ def call_llm(
         return caller(system_prompt, user_content, image_bytes=image_bytes)
 
     if os.environ.get("LLM_FAILOVER_DISABLED", "").strip().lower() in ("1", "true", "yes"):
-        primary_only = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+        primary_only = (os.environ.get("LLM_PROVIDER") or _default_primary_provider()).strip().lower()
         if primary_only == "google":
             primary_only = "gemini"
         caller = _PROVIDER_CALLERS.get(primary_only)
@@ -1438,7 +1706,7 @@ def call_llm(
             raise ValueError(f"Unsupported LLM_PROVIDER: {primary_only!r}")
         return caller(system_prompt, user_content, image_bytes=image_bytes)
 
-    primary = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+    primary = (os.environ.get("LLM_PROVIDER") or _default_primary_provider()).strip().lower()
     chain = _build_failover_chain(primary)
     if not chain:
         configured = ", ".join(LLM_PROVIDERS[p][0] for p in LLM_PROVIDERS)
@@ -1660,7 +1928,7 @@ def validate_generated_robot(robot_source: str) -> list[str]:
 
     raw_kw = _FORBIDDEN_RAW_KW.findall(robot_source)
     if raw_kw:
-        unique = sorted(set(k.strip() for k in raw_kw))
+        unique = sorted({k.strip() for k in raw_kw})
         errors.append(
             f"Raw SeleniumLibrary keyword(s) detected: {', '.join(unique)} — "
             "use GlobalKeywords wrappers instead (rule 1.1)."
@@ -1842,6 +2110,8 @@ def generate_test_from_prompt_validated(
     default_app: str = "",
     max_attempts: int | None = None,
     skip_dryrun: bool = False,
+    locator_validate=None,
+    locator_shadow_mode: bool = False,
 ):
     """Production-grade Quick Generate: LLM call wrapped in the
     ``script_validation_loop`` so the script that lands on disk is
@@ -1862,9 +2132,12 @@ def generate_test_from_prompt_validated(
 
     CSV / image handling matches ``generate_test_from_prompt``.
     """
+    from ai_qa_portal.backend.services import recipe_matcher
     from ai_qa_portal.backend.services.script_validation_loop import (
+        ValidationLoopResult,
         run_with_validation,
     )
+    from ai_qa_portal.backend.services.script_validator import validate as ast_validate
 
     hydrate_llm_env()
     system_prompt, base_user_content = _build_quick_generate_prompts(
@@ -1876,6 +2149,107 @@ def generate_test_from_prompt_validated(
 
     if csv_bytes and csv_bytes.strip():
         (target_path.parent / UPLOADED_CSV_FILENAME).write_bytes(csv_bytes)
+
+    # ─── Tier 1: deterministic recipe ────────────────────────────────
+    # If the prompt matches a recipe at HIGH confidence, render it
+    # directly without any LLM call. This is the free/instant/reliable
+    # path for the 80% of recurring scenarios. CSV / image inputs
+    # bypass the recipe tier (they almost always indicate a non-recipe
+    # use case) and go straight to the LLM. Medium-confidence matches
+    # also fall through -- not because the recipe is wrong, but because
+    # the LLM gets to use richer prompt grounding the matcher can't
+    # reproduce yet.
+    if not csv_bytes and not image_bytes:
+        try:
+            match = recipe_matcher.match_prompt(user_input)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            _logger.warning("recipe_matcher crashed, falling through: %s", exc)
+            match = None
+
+        if match is not None and match.confidence == "high":
+            try:
+                rendered = recipe_matcher.render_match(match)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                _logger.warning(
+                    "recipe %r render failed, falling through to LLM: %s",
+                    match.recipe.name, exc,
+                )
+                rendered = None
+
+            if rendered:
+                target_path.write_text(rendered, encoding="utf-8")
+                report = ast_validate(target_path)
+                if report.ok:
+                    # Optional Phase 1 gate: if the caller passed a
+                    # locator-validate callable, exercise it on the
+                    # recipe-rendered script too. Recipes use known-good
+                    # keywords from our catalog, but the LOCATORS inside
+                    # them may not match a customer's customised SF
+                    # layout (e.g. Pentair's renamed picklist values).
+                    # If the gate fails on a recipe, we trust the gate
+                    # and fall through to the LLM tier rather than
+                    # shipping a recipe with stale selectors.
+                    locator_count = 0
+                    locator_failed = 0
+                    locator_ok: bool | None = None
+                    if locator_validate is not None:
+                        try:
+                            loc_report = locator_validate(target_path)
+                        except Exception as exc:  # pylint: disable=broad-exception-caught
+                            _logger.warning(
+                                "recipe-path locator validation crashed: %s; trusting AST",
+                                exc,
+                            )
+                            loc_report = None
+                        if loc_report is not None:
+                            locator_failed = len(loc_report.errors)
+                            locator_count = max(locator_count, locator_failed)
+                            locator_ok = loc_report.ok
+                            if not loc_report.ok and not locator_shadow_mode:
+                                # Recipe locators are stale on this org. Fall
+                                # through to LLM tier so it can use closest-
+                                # match suggestions to fix.
+                                _logger.warning(
+                                    "recipe %r failed locator gate (%d stale); "
+                                    "falling through to LLM",
+                                    match.recipe.name, len(loc_report.errors),
+                                )
+                                # Don't write the recipe rendering to the
+                                # final result; let the LLM path overwrite.
+                                rendered = None  # noqa: PLW2901 (intentional re-assign)
+                    if rendered is not None:
+                        if target_path.is_file():
+                            try:
+                                format_robot_code(target_path)
+                            except Exception:  # pylint: disable=broad-exception-caught
+                                pass
+                        final_text = target_path.read_text(encoding="utf-8")
+                        _logger.info(
+                            "generate_test_from_prompt_validated: matched recipe=%s, "
+                            "skipping LLM tier",
+                            match.recipe.name,
+                        )
+                        return ValidationLoopResult(
+                            final_script=final_text,
+                            final_report=report,
+                            attempts=[],
+                            converged=True,
+                            used_recipe=match.recipe.name,
+                            used_recipe_confidence=match.confidence,
+                            locator_validation_ok=locator_ok,
+                            locator_validation_count=locator_count,
+                            locator_validation_failed=locator_failed,
+                            locator_validation_shadow=locator_shadow_mode,
+                        )
+                # Recipe rendered but failed AST validation -- something
+                # is genuinely off (e.g. a recipe template is stale
+                # against the catalog). Log and fall through to LLM
+                # rather than ship a broken script.
+                _logger.warning(
+                    "recipe %r rendered but failed validation (%d errors); "
+                    "falling through to LLM",
+                    match.recipe.name, len(report.errors),
+                )
 
     def _llm(fix_prompt: str | None) -> str:
         # First attempt: no fix prompt; subsequent attempts append the
@@ -1907,6 +2281,8 @@ def generate_test_from_prompt_validated(
         suite_path=target_path,
         max_attempts=max_attempts,
         skip_dryrun=skip_dryrun,
+        locator_validate=locator_validate,
+        locator_shadow_mode=locator_shadow_mode,
     )
 
     # Format the final on-disk file so robotidy normalisation matches

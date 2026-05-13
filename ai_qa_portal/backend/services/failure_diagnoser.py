@@ -16,7 +16,6 @@ import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("ai_qa_portal.failure_diagnoser")
 
@@ -40,9 +39,9 @@ class RunDiagnosis:
     test_name: str
     test_status: str  # "PASS" / "FAIL" / "SKIP" / "NOT_RUN"
     test_message: str
-    first_failure: Optional[KeywordFailure]
+    first_failure: KeywordFailure | None
     all_failures: list[KeywordFailure]
-    screenshot_path: Optional[str]  # absolute path on disk
+    screenshot_path: str | None  # absolute path on disk
 
     def to_dict(self) -> dict:
         return {
@@ -131,7 +130,7 @@ def _walk_for_failures(
         )
 
 
-def diagnose_run(run_dir: Path) -> Optional[RunDiagnosis]:
+def diagnose_run(run_dir: Path) -> RunDiagnosis | None:
     """Parse `<run_dir>/output.xml` and return a structured diagnosis.
 
     Returns None if the file is missing or unparseable; callers should
@@ -151,7 +150,7 @@ def diagnose_run(run_dir: Path) -> Optional[RunDiagnosis]:
     root = tree.getroot()
 
     # Robot puts <test> elements anywhere under the root <suite>.
-    first_failed_test: Optional[ET.Element] = None
+    first_failed_test: ET.Element | None = None
     for test_el in root.iter("test"):
         st = test_el.find("status")
         if st is not None and st.attrib.get("status") == "FAIL":

@@ -1,0 +1,22 @@
+*** Settings ***
+Documentation       {{ suite_doc | default("Lead routing rule verification by State -- one test per state.") }}
+Library             SeleniumLibrary
+Resource            ../../Resources/Common/GlobalKeywords.robot
+Resource            ../../Resources/PO/Platform/SalesPO.robot
+
+Test Setup          Begin Web Test
+Test Teardown       End Web Test
+
+
+*** Test Cases ***
+{% for tc in tests %}
+{{ tc.title }}
+    [Documentation]    {{ tc.documentation }}
+    [Tags]    {{ tc.tags | join("    ") }}
+    GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
+    GlobalKeywords.Generate Lead Test Data    scenario_tag={{ tc.scenario_tag }}
+    SalesPO.Open New Lead From Sales App
+    SalesPO.Create A New Lead    {{ tc.create_lead_args }}
+    GlobalKeywords.Verify Field Value On Detail Page    Lead Owner    {{ tc.expected_owner }}
+
+{% endfor %}

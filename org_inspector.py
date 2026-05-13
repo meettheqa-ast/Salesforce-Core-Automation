@@ -46,7 +46,7 @@ class OrgInspector:
         password: str,
         *,
         progress_cb: Any = None,
-    ) -> "OrgInspector":
+    ) -> OrgInspector:
         """
         Open a headless Chrome session, log in to the Salesforce sandbox,
         and return an OrgInspector with a live authenticated browser session
@@ -58,7 +58,6 @@ class OrgInspector:
         try:
             from selenium import webdriver
             from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.common.by import By
             from selenium.webdriver.support import expected_conditions as EC
             from selenium.webdriver.support.ui import WebDriverWait
         except ImportError as exc:
@@ -235,7 +234,7 @@ class OrgInspector:
                 pass
             self._driver = None  # type: ignore[attr-defined]
 
-    def __enter__(self) -> "OrgInspector":
+    def __enter__(self) -> OrgInspector:
         return self
 
     def __exit__(self, *_: object) -> None:

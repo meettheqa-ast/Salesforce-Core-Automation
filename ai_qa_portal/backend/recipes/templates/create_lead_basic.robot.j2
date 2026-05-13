@@ -1,0 +1,18 @@
+*** Settings ***
+Documentation       {{ suite_doc | default("Create a single Lead and verify the success toast / detail page.") }}
+Library             SeleniumLibrary
+Resource            ../../Resources/Common/GlobalKeywords.robot
+Resource            ../../Resources/PO/Platform/SalesPO.robot
+
+Test Setup          Begin Web Test
+Test Teardown       End Web Test
+
+
+*** Test Cases ***
+{{ test_title }}
+    [Documentation]    {{ documentation }}
+    [Tags]    {{ tags | join("    ") }}
+    GlobalKeywords.Login To Sandbox    ${globalSandboxTestUrl}    ${sandboxUserNameInput}    ${sandboxPasswordInput}
+    SalesPO.Open New Lead From Sales App
+    {{ create_lead_call }}
+    SalesPO.Verify Lead Created Successfully

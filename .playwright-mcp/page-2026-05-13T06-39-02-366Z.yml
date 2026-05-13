@@ -1,0 +1,154 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1977]:
+      - generic [ref=e1979]:
+        - generic [ref=e1981]: TB
+        - generic [ref=e1982]:
+          - generic [ref=e1983]: TestingBuddy AI
+          - generic [ref=e1984]: Testing Platform
+      - generic [ref=e1985]:
+        - generic [ref=e1986]:
+          - generic [ref=e1987]: Main
+          - list [ref=e1989]:
+            - listitem [ref=e1990]:
+              - link "Dashboard" [ref=e1991] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1992]
+                - generic [ref=e1995]: Dashboard
+            - listitem [ref=e1996]:
+              - link "Curriculum" [ref=e1997] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1998]
+                - generic [ref=e2000]: Curriculum
+            - listitem [ref=e2001]:
+              - link "Settings" [ref=e2002] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e2003]
+                - generic [ref=e2006]: Settings
+        - generic [ref=e2008] [cursor=pointer]:
+          - generic [ref=e2009]: 🎯 Planning & Strategy
+          - img [ref=e2010]
+        - generic [ref=e2013] [cursor=pointer]:
+          - generic [ref=e2014]: ✏️ Test Design & Creation
+          - img [ref=e2015]
+        - generic [ref=e2018] [cursor=pointer]:
+          - generic [ref=e2019]: 🤖 Automation & Framework
+          - img [ref=e2020]
+        - generic [ref=e2023] [cursor=pointer]:
+          - generic [ref=e2024]: ⚡ Test Execution & Management
+          - img [ref=e2025]
+        - generic [ref=e2028] [cursor=pointer]:
+          - generic [ref=e2029]: 📊 Reporting & Insights
+          - img [ref=e2030]
+        - generic [ref=e2033] [cursor=pointer]:
+          - generic [ref=e2034]: 🔧 Optimization & Maintenance
+          - img [ref=e2035]
+        - generic [ref=e2038] [cursor=pointer]:
+          - generic [ref=e2039]: 🧠 AI Intelligence & Prediction
+          - img [ref=e2040]
+      - generic [ref=e2043]:
+        - list [ref=e2044]:
+          - listitem [ref=e2045]:
+            - button "Chat History" [ref=e2046] [cursor=pointer]:
+              - img [ref=e2047]
+              - generic [ref=e2049]: Chat History
+        - generic [ref=e2050]:
+          - generic [ref=e2052]: M
+          - generic [ref=e2053]:
+            - paragraph [ref=e2054]: Meet Sheth
+            - paragraph [ref=e2055]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e2056] [cursor=pointer]:
+          - img [ref=e2057]
+          - generic [ref=e2060]: Sign Out
+      - button "Toggle Sidebar" [ref=e2061]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e2296]:
+          - generic [ref=e2297]:
+            - heading "Learning Curriculum" [level=1] [ref=e2298]
+            - paragraph [ref=e2299]: Your 100-day journey to becoming an AI Automation Tester Engineer
+          - generic [ref=e2302]:
+            - generic [ref=e2303]:
+              - heading "2 Phases • 20 Modules • 100 Days" [level=2] [ref=e2304]
+              - paragraph [ref=e2305]: Complete both phases to master AI testing
+            - generic [ref=e2306]: Coming Soon
+          - generic [ref=e2307]:
+            - generic [ref=e2309]:
+              - img [ref=e2311]
+              - generic [ref=e2314]:
+                - generic [ref=e2315]: Phase 1
+                - heading "GenAI Foundation" [level=3] [ref=e2316]:
+                  - img [ref=e2317]
+                  - text: GenAI Foundation
+              - generic [ref=e2322]:
+                - generic [ref=e2323]:
+                  - generic [ref=e2324]:
+                    - img [ref=e2325]
+                    - generic [ref=e2328]: 1-2 months (30-60 days)
+                  - generic [ref=e2329]:
+                    - img [ref=e2330]
+                    - generic [ref=e2332]: 7 Modules
+                  - generic [ref=e2333]:
+                    - img [ref=e2334]
+                    - generic [ref=e2337]: Beginner Level
+                  - generic [ref=e2338]:
+                    - img [ref=e2339]
+                    - generic [ref=e2342]: "Target Salary: $75K-$95K"
+                - paragraph [ref=e2343]: Master GenAI fundamentals, LLM APIs, and prompt engineering specifically designed for QA professionals.
+                - progressbar [ref=e2344]
+                - paragraph [ref=e2346]: 0/7 modules completed
+                - button "View Course Details" [ref=e2347] [cursor=pointer]:
+                  - text: View Course Details
+                  - img
+            - generic [ref=e2349]:
+              - img [ref=e2351]
+              - generic [ref=e2354]:
+                - generic [ref=e2355]: Phase 2
+                - heading "AI Automation Tester" [level=3] [ref=e2356]:
+                  - img [ref=e2357]
+                  - text: AI Automation Tester
+              - generic [ref=e2359]:
+                - generic [ref=e2360]:
+                  - generic [ref=e2361]:
+                    - img [ref=e2362]
+                    - generic [ref=e2365]: 1-2 months (40-50 days)
+                  - generic [ref=e2366]:
+                    - img [ref=e2367]
+                    - generic [ref=e2369]: 13 Advanced Modules
+                  - generic [ref=e2370]:
+                    - img [ref=e2371]
+                    - generic [ref=e2374]: Intermediate Level
+                  - generic [ref=e2375]:
+                    - img [ref=e2376]
+                    - generic [ref=e2379]: "Target Salary: $95K-$130K"
+                - paragraph [ref=e2380]: Build autonomous testing agents, self-healing tests, and advanced AI-powered automation tools.
+                - progressbar [ref=e2381]
+                - paragraph [ref=e2383]: 0/13 modules completed
+                - button "View Course Details" [ref=e2384] [cursor=pointer]:
+                  - text: View Course Details
+                  - img
+          - generic [ref=e2386]:
+            - heading "📚 What to Expect" [level=3] [ref=e2387]
+            - list [ref=e2388]:
+              - listitem [ref=e2389]:
+                - generic [ref=e2390]: •
+                - generic [ref=e2391]: Structured learning path with hands-on projects and real-world applications
+              - listitem [ref=e2392]:
+                - generic [ref=e2393]: •
+                - generic [ref=e2394]: Progressive difficulty from fundamentals to advanced AI testing techniques
+              - listitem [ref=e2395]:
+                - generic [ref=e2396]: •
+                - generic [ref=e2397]: Build a comprehensive portfolio with cutting-edge AI testing projects
+              - listitem [ref=e2398]:
+                - generic [ref=e2399]: •
+                - generic [ref=e2400]: Career guidance and proven strategies for salary growth up to $130K+
+              - listitem [ref=e2401]:
+                - generic [ref=e2402]: •
+                - generic [ref=e2403]: Access to AI testing tools, agents, and frameworks used in the industry

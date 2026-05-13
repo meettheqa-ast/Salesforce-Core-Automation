@@ -84,7 +84,7 @@ def _maybe_decrypt(value: str) -> str:
 
 def _empty_cred_block() -> dict[str, str]:
     """Return a credential dict with all keys set to empty strings."""
-    return {k: "" for k in _CREDENTIAL_KEYS}
+    return dict.fromkeys(_CREDENTIAL_KEYS, "")
 
 
 def _default_persona_block() -> dict[str, dict[str, str]]:
@@ -95,7 +95,7 @@ _JIRA_KEYS: list[str] = ["jira_base_url", "jira_api_token", "jira_project_key"]
 
 
 def _empty_jira_block() -> dict[str, str]:
-    return {k: "" for k in _JIRA_KEYS}
+    return dict.fromkeys(_JIRA_KEYS, "")
 
 
 def _default_full_config() -> dict:

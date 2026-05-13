@@ -14,11 +14,11 @@ import streamlit as st
 
 from app_catalog import rebuild_keyword_catalog
 from app_config import (
+    _HAS_WORKSPACE,
     GENERATED_SUITE,
     PENDING_GEN_CTX_KEY,
     PENDING_ROBOT_EDITOR_KEY,
     ROOT,
-    _HAS_WORKSPACE,
     _pm,
 )
 from app_reporting import render_in_app_run_summary, render_run_summary_for_last_run
@@ -1021,10 +1021,10 @@ def run_mcp_stepwise_pipeline(
     try:
         from ai_bridge import (
             fix_misplaced_setup_teardown,
+            format_robot_code,
             strip_credential_variable_overrides,
             strip_hallucinated_csv_variables_from_suite,
             strip_llm_robot_garbage,
-            format_robot_code,
         )
         robot_code = strip_credential_variable_overrides(robot_code)
         robot_code = strip_llm_robot_garbage(robot_code)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -19,7 +19,8 @@ import {
 } from "recharts";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import MetricCard from "@/components/cards/MetricCard";
-import { api, type RunSummary, type RunTestRow } from "@/lib/api";
+import { api, type RunHistoryRow, type RunSummary, type RunTestRow } from "@/lib/api";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 const PIE_COLORS = {
   PASS: "#10b981",
@@ -42,12 +43,18 @@ function fmtTime(iso: string | null): string {
 
 export default function RunDashboardPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const runFolder = decodeURIComponent(params.run as string);
+  const projectSlug = searchParams.get("project") || "";
 
   const [summary, setSummary] = useState<RunSummary | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"ALL" | "PASS" | "FAIL" | "SKIP">("ALL");
   const [openRow, setOpenRow] = useState<string | null>(null);
+  const [recentRuns, setRecentRuns] = useState<RunHistoryRow[]>([]);
+  const [compareRun, setCompareRun] = useState("");
+  const [compareSummary, setCompareSummary] = useState<RunSummary | null>(null);
+  const [flakyRows, setFlakyRows] = useState<Array<{ name: string; pass: number; fail: number; seen: number }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,17 +70,79 @@ export default function RunDashboardPage() {
     return () => { cancelled = true; };
   }, [runFolder]);
 
+  useEffect(() => {
+    api.runs
+      .latest(20)
+      .then((d) => {
+        const rows = (d.runs || []) as RunHistoryRow[];
+        setRecentRuns(rows.filter((r) => r.run_name !== runFolder));
+      })
+      .catch(() => setRecentRuns([]));
+  }, [runFolder]);
+
+  useEffect(() => {
+    if (!compareRun) {
+      setCompareSummary(null);
+      return;
+    }
+    api.runs.summary(compareRun).then(setCompareSummary).catch(() => setCompareSummary(null));
+  }, [compareRun]);
+
+  useEffect(() => {
+    const baseline = recentRuns.slice(0, 5).map((r) => r.run_name);
+    if (baseline.length === 0) {
+      setFlakyRows([]);
+      return;
+    }
+    Promise.all(
+      baseline.map((name) =>
+        api.runs.summary(name).catch(() => null),
+      ),
+    ).then((summaries) => {
+      const index = new Map<string, { pass: number; fail: number; seen: number }>();
+      summaries.filter(Boolean).forEach((s) => {
+        (s as RunSummary).tests.forEach((t) => {
+          const key = t.name;
+          const row = index.get(key) || { pass: 0, fail: 0, seen: 0 };
+          if (t.status === "PASS") row.pass += 1;
+          if (t.status === "FAIL") row.fail += 1;
+          row.seen += 1;
+          index.set(key, row);
+        });
+      });
+      const flaky = Array.from(index.entries())
+        .filter(([, v]) => v.pass > 0 && v.fail > 0)
+        .map(([name, v]) => ({ name, ...v }))
+        .sort((a, b) => b.fail - a.fail || b.seen - a.seen)
+        .slice(0, 12);
+      setFlakyRows(flaky);
+    }).catch(() => setFlakyRows([]));
+  }, [recentRuns]);
+
   if (error) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-10">
-        <Link href="/runs" className="text-sm text-purple-400 hover:underline">← Run history</Link>
-        <p className="mt-4 text-red-300">Error: {error}</p>
-      </div>
+      <PageScaffold>
+        <PageHeader
+          eyebrow="Runs"
+          title="Run report"
+          description={runFolder}
+          actions={<Link href={projectSlug ? `/runs?project=${encodeURIComponent(projectSlug)}` : "/runs"} className="text-xs text-slate-400 hover:text-white">Back to run history</Link>}
+        />
+        <p className="text-red-300">Error: {error}</p>
+      </PageScaffold>
     );
   }
   if (!summary) {
     return (
-      <div className="max-w-5xl mx-auto px-6 py-10 text-slate-500 text-sm">Loading run…</div>
+      <PageScaffold>
+        <PageHeader
+          eyebrow="Runs"
+          title="Run report"
+          description={runFolder}
+          actions={<Link href={projectSlug ? `/runs?project=${encodeURIComponent(projectSlug)}` : "/runs"} className="text-xs text-slate-400 hover:text-white">Back to run history</Link>}
+        />
+        <p className="text-slate-500 text-sm">Loading run…</p>
+      </PageScaffold>
     );
   }
 
@@ -114,29 +183,28 @@ export default function RunDashboardPage() {
     ) : null;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <Link href="/runs" className="text-sm text-slate-500 hover:text-purple-400 transition-colors mb-3 inline-block">
-        ← Run history
-      </Link>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <PageHeader
+          eyebrow="Runs"
+          title="Run report"
+          description={runFolder}
+          actions={
+            <div className="flex items-center gap-2">
+              <Link href={projectSlug ? `/runs?project=${encodeURIComponent(projectSlug)}` : "/runs"} className="text-xs text-slate-400 hover:text-white">
+                Back to run history
+              </Link>
+              <span className={`text-sm font-semibold px-3 py-1 rounded-full border ${statusClasses}`}>
+                {summary.status}
+              </span>
+            </div>
+          }
+        />
 
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center justify-between gap-3 mb-2">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold mb-1">
-            <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-              Run report
-            </span>
-          </h1>
-          <p className="text-xs font-mono text-slate-400">{runFolder}</p>
+        <div className="text-xs text-slate-500">
+          Started {fmtTime(summary.started_at)} · Finished {fmtTime(summary.finished_at)} ·
+          Duration {fmtDuration(summary.duration_s)}
         </div>
-        <span className={`text-sm font-semibold px-3 py-1 rounded-full border ${statusClasses}`}>
-          {summary.status}
-        </span>
-      </motion.div>
-
-      <div className="text-xs text-slate-500 mb-6">
-        Started {fmtTime(summary.started_at)} · Finished {fmtTime(summary.finished_at)} ·
-        Duration {fmtDuration(summary.duration_s)}
-      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -257,6 +325,72 @@ export default function RunDashboardPage() {
       </AnimatedCard>
 
       {/* Artefacts */}
+      <AnimatedCard glow="purple" delay={0.23} className="mb-6">
+        <h3 className="text-sm font-bold text-white mb-3">Run comparison</h3>
+        <div className="flex flex-wrap items-end gap-3 mb-3">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500">Compare against</span>
+            <select
+              value={compareRun}
+              onChange={(e) => setCompareRun(e.target.value)}
+              className="block mt-1 min-w-[22rem] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-200"
+            >
+              <option value="">Select another run…</option>
+              {recentRuns.map((r) => (
+                <option key={r.run_name} value={r.run_name}>
+                  {r.run_name} · {r.status} · {fmtTime(r.timestamp)}
+                </option>
+              ))}
+            </select>
+          </label>
+          {compareSummary && (
+            <div className="text-xs text-slate-300">
+              Δ Passed {summary.passed - compareSummary.passed >= 0 ? "+" : ""}
+              {summary.passed - compareSummary.passed}
+              <span className="text-slate-500 mx-2">|</span>
+              Δ Failed {summary.failed - compareSummary.failed >= 0 ? "+" : ""}
+              {summary.failed - compareSummary.failed}
+              <span className="text-slate-500 mx-2">|</span>
+              Δ Pass rate {summary.pass_rate - compareSummary.pass_rate >= 0 ? "+" : ""}
+              {(summary.pass_rate - compareSummary.pass_rate).toFixed(1)}%
+            </div>
+          )}
+        </div>
+        {!compareSummary && (
+          <p className="text-xs text-slate-500">Pick a prior run to view deltas.</p>
+        )}
+      </AnimatedCard>
+
+      <AnimatedCard glow="pink" delay={0.24} className="mb-6">
+        <h3 className="text-sm font-bold text-white mb-3">Flaky signals (recent runs)</h3>
+        {flakyRows.length === 0 ? (
+          <p className="text-xs text-slate-500">No pass/fail-flipping tests detected in recent runs.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/10">
+                <tr>
+                  <th className="py-1.5 text-left">Test</th>
+                  <th className="py-1.5 text-left">PASS count</th>
+                  <th className="py-1.5 text-left">FAIL count</th>
+                  <th className="py-1.5 text-left">Seen in runs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flakyRows.map((f) => (
+                  <tr key={f.name} className="border-b border-white/5">
+                    <td className="py-1.5 text-slate-200">{f.name}</td>
+                    <td className="py-1.5 text-emerald-300">{f.pass}</td>
+                    <td className="py-1.5 text-red-300">{f.fail}</td>
+                    <td className="py-1.5 text-slate-400">{f.seen}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </AnimatedCard>
+
       <AnimatedCard glow="cyan" delay={0.25} className="mb-6">
         <h3 className="text-sm font-bold text-white mb-3">Artefacts</h3>
         <div className="flex flex-wrap items-center gap-2">
@@ -280,6 +414,50 @@ export default function RunDashboardPage() {
           (totals, by-tag, by-suite). <span className="text-slate-300">Log</span> is the engineer view
           (every keyword call, arguments, screenshots on failure).
         </p>
+
+        {/* Phase 4: Playwright trace viewer links. Only rendered when
+            the suite opted in via PlaywrightDebug.robot AND captured
+            a trace.zip. The Microsoft-hosted trace viewer accepts a
+            URL to the trace file, so we just hand it ours -- no
+            additional infrastructure on our side. */}
+        {arts.playwright_traces && arts.playwright_traces.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-white/5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-purple-300">
+                Playwright trace
+              </span>
+              <span className="text-[10px] text-slate-500">
+                opens in trace.playwright.dev
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {arts.playwright_traces.map((traceFile) => {
+                // The viewer takes ?trace=<URL>. We hand it the
+                // authenticated file URL the existing artifact server
+                // produces.
+                const traceUrl = api.runs.fileUrl(runFolder, traceFile);
+                const viewerUrl = `https://trace.playwright.dev/?trace=${encodeURIComponent(traceUrl)}`;
+                return (
+                  <a
+                    key={traceFile}
+                    href={viewerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs px-3 py-1.5 rounded-lg bg-fuchsia-600/30 text-fuchsia-200 border border-fuchsia-500/30 hover:bg-fuchsia-600/40 transition-colors"
+                    title={`Open ${traceFile} in Playwright trace viewer`}
+                  >
+                    {traceFile}
+                  </a>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-500 mt-2">
+              Click any test step in the viewer to see the DOM, screenshot,
+              network calls, and console logs at that exact moment. This is
+              the best debug surface available -- far richer than log.html.
+            </p>
+          </div>
+        )}
       </AnimatedCard>
 
       {/* Screenshots */}
@@ -301,7 +479,8 @@ export default function RunDashboardPage() {
           </div>
         </AnimatedCard>
       )}
-    </div>
+      </motion.div>
+    </PageScaffold>
   );
 }
 

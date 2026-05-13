@@ -17,7 +17,7 @@ Auth model:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -27,9 +27,9 @@ from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
 from ai_qa_portal.backend.config import settings
+
 from .db import (
     GlobalRole,
-    ProjectMembership,
     ProjectRole,
     User,
     get_db,
@@ -185,7 +185,7 @@ def get_current_user(
     if user.session_revoked_at is not None:
         iat = payload.get("iat")
         if isinstance(iat, (int, float)):
-            iat_dt = datetime.fromtimestamp(int(iat), tz=timezone.utc)
+            iat_dt = datetime.fromtimestamp(int(iat), tz=UTC)
             if iat_dt < user.session_revoked_at:
                 raise HTTPException(
                     status.HTTP_401_UNAUTHORIZED,
@@ -194,7 +194,7 @@ def get_current_user(
 
     # Best-effort last_login_at refresh; don't fail the request if it errors.
     try:
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now(UTC)
         db.commit()
     except Exception:
         db.rollback()
@@ -220,8 +220,8 @@ def user_owns_project_uuid(current_user: User, project_id: UUID | str) -> bool:
     if current_user.is_admin:
         return True
     # Local import to dodge the project_registry -> services circular path.
-    from ai_qa_portal.backend.project_registry import slug_for_project_id
     import project_manager
+    from ai_qa_portal.backend.project_registry import slug_for_project_id
 
     slug = slug_for_project_id(project_id)
     if not slug:
@@ -236,6 +236,76 @@ def assert_user_owns_project(current_user: User, project_id: UUID | str) -> None
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "You do not have access to this project",
+        )
+
+
+def user_can_create_in_project(
+    db: Session,
+    current_user: User,
+    project_id: UUID | str,
+    min_role: ProjectRole | None = None,
+) -> bool:
+    """True if *current_user* may create resources (sprints, stories, etc.) in
+    the project this UUID maps to.
+
+    Resolution order:
+      1. Admin -> True. Admins can create anywhere.
+      2. Filesystem owner of the project's slug -> True. This is the
+         legacy fallback: projects created before the DB-membership table
+         existed only carry an owner on disk; we keep this path so those
+         projects don't 403 on every action.
+      3. DB membership at >= ``min_role`` on the project's slug -> True.
+      4. Otherwise False.
+
+    The default minimum role is **lead** (the project-level "team lead"
+    role; ``ProjectRole.lead``) -- the same bar as
+    ``POST /api/projects/{name}/members`` and the invitation-create endpoint.
+    Keeping the threshold consistent across creation-style endpoints means a
+    user who can invite teammates to a project can also scaffold sprints
+    and stories in it; viewers and plain members cannot.
+    """
+    # Late binding so callers can pass ``None`` to get the default without
+    # having to import ProjectRole themselves.
+    if min_role is None:
+        min_role = ProjectRole.lead
+
+    if current_user.is_admin:
+        return True
+    # Local imports to dodge the project_registry -> services circular path
+    # and to keep ``project_manager`` (a CLI-era top-level module) lazy.
+    import project_manager
+    from ai_qa_portal.backend.project_registry import slug_for_project_id
+
+    slug = slug_for_project_id(project_id)
+    if not slug:
+        return False
+    # Filesystem-owner fallback (legacy projects without DB memberships).
+    owner = project_manager.get_project_owner(slug)
+    if owner and owner == current_user.id:
+        return True
+    # DB membership at >= min_role.
+    actual = effective_project_role(db, current_user, slug)
+    if actual is None:
+        return False
+    return project_role_at_least(actual, min_role)
+
+
+def assert_user_can_create_in_project(
+    db: Session,
+    current_user: User,
+    project_id: UUID | str,
+    min_role: ProjectRole | None = None,
+) -> None:
+    """Raise 403 unless *current_user* may create resources in the project.
+
+    See :func:`user_can_create_in_project` for the resolution order.
+    """
+    if min_role is None:
+        min_role = ProjectRole.lead
+    if not user_can_create_in_project(db, current_user, project_id, min_role):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"This action requires at least the '{min_role.value}' role on the project",
         )
 
 

@@ -1,0 +1,165 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1977]:
+      - generic [ref=e1979]:
+        - generic [ref=e1981]: TB
+        - generic [ref=e1982]:
+          - generic [ref=e1983]: TestingBuddy AI
+          - generic [ref=e1984]: Testing Platform
+      - generic [ref=e1985]:
+        - generic [ref=e1986]:
+          - generic [ref=e1987]: Main
+          - list [ref=e1989]:
+            - listitem [ref=e1990]:
+              - link "Dashboard" [ref=e1991] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1992]
+                - generic [ref=e1995]: Dashboard
+            - listitem [ref=e1996]:
+              - link "Curriculum" [ref=e1997] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1998]
+                - generic [ref=e2000]: Curriculum
+            - listitem [ref=e2001]:
+              - link "Settings" [ref=e2002] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e2003]
+                - generic [ref=e2006]: Settings
+        - generic [ref=e2008] [cursor=pointer]:
+          - generic [ref=e2009]: 🎯 Planning & Strategy
+          - img [ref=e2010]
+        - generic [ref=e2013] [cursor=pointer]:
+          - generic [ref=e2014]: ✏️ Test Design & Creation
+          - img [ref=e2015]
+        - generic [ref=e2018] [cursor=pointer]:
+          - generic [ref=e2019]: 🤖 Automation & Framework
+          - img [ref=e2020]
+        - generic [ref=e2023] [cursor=pointer]:
+          - generic [ref=e2024]: ⚡ Test Execution & Management
+          - img [ref=e2025]
+        - generic [ref=e2028] [cursor=pointer]:
+          - generic [ref=e2029]: 📊 Reporting & Insights
+          - img [ref=e2030]
+        - generic [ref=e2033] [cursor=pointer]:
+          - generic [ref=e2034]: 🔧 Optimization & Maintenance
+          - img [ref=e2035]
+        - generic [ref=e2038] [cursor=pointer]:
+          - generic [ref=e2039]: 🧠 AI Intelligence & Prediction
+          - img [ref=e2040]
+      - generic [ref=e2043]:
+        - list [ref=e2044]:
+          - listitem [ref=e2045]:
+            - button "Chat History" [ref=e2046] [cursor=pointer]:
+              - img [ref=e2047]
+              - generic [ref=e2049]: Chat History
+        - generic [ref=e2050]:
+          - generic [ref=e2052]: M
+          - generic [ref=e2053]:
+            - paragraph [ref=e2054]: Meet Sheth
+            - paragraph [ref=e2055]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e2056] [cursor=pointer]:
+          - img [ref=e2057]
+          - generic [ref=e2060]: Sign Out
+      - button "Toggle Sidebar" [ref=e2061]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e2170]:
+          - button "Back to Curriculum" [ref=e2172] [cursor=pointer]:
+            - img
+            - text: Back to Curriculum
+          - generic [ref=e2173]:
+            - generic [ref=e2175]: 🚧 Coming Soon
+            - heading "GenAI Foundation for QA Professionals" [level=1] [ref=e2176]:
+              - img [ref=e2177]
+              - text: GenAI Foundation for QA Professionals
+            - paragraph [ref=e2182]: Phase 1 of your 100-day journey to AI Automation Tester
+          - generic [ref=e2184]:
+            - generic [ref=e2185]:
+              - generic [ref=e2186]:
+                - img [ref=e2187]
+                - paragraph [ref=e2190]: 1-2 Months
+                - paragraph [ref=e2191]: Duration
+              - generic [ref=e2192]:
+                - img [ref=e2193]
+                - paragraph [ref=e2195]: 7 Modules
+                - paragraph [ref=e2196]: Comprehensive
+              - generic [ref=e2197]:
+                - img [ref=e2198]
+                - paragraph [ref=e2201]: $75K-$95K
+                - paragraph [ref=e2202]: Target Salary
+              - generic [ref=e2203]:
+                - img [ref=e2204]
+                - paragraph [ref=e2209]: Beginner
+                - paragraph [ref=e2210]: Level
+            - generic [ref=e2211]:
+              - heading "Course Modules (Locked)" [level=2] [ref=e2212]:
+                - img [ref=e2213]
+                - text: Course Modules (Locked)
+              - generic [ref=e2216]:
+                - generic [ref=e2217]:
+                  - img [ref=e2218]
+                  - generic [ref=e2221]:
+                    - paragraph [ref=e2222]: "Module 1: Introduction to GenAI & LLMs"
+                    - paragraph [ref=e2223]: Understanding AI fundamentals, GPT models, and their applications in testing
+                - generic [ref=e2224]:
+                  - img [ref=e2225]
+                  - generic [ref=e2228]:
+                    - paragraph [ref=e2229]: "Module 2: Prompt Engineering Mastery"
+                    - paragraph [ref=e2230]: Crafting effective prompts for test generation and automation
+                - generic [ref=e2231]:
+                  - img [ref=e2232]
+                  - generic [ref=e2235]:
+                    - paragraph [ref=e2236]: "Module 3: OpenAI API Integration"
+                    - paragraph [ref=e2237]: Working with GPT models for test case creation and analysis
+                - generic [ref=e2238]:
+                  - img [ref=e2239]
+                  - generic [ref=e2242]:
+                    - paragraph [ref=e2243]: "Module 4: Claude & Anthropic APIs"
+                    - paragraph [ref=e2244]: Advanced AI interactions and structured testing outputs
+                - generic [ref=e2245]:
+                  - img [ref=e2246]
+                  - generic [ref=e2249]:
+                    - paragraph [ref=e2250]: "Module 5: Google Gemini Integration"
+                    - paragraph [ref=e2251]: Multimodal AI capabilities for visual and API testing
+                - generic [ref=e2252]:
+                  - img [ref=e2253]
+                  - generic [ref=e2256]:
+                    - paragraph [ref=e2257]: "Module 6: AI in QA Workflows"
+                    - paragraph [ref=e2258]: Practical testing applications and workflow automation
+                - generic [ref=e2259]:
+                  - img [ref=e2260]
+                  - generic [ref=e2263]:
+                    - paragraph [ref=e2264]: "Module 7: Building AI-Powered Tools"
+                    - paragraph [ref=e2265]: Create your first AI testing tool from scratch
+            - generic [ref=e2266]:
+              - generic [ref=e2267]:
+                - img [ref=e2268]
+                - heading "Get notified when this course launches" [level=3] [ref=e2271]
+              - paragraph [ref=e2272]: Be the first to know when enrollment opens for Phase 1
+              - generic [ref=e2273]:
+                - textbox "Enter your email" [ref=e2274]
+                - button "Notify Me" [ref=e2275] [cursor=pointer]
+            - generic [ref=e2276]:
+              - heading "What You'll Achieve" [level=4] [ref=e2277]:
+                - img [ref=e2278]
+                - text: What You'll Achieve
+              - list [ref=e2283]:
+                - listitem [ref=e2284]:
+                  - generic [ref=e2285]: ✓
+                  - generic [ref=e2286]: Master GenAI fundamentals and LLM APIs for testing
+                - listitem [ref=e2287]:
+                  - generic [ref=e2288]: ✓
+                  - generic [ref=e2289]: Build AI-powered test generation tools
+                - listitem [ref=e2290]:
+                  - generic [ref=e2291]: ✓
+                  - generic [ref=e2292]: Increase your salary potential to $75K-$95K
+                - listitem [ref=e2293]:
+                  - generic [ref=e2294]: ✓
+                  - generic [ref=e2295]: Gain hands-on experience with OpenAI, Claude, and Gemini

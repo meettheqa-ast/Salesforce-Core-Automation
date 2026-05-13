@@ -1,0 +1,23 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1656]:
+    - generic [ref=e1657]:
+      - heading "Welcome" [level=3] [ref=e1658]
+      - paragraph [ref=e1659]: Sign in to your account or create a new one to get started
+    - generic [ref=e1661]:
+      - tablist [ref=e1662]:
+        - tab "Sign In" [selected] [ref=e1663] [cursor=pointer]
+        - tab "Sign Up" [ref=e1664] [cursor=pointer]
+      - tabpanel "Sign In" [ref=e1665]:
+        - generic [ref=e1666]:
+          - generic [ref=e1667]:
+            - text: Email
+            - textbox "Email" [ref=e1668]:
+              - /placeholder: you@example.com
+          - generic [ref=e1669]:
+            - text: Password
+            - textbox "Password" [ref=e1670]:
+              - /placeholder: ••••••••
+          - button "Sign In" [ref=e1671] [cursor=pointer]

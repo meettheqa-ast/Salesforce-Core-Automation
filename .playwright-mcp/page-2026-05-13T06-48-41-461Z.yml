@@ -1,0 +1,110 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - generic [ref=e12]: TB
+        - generic [ref=e13]:
+          - generic [ref=e14]: TestingBuddy AI
+          - generic [ref=e15]: Testing Platform
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Main
+          - list [ref=e20]:
+            - listitem [ref=e21]:
+              - link "Dashboard" [ref=e22] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e23]
+                - generic [ref=e26]: Dashboard
+            - listitem [ref=e27]:
+              - link "Curriculum" [ref=e28] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e29]
+                - generic [ref=e31]: Curriculum
+            - listitem [ref=e32]:
+              - link "Settings" [ref=e33] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e34]
+                - generic [ref=e37]: Settings
+        - generic [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]:
+            - generic [ref=e40]: 🎯 Planning & Strategy
+            - img [ref=e41]
+          - list [ref=e45]:
+            - listitem [ref=e46]:
+              - button "🎯 Intelligent Test Planning Agent" [ref=e47] [cursor=pointer]:
+                - generic [ref=e48]: 🎯 Intelligent Test Planning Agent
+            - listitem [ref=e49]:
+              - button "📋 Test Strategy Builder Agent" [ref=e50] [cursor=pointer]:
+                - generic [ref=e51]: 📋 Test Strategy Builder Agent
+            - listitem [ref=e52]:
+              - button "🔍 AI Requirement Clarifier Agent" [ref=e53] [cursor=pointer]:
+                - generic [ref=e54]: 🔍 AI Requirement Clarifier Agent
+            - listitem [ref=e55]:
+              - button "📊 STLC Lifecycle Tracker Agent" [ref=e56] [cursor=pointer]:
+                - generic [ref=e57]: 📊 STLC Lifecycle Tracker Agent
+            - listitem [ref=e58]:
+              - button "🛡️ Release Readiness Agent" [ref=e59] [cursor=pointer]:
+                - generic [ref=e60]: 🛡️ Release Readiness Agent
+        - generic [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: ✏️ Test Design & Creation
+          - img [ref=e64]
+        - generic [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: 🤖 Automation & Framework
+          - img [ref=e69]
+        - generic [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: ⚡ Test Execution & Management
+          - img [ref=e74]
+        - generic [ref=e77] [cursor=pointer]:
+          - generic [ref=e78]: 📊 Reporting & Insights
+          - img [ref=e79]
+        - generic [ref=e82] [cursor=pointer]:
+          - generic [ref=e83]: 🔧 Optimization & Maintenance
+          - img [ref=e84]
+        - generic [ref=e87] [cursor=pointer]:
+          - generic [ref=e88]: 🧠 AI Intelligence & Prediction
+          - img [ref=e89]
+      - generic [ref=e92]:
+        - list [ref=e93]:
+          - listitem [ref=e94]:
+            - button "Chat History" [ref=e95] [cursor=pointer]:
+              - img [ref=e96]
+              - generic [ref=e98]: Chat History
+        - generic [ref=e99]:
+          - generic [ref=e101]: M
+          - generic [ref=e102]:
+            - paragraph [ref=e103]: Meet Sheth
+            - paragraph [ref=e104]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e105] [cursor=pointer]:
+          - img [ref=e106]
+          - generic [ref=e109]: Sign Out
+      - button "Toggle Sidebar" [ref=e110]
+    - generic [ref=e111]:
+      - banner [ref=e112]:
+        - button "Toggle Sidebar" [ref=e113] [cursor=pointer]:
+          - img
+          - generic [ref=e114]: Toggle Sidebar
+      - main [ref=e115]:
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]:
+              - img [ref=e120]
+              - generic [ref=e124]:
+                - heading "Intelligent Test Planning Agent" [level=1] [ref=e125]
+                - paragraph [ref=e126]: Generate comprehensive test plans from Jira requirements using AI
+            - button "View History" [ref=e127] [cursor=pointer]:
+              - img
+              - text: View History
+          - generic [ref=e128]:
+            - tablist [ref=e129]:
+              - tab "1. Setup" [ref=e130] [cursor=pointer]
+              - tab "2. Fetch Issues" [ref=e131] [cursor=pointer]
+              - tab "3. Review" [ref=e132] [cursor=pointer]
+              - tab "4. Test Plan" [active] [selected] [ref=e133] [cursor=pointer]
+            - tabpanel "4. Test Plan" [ref=e353]:
+              - generic [ref=e355]:
+                - img [ref=e356]
+                - heading "No test plan generated yet" [level=3] [ref=e359]
+                - paragraph [ref=e360]: Complete the previous steps to generate your test plan

@@ -1,0 +1,83 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1677]:
+      - generic [ref=e1679]:
+        - generic [ref=e1681]: TB
+        - generic [ref=e1682]:
+          - generic [ref=e1683]: TestingBuddy AI
+          - generic [ref=e1684]: Testing Platform
+      - generic [ref=e1685]:
+        - generic [ref=e1686]:
+          - generic [ref=e1687]: Main
+          - list [ref=e1689]:
+            - listitem [ref=e1690]:
+              - link "Dashboard" [ref=e1691] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1692]
+                - generic [ref=e1695]: Dashboard
+            - listitem [ref=e1696]:
+              - link "Curriculum" [ref=e1697] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1698]
+                - generic [ref=e1700]: Curriculum
+            - listitem [ref=e1701]:
+              - link "Settings" [ref=e1702] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e1703]
+                - generic [ref=e1706]: Settings
+        - generic [ref=e1708] [cursor=pointer]:
+          - generic [ref=e1709]: 🎯 Planning & Strategy
+          - img [ref=e1710]
+        - generic [ref=e1713] [cursor=pointer]:
+          - generic [ref=e1714]: ✏️ Test Design & Creation
+          - img [ref=e1715]
+        - generic [ref=e1718] [cursor=pointer]:
+          - generic [ref=e1719]: 🤖 Automation & Framework
+          - img [ref=e1720]
+        - generic [ref=e1723] [cursor=pointer]:
+          - generic [ref=e1724]: ⚡ Test Execution & Management
+          - img [ref=e1725]
+        - generic [ref=e1728] [cursor=pointer]:
+          - generic [ref=e1729]: 📊 Reporting & Insights
+          - img [ref=e1730]
+        - generic [ref=e1733] [cursor=pointer]:
+          - generic [ref=e1734]: 🔧 Optimization & Maintenance
+          - img [ref=e1735]
+        - generic [ref=e1738] [cursor=pointer]:
+          - generic [ref=e1739]: 🧠 AI Intelligence & Prediction
+          - img [ref=e1740]
+      - generic [ref=e1743]:
+        - list [ref=e1744]:
+          - listitem [ref=e1745]:
+            - button "Chat History" [ref=e1746] [cursor=pointer]:
+              - img [ref=e1747]
+              - generic [ref=e1749]: Chat History
+        - generic [ref=e1750]:
+          - generic [ref=e1752]: M
+          - generic [ref=e1753]:
+            - paragraph [ref=e1754]: Meet Sheth
+            - paragraph [ref=e1755]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e1756] [cursor=pointer]:
+          - img [ref=e1757]
+          - generic [ref=e1760]: Sign Out
+      - button "Toggle Sidebar" [ref=e1761]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e1767]:
+          - generic [ref=e1769]:
+            - generic [ref=e1770]:
+              - heading "TestingBuddy AI" [level=1] [ref=e1771]
+              - paragraph [ref=e1772]: Your Expert QA Testing Assistant
+            - generic [ref=e1773]:
+              - generic [ref=e1774]:
+                - img [ref=e1775]
+                - text: 0 day streak
+              - generic [ref=e1777]: 0 total days
+          - img [ref=e1780]

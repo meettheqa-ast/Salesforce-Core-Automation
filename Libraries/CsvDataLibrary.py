@@ -6,7 +6,6 @@ import csv
 import re
 from pathlib import Path
 
-
 # Lowercase header (after trim) -> canonical key used by generated tests
 _HEADER_ALIASES: dict[str, str] = {
     "zip": "PostalCode",

@@ -7,7 +7,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-
 # ── Projects ──────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
@@ -37,6 +36,11 @@ class CredentialsUpdate(BaseModel):
     security_token: str = ""
     slack_webhook_url: str = ""
     persona: str = "System Admin"
+    # Per-project Playwright-MCP opt-in (Phase 0+). Independent of the
+    # global ``settings.playwright_enabled`` master switch -- a project
+    # can opt in here AND the global switch must be on. Default False
+    # so existing projects are unchanged after this column lands.
+    playwright_mcp_enabled: bool = False
 
 class EnvironmentConfig(BaseModel):
     name: str
@@ -76,11 +80,16 @@ class ValidationErrorPayload(BaseModel):
     decoupled from the validator's internal representation)."""
     line: int = 0
     column: int = 0
-    kind: str = ""
+    kind: str = ""        # Now includes ``locator_not_found`` (Phase 1)
     symbol: str = ""
     message: str = ""
     closest_matches: list[str] = []
     snippet: str = ""
+    # Phase 1 Playwright locator-validation fields. Optional; only
+    # populated when ``kind == "locator_not_found"``. Backwards
+    # compatible: existing clients ignore these fields.
+    page_url: str = ""
+    suggested_locator: str = ""
 
 
 class GenerationAttempt(BaseModel):
@@ -119,6 +128,24 @@ class GenerateResponse(BaseModel):
     # LLM-provider failover events that occurred while servicing this
     # request. Empty in the common case (primary provider succeeded).
     provider_switches: list[ProviderSwitchPayload] = []
+    # When the deterministic recipe-first tier matched, this is the
+    # recipe name (e.g. "lead_routing_by_state") and NO LLM call was
+    # made. The frontend renders a "Generated from recipe: <name>"
+    # badge, proving the deterministic path fired. Empty/None means
+    # the LLM tier (local or cloud) produced the script.
+    used_recipe: str | None = None
+    used_recipe_confidence: str | None = None
+    # Phase 1 Playwright locator-validation surface. ``locator_validation_ok``
+    # is None when the gate didn't run for this generation (most current
+    # production traffic, since the feature is flagged off by default).
+    # When the gate ran: True/False with counts. ``shadow=True`` means
+    # results were observed but not allowed to block the Run button --
+    # used during the 1-2 week burn-in period to gather false-positive
+    # data before flipping the gate to load-bearing.
+    locator_validation_ok: bool | None = None
+    locator_validation_count: int = 0
+    locator_validation_failed: int = 0
+    locator_validation_shadow: bool = False
 
 class StepwiseProgress(BaseModel):
     step: int

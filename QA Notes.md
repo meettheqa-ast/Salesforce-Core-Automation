@@ -19,7 +19,7 @@ Use the **QA** branch for shared test automation work aligned with your team’s
 
 ## What this project is
 
-**Test Intelligence Platform** — a **Streamlit** web app plus **Robot Framework** test assets for **Salesforce** (UI via Selenium, optional API libraries). Users describe tests in plain English; an LLM generates **`.robot`** suites using a live **keyword catalog** tied to Page Objects and shared keywords. Runs target a Salesforce **sandbox** (URL, user, password supplied at run time — not committed to git).
+**Test Intelligence Platform** — a **Next.js** web app (`frontend/`) backed by a **FastAPI** service (`ai_qa_portal/backend/`) plus **Robot Framework** test assets for **Salesforce** (UI via Selenium and Playwright, optional API libraries). A legacy **Streamlit** UI (`app.py`) also still works as a CLI / dev entry point. Users describe tests in plain English; an LLM generates **`.robot`** suites using a live **keyword catalog** tied to Page Objects and shared keywords. The default primary LLM is the **Cursor SDK** (when `CURSOR_API_KEY` is set), with Gemini / OpenAI / Anthropic / Groq / Ollama as fallback providers. Runs target a Salesforce **sandbox** (URL, user, password supplied at run time — not committed to git).
 
 ---
 
@@ -27,7 +27,7 @@ Use the **QA** branch for shared test automation work aligned with your team’s
 
 | Area | What it does |
 |------|----------------|
-| **Natural language → Robot** | LLM (Gemini or OpenAI) turns descriptions into executable Robot scripts using project keywords and locators. |
+| **Natural language → Robot** | LLM (Cursor SDK by default; Gemini, OpenAI, Anthropic, Groq, Ollama, etc. as failover) turns descriptions into executable Robot scripts using project keywords and locators. |
 | **Keyword catalog** | Scans `Resources/PO` and related paths so generated tests align with real keywords and Page Objects. |
 | **Self-healing UI keywords** | Shared Robot keywords retry saves, read Salesforce validation panels, and fill missing modal fields (picklists, text, etc.) to reduce flaky failures. |
 | **Data-driven CSV** | CSV upload; when tests use **`@{LEADS_FROM_CSV}`**, **`CsvDataLibrary`** loads **`uploaded_test_data.csv`** and drives **FOR** loops over rows. |

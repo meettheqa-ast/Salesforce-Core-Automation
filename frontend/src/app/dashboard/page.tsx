@@ -6,8 +6,13 @@ import Link from "next/link";
 import MetricCard from "@/components/cards/MetricCard";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import AnalyticsChart from "@/components/execution/AnalyticsChart";
+import CreateProjectModal from "@/components/projects/CreateProjectModal";
+import CreateSprintModal from "@/components/sprints/CreateSprintModal";
+import CreateStoryModal from "@/components/user-stories/CreateStoryModal";
 import { api, type RunHistoryRow } from "@/lib/api";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import GlassSelect from "@/components/ui/GlassSelect";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 interface McpStatus { running: boolean; url?: string }
 interface AnalyticsSummary {
@@ -33,6 +38,12 @@ export default function DashboardPage() {
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [latestRuns, setLatestRuns] = useState<RunHistoryRow[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [timeRangeDays, setTimeRangeDays] = useState<7 | 14 | 30>(14);
+  // Quick-create modal toggles. Same modals the top-nav Quick create
+  // menu uses, so users get a consistent flow regardless of entry.
+  const [showCreateProject, setShowCreateProject] = useState(false);
+  const [showCreateSprint, setShowCreateSprint] = useState(false);
+  const [showCreateStory, setShowCreateStory] = useState(false);
 
   useEffect(() => {
     api.mcp.health().then(setMcpStatus).catch(() => setMcpStatus({ running: false }));
@@ -46,34 +57,92 @@ export default function DashboardPage() {
     }
   }, [selectedProject]);
 
+  const filteredHistory = (analytics?.history || []).filter((h: any) => {
+    if (!h.timestamp) return true;
+    const dt = new Date(h.timestamp);
+    if (Number.isNaN(dt.getTime())) return true;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - timeRangeDays);
+    return dt >= cutoff;
+  });
+
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-4xl font-bold">
-            <span className="bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">Dashboard</span>
-          </h1>
-          <p className="text-slate-400">Monitor test runs, system health, and performance.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <GlassSelect
-            className="min-w-[10rem]"
-            value={selectedProject}
-            onChange={setSelectedProject}
-            placeholder="All Projects"
-            options={[
-              { value: "", label: "All Projects" },
-              ...projects.map((p) => ({ value: p, label: p })),
-            ]}
-          />
-          <Link href="/generate">
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
-              + New Test
-            </motion.button>
-          </Link>
-        </div>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <PageHeader
+          eyebrow="Operations"
+          title="Dashboard"
+          description="Monitor test runs, system health, and performance."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <GlassSelect
+                className="min-w-[10rem]"
+                value={selectedProject}
+                onChange={setSelectedProject}
+                placeholder="All Projects"
+                options={[
+                  { value: "", label: "All Projects" },
+                  ...projects.map((p) => ({ value: p, label: p })),
+                ]}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCreateProject(true)}
+                className="px-3 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white"
+              >
+                + Project
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateSprint(true)}
+                className="px-3 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white"
+              >
+                + Sprint
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateStory(true)}
+                className="px-3 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white"
+              >
+                + Story
+              </button>
+              <Link href={selectedProject ? `/generate?project=${encodeURIComponent(selectedProject)}` : "/generate"}>
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
+                  + New Test
+                </motion.button>
+              </Link>
+            </div>
+          }
+        />
       </motion.div>
+
+      <CreateProjectModal
+        open={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onCreated={() => {
+          api.projects.list().then(setProjects).catch(() => {});
+          notifyTreeRefresh({ kind: "project" });
+        }}
+      />
+      <CreateSprintModal
+        open={showCreateSprint}
+        onClose={() => setShowCreateSprint(false)}
+        onCreated={(sprint) => {
+          notifyTreeRefresh({ kind: "sprint", projectId: sprint.project_id });
+        }}
+      />
+      <CreateStoryModal
+        open={showCreateStory}
+        onClose={() => setShowCreateStory(false)}
+        onCreated={(story) => {
+          notifyTreeRefresh({
+            kind: "story",
+            projectId: story.project_id,
+            sprintId: story.sprint_id || undefined,
+          });
+        }}
+      />
 
       {/* Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -87,15 +156,35 @@ export default function DashboardPage() {
       <div className="grid md:grid-cols-2 gap-6">
         {/* Analytics Chart */}
         <AnimatedCard delay={0.3} glow="purple">
-          <h3 className="text-sm font-bold text-white mb-4">Pass / Fail Trend</h3>
-          <AnalyticsChart data={analytics?.history || []} />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold text-white">Pass / Fail Trend</h3>
+            <GlassSelect
+              className="min-w-[9rem]"
+              value={String(timeRangeDays)}
+              onChange={(v) => setTimeRangeDays(Number(v) as 7 | 14 | 30)}
+              options={[
+                { value: "7", label: "Last 7 days" },
+                { value: "14", label: "Last 14 days" },
+                { value: "30", label: "Last 30 days" },
+              ]}
+            />
+          </div>
+          <AnalyticsChart data={filteredHistory as any} />
+          <div className="mt-3 text-xs text-slate-500">
+            {filteredHistory.length} run(s) in selected window. Click any run in "Recent Runs" to drill into detail.
+          </div>
         </AnimatedCard>
 
         {/* Recent Runs */}
         <AnimatedCard delay={0.4} glow="cyan">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-white">Recent Runs</h3>
-            <Link href="/runs" className="text-[11px] text-slate-400 hover:text-white">All runs →</Link>
+            <Link
+              href={selectedProject ? `/runs?project=${encodeURIComponent(selectedProject)}` : "/runs"}
+              className="text-[11px] text-slate-400 hover:text-white"
+            >
+              All runs →
+            </Link>
           </div>
           {latestRuns.length === 0 ? (
             <p className="text-slate-500 text-sm">No runs yet. Generate and run a test to see results.</p>
@@ -132,7 +221,9 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <Link
-                      href={`/runs/${encodeURIComponent(run.run_name)}`}
+                      href={`/runs/${encodeURIComponent(run.run_name)}${
+                        selectedProject ? `?project=${encodeURIComponent(selectedProject)}` : ""
+                      }`}
                       className="text-[11px] px-2.5 py-1 rounded-md bg-purple-600/30 text-purple-200 border border-purple-500/30 hover:bg-purple-600/40 transition-colors"
                     >
                       Open
@@ -155,6 +246,6 @@ export default function DashboardPage() {
           )}
         </AnimatedCard>
       </div>
-    </div>
+    </PageScaffold>
   );
 }

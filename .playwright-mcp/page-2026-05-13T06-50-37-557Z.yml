@@ -1,0 +1,97 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - generic [ref=e12]: TB
+        - generic [ref=e13]:
+          - generic [ref=e14]: TestingBuddy AI
+          - generic [ref=e15]: Testing Platform
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Main
+          - list [ref=e20]:
+            - listitem [ref=e21]:
+              - link "Dashboard" [ref=e22] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e23]
+                - generic [ref=e26]: Dashboard
+            - listitem [ref=e27]:
+              - link "Curriculum" [ref=e28] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e29]
+                - generic [ref=e31]: Curriculum
+            - listitem [ref=e32]:
+              - link "Settings" [ref=e33] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e34]
+                - generic [ref=e37]: Settings
+        - generic [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: 🎯 Planning & Strategy
+          - img [ref=e41]
+        - generic [ref=e44] [cursor=pointer]:
+          - generic [ref=e45]: ✏️ Test Design & Creation
+          - img [ref=e46]
+        - generic [ref=e49] [cursor=pointer]:
+          - generic [ref=e50]: 🤖 Automation & Framework
+          - img [ref=e51]
+        - generic [ref=e54] [cursor=pointer]:
+          - generic [ref=e55]: ⚡ Test Execution & Management
+          - img [ref=e56]
+        - generic [ref=e59] [cursor=pointer]:
+          - generic [ref=e60]: 📊 Reporting & Insights
+          - img [ref=e61]
+        - generic [ref=e64] [cursor=pointer]:
+          - generic [ref=e65]: 🔧 Optimization & Maintenance
+          - img [ref=e66]
+        - generic [ref=e69] [cursor=pointer]:
+          - generic [ref=e70]: 🧠 AI Intelligence & Prediction
+          - img [ref=e71]
+      - generic [ref=e74]:
+        - list [ref=e75]:
+          - listitem [ref=e76]:
+            - button "Chat History" [ref=e77] [cursor=pointer]:
+              - img [ref=e78]
+              - generic [ref=e80]: Chat History
+        - generic [ref=e81]:
+          - generic [ref=e83]: M
+          - generic [ref=e84]:
+            - paragraph [ref=e85]: Meet Sheth
+            - paragraph [ref=e86]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e87] [cursor=pointer]:
+          - img [ref=e88]
+          - generic [ref=e91]: Sign Out
+      - button "Toggle Sidebar" [ref=e92]
+    - generic [ref=e93]:
+      - banner [ref=e94]:
+        - button "Toggle Sidebar" [ref=e95] [cursor=pointer]:
+          - img
+          - generic [ref=e96]: Toggle Sidebar
+      - main [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - heading "Settings" [level=1] [ref=e102]
+              - paragraph [ref=e103]: Manage your account and preferences
+            - generic [ref=e104]:
+              - generic [ref=e105]:
+                - img [ref=e106]
+                - text: 0 day streak
+              - generic [ref=e108]: 0 total days
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - heading "Profile Information" [level=3] [ref=e112]
+              - paragraph [ref=e113]: Update your account details and preferences
+            - generic [ref=e114]:
+              - generic [ref=e115]:
+                - text: Full Name
+                - textbox "Full Name" [ref=e116]:
+                  - /placeholder: Your full name
+                  - text: Meet Sheth
+              - generic [ref=e117]:
+                - text: Email
+                - textbox "Email" [disabled] [ref=e118]: m.sheth@astounddigital.com
+                - paragraph [ref=e119]: Email cannot be changed
+              - button "Save Changes" [ref=e120] [cursor=pointer]

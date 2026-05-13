@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent
 SCAN_DIRS = ("Resources/PO", "Resources/Common")
@@ -250,7 +249,7 @@ def main() -> None:
         keywords.extend(parse_keyword_file(f))
 
     catalog = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "project_root_hint": str(ROOT.name),
         "scanned_paths": [str(Path(d).as_posix()) for d in SCAN_DIRS],
         "keyword_count": len(keywords),

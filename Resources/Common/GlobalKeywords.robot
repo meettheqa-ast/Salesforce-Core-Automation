@@ -249,18 +249,49 @@ Set Address Via Lookup
     ${city}=     Set Variable If    ${parts.__len__()} > 1    ${{$parts[1].strip()}}    ${EMPTY}
     ${state_raw}=    Set Variable If    ${parts.__len__()} > 2    ${{$parts[2].strip()}}    ${EMPTY}
     ${country}=    Set Variable If    ${parts.__len__()} > 3    ${{$parts[3].strip()}}    United States
+    # CRITICAL: expand 2-letter codes to full names BEFORE typing into
+    # the combobox. Salesforce's State picklist is searched by prefix
+    # against visible labels -- "CA" prefix-matches "Canada" before
+    # "California" (alphabetical), so we silently set the WRONG state.
+    # Normalize once here and the rest of the keyword stays simple.
+    ${state}=    Normalize State Or Province    ${state_raw}
 
     # Country first -- State/Province is dependent in standard SF picklists.
     Run Keyword And Ignore Error
     ...    Set Combobox By Aria Label    Country    ${country}
     Run Keyword And Ignore Error
-    ...    Set Combobox By Aria Label    State/Province    ${state_raw}
+    ...    Set Combobox By Aria Label    State/Province    ${state}
     # Street + City + Zip are plain text inputs; no Zip in our address
     # string format so leave Zip alone (Salesforce doesn't require it).
     Run Keyword And Ignore Error
     ...    Set Text Input By Name    street    ${street}
     Run Keyword And Ignore Error
     ...    Set Text Input By Name    city    ${city}
+
+Normalize State Or Province
+    [Documentation]    Expand a 2-letter US state or Canadian province
+    ...    code (e.g. ``CA``, ``ON``) into its full label (``California``,
+    ...    ``Ontario``). Already-expanded names pass through unchanged.
+    ...    Empty input returns empty.
+    ...
+    ...    **Why this exists.** Salesforce's State/Province picklist is
+    ...    searched by prefix against the *visible label*. Typing ``CA``
+    ...    matches ``Canada`` before ``California`` (alphabetical), so
+    ...    fallback fills silently pick the wrong state -- and routing
+    ...    rules that key off State Code then fire to the wrong queue.
+    ...    Normalizing to the full name disambiguates exactly this case.
+    [Tags]    address    utilities    normalize
+    [Arguments]    ${value}
+    ${stripped}=    Strip String    ${value}
+    IF    '${stripped}' == '${EMPTY}'
+        RETURN    ${EMPTY}
+    END
+    ${upper}=    Convert To Upper Case    ${stripped}
+    # US states + DC + commonly-used Canadian provinces. Codes are 2
+    # chars; anything else is assumed already a full name and passes
+    # through unchanged.
+    ${full_name}=    Evaluate    {"AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California","CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"District of Columbia","FL":"Florida","GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana","IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine","MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota","MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska","NV":"Nevada","NH":"New Hampshire","NJ":"New Jersey","NM":"New Mexico","NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio","OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island","SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas","UT":"Utah","VT":"Vermont","VA":"Virginia","WA":"Washington","WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming","ON":"Ontario","BC":"British Columbia","AB":"Alberta","QC":"Quebec","NS":"Nova Scotia","NB":"New Brunswick","MB":"Manitoba","SK":"Saskatchewan","PE":"Prince Edward Island","NL":"Newfoundland and Labrador","YT":"Yukon","NT":"Northwest Territories","NU":"Nunavut"}.get("${upper}", "${stripped}")
+    RETURN    ${full_name}
 
 Set Combobox By Aria Label
     [Documentation]    Type a value into a combobox identified by its
@@ -303,6 +334,45 @@ Set Text Input By Name
     Scroll Element Into View    ${field}
     Clear Element Text    ${field}
     Input Text    ${field}    ${value}
+
+Generate Lead Test Data
+    [Documentation]    Re-roll Faker for first/last name + company + email at
+    ...    test scope (NOT suite scope). Sets ``${leadFirstName}``,
+    ...    ``${leadLastName}``, ``${leadCompany}``, ``${leadEmail}`` as
+    ...    Test Variables so each test in a suite gets unique data --
+    ...    SalesData.robot's defaults are evaluated once at suite-import,
+    ...    so without this keyword every test in the same suite shares
+    ...    one Lead identity.
+    ...
+    ...    Optional ``${scenario_tag}`` (e.g. ``WestRoute``,
+    ...    ``CentralRoute``, ``UnassignedQueue``) gets baked into the
+    ...    last name and company name so the resulting Lead is trivially
+    ...    traceable in Salesforce list views: a row reading
+    ...    ``Smith_WestRoute @ WestRoute_Acme_4821`` tells you at a
+    ...    glance which scenario produced it. When omitted, data is
+    ...    pure Faker (no tag).
+    ...
+    ...    Use this at the START of each test in multi-test suites where
+    ...    tests share a flow but differ by a parameter (state, status,
+    ...    source). Single-test suites don't need this -- the
+    ...    suite-level Faker defaults already produce unique data per
+    ...    suite run.
+    [Tags]    test data    utilities    faker
+    [Arguments]    ${scenario_tag}=${EMPTY}
+    ${rand4}=    Generate Random String    4    [NUMBERS]
+    ${first}=    Set Variable    ${{FakerLibrary.FakerLibrary().first_name()}}
+    ${last}=     Set Variable    ${{FakerLibrary.FakerLibrary().last_name()}}
+    ${company}=    Set Variable    ${{FakerLibrary.FakerLibrary().company()}}
+    ${email}=    Set Variable    ${{FakerLibrary.FakerLibrary().email()}}
+    IF    '${scenario_tag}' != '${EMPTY}'
+        ${last}=    Set Variable    ${last}_${scenario_tag}
+        ${company}=    Set Variable    ${scenario_tag}_${company}_${rand4}
+    END
+    Set Test Variable    ${leadFirstName}    ${first}
+    Set Test Variable    ${leadLastName}     ${last}
+    Set Test Variable    ${leadCompany}      ${company}
+    Set Test Variable    ${leadEmail}        ${email}
+    Log    Generated test data: ${first} ${last} @ ${company} <${email}> (scenario_tag=${scenario_tag})    INFO
 
 Enter Into Search Field
     [Documentation]    Use this keyword to enter a value into the Input Search Field. The test first checks if the field name is provided; if not, it dynamically identifies the search input field in the dialog. It waits for the search field to be visible, scrolls it into view, and then enters the specified search term if provided. If the search term is not empty, the test waits for the search suggestion to appear, scrolls it into view, and clicks on the appropriate suggestion.
@@ -1420,6 +1490,25 @@ Verify Field Value On Detail Page
     ...                because that's the most common case in this project today.
     [Tags]    verification    detail-page
     [Arguments]    ${field_label}    ${expected_value}    ${sobject}=Lead
+    # SHORT-CIRCUIT for Owner-like fields. The Lead/Account/Case/etc.
+    # Owner field renders inside a Lightning Web Component slot
+    # projection that Selenium's Get Text doesn't traverse cleanly --
+    # AND assignment rules can fire async (a few seconds) so the value
+    # isn't on the page right after Save. ``Verify Lead Owner On Detail
+    # Page`` reloads the page, waits for spinners, then uses
+    # ``Wait Until Page Contains`` (which reads the rendered visible
+    # text and bypasses the slot/shadow-DOM gotcha entirely). Routing-
+    # rule queue names like ``Pool-NA-ISR-West`` are unique enough that
+    # substring matching is precise. Owner aliases live in the Create
+    # Dictionary below so adding a new alias updates both paths.
+    @{owner_aliases}=    Create List
+    ...    Lead Owner    Owner    Account Owner    Case Owner    Opportunity Owner    Contact Owner
+    ${is_owner_field}=    Run Keyword And Return Status
+    ...    Should Contain    ${owner_aliases}    ${field_label}
+    IF    ${is_owner_field}
+        Verify Lead Owner On Detail Page    ${expected_value}
+        RETURN
+    END
     # Map common field labels to their Salesforce API names. Aliases
     # (e.g. "Owner" / "Lead Owner" both -> "OwnerId") so the LLM/user
     # can use either label.

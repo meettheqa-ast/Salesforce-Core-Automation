@@ -46,10 +46,11 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Iterable, Literal, Optional
+from typing import Literal
 
 from ai_qa_portal.backend.config import REPO_ROOT
 from ai_qa_portal.backend.services import keyword_catalog as _catalog
@@ -63,6 +64,12 @@ ErrorKind = Literal[
     "missing_resource",
     "missing_library",
     "parse_error",
+    # Phase 1: Playwright-driven locator validation. Emitted by
+    # ``services.playwright_validate``; treated by the same fix-prompt
+    # builder as the AST kinds. ``symbol`` is the literal locator
+    # string the LLM produced; ``closest_matches`` are live-DOM "did
+    # you mean" suggestions.
+    "locator_not_found",
 ]
 
 
@@ -151,7 +158,7 @@ def _normalize_keyword_name(name: str) -> str:
     return name.strip().lower().replace("_", " ")
 
 
-def _strip_qualifier(name: str) -> tuple[str, Optional[str]]:
+def _strip_qualifier(name: str) -> tuple[str, str | None]:
     """``"GlobalApi.API Seed Lead"`` -> ``("API Seed Lead", "GlobalApi")``."""
     if "." in name and not name.startswith("."):
         head, tail = name.split(".", 1)
@@ -164,7 +171,7 @@ def _strip_qualifier(name: str) -> tuple[str, Optional[str]]:
 def _read_resource_universe(
     resource_path: Path,
     *,
-    seen: Optional[set[Path]] = None,
+    seen: set[Path] | None = None,
     depth: int = 0,
     max_depth: int = 5,
 ) -> tuple[set[str], set[str]]:
@@ -186,8 +193,8 @@ def _read_resource_universe(
     if not resource_path.is_file() or depth > max_depth:
         return out_vars, out_keywords
     try:
-        from robot.api import get_model
         import robot.api.parsing as rp
+        from robot.api import get_model
     except ImportError:  # pragma: no cover
         return out_vars, out_keywords
     try:
@@ -252,7 +259,7 @@ def _read_resource_universe(
     return out_vars, out_keywords
 
 
-def _resolve_resource_path(raw: str, suite_path: Path) -> Optional[Path]:
+def _resolve_resource_path(raw: str, suite_path: Path) -> Path | None:
     """Apply Robot's path resolution rules in the simplest form: try the
     path as given (relative to the suite, then absolute), with the
     ``${CURDIR}`` token rewritten to the suite directory. Return ``None``
@@ -271,7 +278,7 @@ def _resolve_resource_path(raw: str, suite_path: Path) -> Optional[Path]:
     return None
 
 
-def _resolve_library_path(raw: str, suite_path: Path) -> Optional[Path]:
+def _resolve_library_path(raw: str, suite_path: Path) -> Path | None:
     """Same as ``_resolve_resource_path`` but only for ``.py`` library
     imports. Bare-name imports (``Library  SeleniumLibrary``) return
     ``None`` and are handled by the framework allow-list elsewhere."""
@@ -310,8 +317,8 @@ def _build_universe(suite_path: Path) -> tuple[set[str], set[str], list[str]]:
     # imports. A separate visitor handles each so each can fail
     # independently.
     try:
-        from robot.api import get_model
         import robot.api.parsing as rp
+        from robot.api import get_model
     except ImportError:  # pragma: no cover
         return known_keywords, known_vars, missing_imports
 
@@ -412,8 +419,8 @@ def validate(suite_path: Path | str) -> ValidationReport:
         )
 
     try:
-        from robot.api import get_model
         import robot.api.parsing as rp
+        from robot.api import get_model
     except ImportError as exc:  # pragma: no cover
         return ValidationReport(
             ok=False,
@@ -586,45 +593,94 @@ def build_fix_prompt(report: ValidationReport, *, max_errors: int = 8) -> str:
     stays bounded — fixing the first 8 typically resolves the rest
     transitively (e.g. one bad ``Resource`` import causes every keyword
     from it to be undefined).
+
+    For ``locator_not_found`` errors (Phase 1 -- Playwright validator),
+    the prompt frames the failure as "this selector doesn't exist on
+    the live page" and includes live-DOM "did you mean" alternatives so
+    the LLM has something concrete to retry with.
     """
     if report.ok:
         return ""
 
-    head = (
-        "Your generated script has unresolved symbols. Fix EACH one by replacing "
-        "it with a real keyword or variable from the catalog you were given. Do "
-        "NOT invent new symbols — the validator will reject them.\n\n"
-        f"Found {len(report.errors)} issue(s):\n\n"
-    )
+    # Split errors so locator failures get a tailored heading -- they
+    # describe a *different* failure mode (live page reality) than the
+    # AST/dryrun kinds (static analysis), and conflating them in one
+    # generic intro confuses the LLM.
+    locator_errors = [e for e in report.errors if e.kind == "locator_not_found"]
+    other_errors = [e for e in report.errors if e.kind != "locator_not_found"]
 
-    body_lines: list[str] = []
-    visible = report.errors[:max_errors]
-    for i, err in enumerate(visible, 1):
-        loc = f"Line {err.line}" if err.line else "(file-level)"
-        kind_label = {
-            "undefined_keyword": "undefined keyword",
-            "undefined_variable": "undefined variable",
-            "missing_resource":  "missing Resource import",
-            "missing_library":   "missing Library import",
-            "parse_error":       "parse error",
-        }.get(err.kind, err.kind)
-        body_lines.append(f"{i}. {loc}: {kind_label} `{err.symbol}`")
-        if err.snippet:
-            body_lines.append(f"   On line: `{err.snippet.strip()}`")
-        if err.closest_matches:
-            body_lines.append(
-                "   Closest valid options: " + ", ".join(f"`{c}`" for c in err.closest_matches)
-            )
-        body_lines.append("")
+    sections: list[str] = []
 
-    if len(report.errors) > max_errors:
-        body_lines.append(
-            f"...and {len(report.errors) - max_errors} more error(s) of similar shape."
+    if other_errors:
+        head = (
+            "Your generated script has unresolved symbols. Fix EACH one by replacing "
+            "it with a real keyword or variable from the catalog you were given. Do "
+            "NOT invent new symbols — the validator will reject them.\n\n"
+            f"Found {len(other_errors)} static issue(s):\n\n"
         )
-        body_lines.append("")
+        sections.append(head + _format_error_list(other_errors, max_errors))
+
+    if locator_errors:
+        loc_head = (
+            "Additionally, the following locators do NOT exist on the live "
+            "Salesforce page Playwright loaded. Either the selector is wrong "
+            "for this org's customizations, or the test navigated to the wrong "
+            "page. Replace each one with a working alternative -- the live-DOM "
+            'suggestions below are real elements on the page:\n\n'
+            f"Found {len(locator_errors)} stale locator(s):\n\n"
+        )
+        sections.append(loc_head + _format_error_list(locator_errors, max_errors))
 
     tail = (
         "Return ONLY the corrected complete `*** Settings ***` ... `*** Test Cases ***` "
         "Robot file, no commentary."
     )
-    return head + "\n".join(body_lines) + "\n" + tail
+    return "\n\n".join(sections) + "\n\n" + tail
+
+
+def _format_error_list(errors: list[ValidationError], max_errors: int) -> str:
+    """Format a homogeneous error list as numbered bullets. Shared by
+    the AST/dryrun and locator branches of build_fix_prompt."""
+    body_lines: list[str] = []
+    visible = errors[:max_errors]
+    kind_label_map = {
+        "undefined_keyword":  "undefined keyword",
+        "undefined_variable": "undefined variable",
+        "missing_resource":   "missing Resource import",
+        "missing_library":    "missing Library import",
+        "parse_error":        "parse error",
+        "locator_not_found":  "stale locator (not on live page)",
+    }
+    for i, err in enumerate(visible, 1):
+        loc = f"Line {err.line}" if err.line else "(file-level)"
+        kind_label = kind_label_map.get(err.kind, err.kind)
+        body_lines.append(f"{i}. {loc}: {kind_label} `{err.symbol}`")
+        if err.snippet:
+            body_lines.append(f"   On line: `{err.snippet.strip()}`")
+        if err.closest_matches:
+            # For locator errors the suggestions are CSS/XPath strings;
+            # for other errors they're keyword/variable names. Same
+            # rendering is fine -- the LLM sees "Did you mean: X, Y, Z"
+            # in either case.
+            label = (
+                "Live elements on the page (use one of these instead): "
+                if err.kind == "locator_not_found"
+                else "Closest valid options: "
+            )
+            body_lines.append(
+                "   " + label + ", ".join(f"`{c}`" for c in err.closest_matches)
+            )
+        if err.kind == "locator_not_found" and err.message:
+            # Surface the page_url so the LLM knows WHICH page Playwright
+            # was on when the locator failed -- crucial when the bug is
+            # "wrong page" rather than "wrong selector".
+            body_lines.append(f"   Context: {err.message}")
+        body_lines.append("")
+
+    if len(errors) > max_errors:
+        body_lines.append(
+            f"...and {len(errors) - max_errors} more error(s) of similar shape."
+        )
+        body_lines.append("")
+
+    return "\n".join(body_lines)

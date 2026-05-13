@@ -1,0 +1,563 @@
+- generic:
+  - generic:
+    - list
+    - region "Notifications alt+T"
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic: TB
+                  - generic:
+                    - generic: TestingBuddy AI
+                    - generic: Testing Platform
+              - generic:
+                - generic:
+                  - generic: Main
+                  - generic:
+                    - list:
+                      - listitem:
+                        - link:
+                          - /url: /dashboard
+                          - img
+                          - generic: Dashboard
+                      - listitem:
+                        - link:
+                          - /url: /dashboard/curriculum
+                          - img
+                          - generic: Curriculum
+                      - listitem:
+                        - link:
+                          - /url: /dashboard/settings
+                          - img
+                          - generic: Settings
+                - generic:
+                  - generic:
+                    - generic: 🎯 Planning & Strategy
+                    - img
+                - generic:
+                  - generic:
+                    - generic: ✏️ Test Design & Creation
+                    - img
+                - generic:
+                  - generic:
+                    - generic: 🤖 Automation & Framework
+                    - img
+                  - generic:
+                    - generic:
+                      - list:
+                        - listitem:
+                          - button:
+                            - generic: 🤖 Automation Framework Setup Agent
+                        - listitem:
+                          - button:
+                            - generic: 🎯 Selenium Locator Intelligence Agent
+                        - listitem:
+                          - button:
+                            - generic: 🔄 Selenium to Playwright Converter
+                        - listitem:
+                          - button:
+                            - generic: 📤 Postman to Automation Converter Agent
+                        - listitem:
+                          - button:
+                            - generic: 📄 API Code Generator (Swagger Assistant)
+                        - listitem:
+                          - button:
+                            - generic: ✅ API Response Validator Agent
+                        - listitem:
+                          - button:
+                            - generic: 🔗 API Dependency Analyzer Agent
+                        - listitem:
+                          - button:
+                            - generic: 🎤 Voice Command QA Agent
+                - generic:
+                  - generic:
+                    - generic: ⚡ Test Execution & Management
+                    - img
+                - generic:
+                  - generic:
+                    - generic: 📊 Reporting & Insights
+                    - img
+                - generic:
+                  - generic:
+                    - generic: 🔧 Optimization & Maintenance
+                    - img
+                - generic:
+                  - generic:
+                    - generic: 🧠 AI Intelligence & Prediction
+                    - img
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - button:
+                        - img
+                        - generic: Chat History
+                  - generic:
+                    - generic:
+                      - generic: M
+                    - generic:
+                      - paragraph: Meet Sheth
+                      - paragraph: m.sheth@astounddigital.com
+                  - button:
+                    - img
+                    - generic: Sign Out
+              - button
+        - generic:
+          - banner:
+            - button:
+              - img
+              - generic: Toggle Sidebar
+          - main:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - heading [level=1]: Selenium ⇄ Playwright Converter
+                    - paragraph: Convert your test automation scripts between Selenium and Playwright frameworks
+                  - generic:
+                    - generic:
+                      - img
+                      - text: 0 day streak
+                    - generic: 0 total days
+              - generic:
+                - button [expanded]:
+                  - img
+                  - text: Save Conversion
+                - button:
+                  - img
+                  - text: Clear All
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: Source Language
+                      - combobox:
+                        - generic: Selenium Java
+                        - img
+                    - generic:
+                      - button:
+                        - img
+                      - img
+                    - generic:
+                      - generic: Target Language
+                      - combobox:
+                        - generic: Playwright Java
+                        - img
+                    - button: Convert Code
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Code Templates
+                      - paragraph: Load example Selenium patterns to quickly test conversions
+                    - generic:
+                      - generic:
+                        - tablist:
+                          - tab [selected]: All
+                          - tab:
+                            - img
+                            - text: Authentication
+                          - tab:
+                            - img
+                            - text: Forms
+                          - tab:
+                            - img
+                            - text: File Uploads
+                          - tab:
+                            - img
+                            - text: Navigation
+                          - tab:
+                            - img
+                            - text: Interactions
+                        - generic:
+                          - generic:
+                            - generic:
+                              - tabpanel:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - img
+                                          - heading [level=4]: Login Form (Java)
+                                        - paragraph: Basic login with username and password fields
+                                        - generic: Java
+                                      - button: Load
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - img
+                                          - heading [level=4]: Form Submission (Java)
+                                        - paragraph: Fill out and submit a multi-field form
+                                        - generic: Java
+                                      - button: Load
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - img
+                                          - heading [level=4]: File Upload (Java)
+                                        - paragraph: Upload a file using input element
+                                        - generic: Java
+                                      - button: Load
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - img
+                                          - heading [level=4]: Page Navigation (Java)
+                                        - paragraph: Navigate between pages, back, forward, and refresh
+                                        - generic: Java
+                                      - button: Load
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic:
+                                        - generic:
+                                          - img
+                                          - heading [level=4]: Hover and Click (Java)
+                                        - paragraph: Mouse hover interactions and dropdown menus
+                                        - generic: Java
+                                      - button: Load
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - heading [level=3]: Source Code
+                          - generic:
+                            - button:
+                              - img
+                      - generic:
+                        - generic:
+                          - generic:
+                            - code:
+                              - generic:
+                                - textbox
+                                - textbox
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: "1"
+                                    - generic:
+                                      - generic: "2"
+                                    - generic:
+                                      - generic: "3"
+                                    - generic:
+                                      - generic: "4"
+                                    - generic:
+                                      - generic: "5"
+                                    - generic:
+                                      - generic: 
+                                      - generic: "6"
+                                    - generic:
+                                      - generic: 
+                                      - generic: "7"
+                                    - generic:
+                                      - generic: "8"
+                                    - generic:
+                                      - generic: "9"
+                                    - generic:
+                                      - generic: "10"
+                                    - generic:
+                                      - generic: "11"
+                                    - generic:
+                                      - generic: "12"
+                                    - generic:
+                                      - generic: "13"
+                                    - generic:
+                                      - generic: "14"
+                                    - generic:
+                                      - generic: "15"
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: import org.openqa.selenium.
+                                    - generic:
+                                      - generic: By;
+                                    - generic:
+                                      - generic: import org.openqa.selenium.
+                                    - generic:
+                                      - generic: WebDriver;
+                                    - generic:
+                                      - generic: import org.openqa.selenium.
+                                    - generic:
+                                      - generic: WebElement;
+                                    - generic:
+                                      - generic: import org.openqa.selenium.
+                                    - generic:
+                                      - generic: chrome.ChromeDriver;
+                                    - generic:
+                                      - generic: "public class LoginTest {"
+                                    - generic:
+                                      - generic: public static void main
+                                    - generic:
+                                      - generic: "(String[] args) {"
+                                    - generic:
+                                      - generic: WebDriver driver =
+                                    - generic:
+                                      - generic: new ChromeDriver();
+                                    - generic:
+                                      - generic: driver.get("https://
+                                    - generic:
+                                      - generic: example.com/login");
+                                    - generic:
+                                      - generic: WebElement username
+                                    - generic:
+                                      - generic: = driver.findElement
+                                    - generic:
+                                      - generic: (By.id("username"));
+                                    - generic:
+                                      - generic: username.sendKeys
+                                    - generic:
+                                      - generic: ("testuser@example.
+                                    - generic:
+                                      - generic: com");
+                                    - generic:
+                                      - generic: WebElement password
+                                    - generic:
+                                      - generic: = driver.findElement
+                                    - generic:
+                                      - generic: (By.id("password"));
+                                    - generic:
+                                      - generic: password.sendKeys
+                                    - generic:
+                                      - generic: ("password123");
+                    - generic:
+                      - generic:
+                        - generic:
+                          - heading [level=3]: Converted Code
+                          - generic:
+                            - button:
+                              - img
+                            - button:
+                              - img
+                      - generic:
+                        - generic:
+                          - generic:
+                            - code:
+                              - generic:
+                                - textbox
+                                - textbox
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: "1"
+                                    - generic:
+                                      - generic: "2"
+                                    - generic:
+                                      - generic: "3"
+                                    - generic:
+                                      - generic: 
+                                      - generic: "4"
+                                    - generic:
+                                      - generic: 
+                                      - generic: "5"
+                                    - generic:
+                                      - generic: 
+                                      - generic: "6"
+                                    - generic:
+                                      - generic: "7"
+                                    - generic:
+                                      - generic: "8"
+                                    - generic:
+                                      - generic: "9"
+                                    - generic:
+                                      - generic: "10"
+                                    - generic:
+                                      - generic: "11"
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - generic: import com.microsoft.
+                                    - generic:
+                                      - generic: playwright.*;
+                                    - generic:
+                                      - generic: import java.nio.file.Paths;
+                                    - generic:
+                                      - generic: "public class LoginTest {"
+                                    - generic:
+                                      - generic: public static void main
+                                    - generic:
+                                      - generic: "(String[] args) {"
+                                    - generic:
+                                      - generic: try (Playwright
+                                    - generic:
+                                      - generic: playwright =
+                                    - generic:
+                                      - generic: Playwright.create
+                                    - generic:
+                                      - generic: "()) {"
+                                    - generic:
+                                      - generic: Browser browser
+                                    - generic:
+                                      - generic: = playwright.
+                                    - generic:
+                                      - generic: chromium().
+                                    - generic:
+                                      - generic: launch(new
+                                    - generic:
+                                      - generic: BrowserType.
+                                    - generic:
+                                      - generic: LaunchOptions().
+                                    - generic:
+                                      - generic: setHeadless
+                                    - generic:
+                                      - generic: (false));
+                                    - generic:
+                                      - generic: Page page =
+                                    - generic:
+                                      - generic: browser.newPage
+                                    - generic:
+                                      - generic: ();
+                                    - generic:
+                                      - generic: page.navigate
+                                    - generic:
+                                      - generic: ("https://
+                                    - generic:
+                                      - generic: example.com/
+                                    - generic:
+                                      - generic: login");
+                                    - generic:
+                                      - generic: page.locator
+                                    - generic:
+                                      - generic: ("#username").
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button [expanded]:
+                          - heading [level=3]: Conversion Details
+                          - img
+                      - generic:
+                        - generic:
+                          - generic:
+                            - heading [level=4]:
+                              - img
+                              - text: Important Notes
+                            - alert:
+                              - generic: Removed implicit waits - Playwright auto-waits for elements and navigation.
+                            - alert:
+                              - generic: Converted WebDriver setup to Playwright Browser and Page.
+                            - alert:
+                              - generic: "Replaced `sendKeys` with `fill` for input fields."
+                            - alert:
+                              - generic: "The comment about waiting for redirect is kept, but the Selenium implicit wait is removed as Playwright handles this automatically. If a specific element on the next page needs to be waited for, `page.waitForSelector()` would be used."
+                          - generic:
+                            - heading [level=4]:
+                              - img
+                              - text: Required Imports
+                            - generic:
+                              - generic: com.microsoft.playwright.*
+                              - generic: java.nio.file.Paths
+                          - generic:
+                            - heading [level=4]:
+                              - img
+                              - text: Test Runner Recommendation
+                            - alert:
+                              - generic: Consider using JUnit 5 with Playwright Java for test organization
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button [expanded]:
+                          - generic:
+                            - heading [level=3]: Conversion Quality Score
+                            - generic: 94/100
+                            - generic: Excellent
+                          - img
+                        - paragraph: Analysis based on locators, wait strategies, and best practices
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: Overall Quality
+                              - generic: 94%
+                            - progressbar
+                          - generic:
+                            - heading [level=4]: Score Breakdown
+                            - generic:
+                              - generic:
+                                - generic: Locator Quality (40pts)
+                                - generic: 40/40
+                              - progressbar
+                            - generic:
+                              - generic:
+                                - generic: Wait Strategy (30pts)
+                                - generic: 30/30
+                              - progressbar
+                            - generic:
+                              - generic:
+                                - generic: Best Practices (20pts)
+                                - generic: 15/20
+                              - progressbar
+                            - generic:
+                              - generic:
+                                - generic: Code Structure (10pts)
+                                - generic: 9/10
+                              - progressbar
+                          - generic:
+                            - heading [level=4]: Detected Issues
+                            - generic:
+                              - alert:
+                                - generic:
+                                  - img
+                                  - generic: "Good: Found 2 ID-based locator(s) - the most stable locator strategy."
+                              - alert:
+                                - generic:
+                                  - img
+                                  - generic: Found 1 explicit wait(s) - good for special cases.
+                              - alert:
+                                - generic:
+                                  - img
+                                  - generic: Missing error handling - add try-catch blocks for robust tests.
+                              - alert:
+                                - generic:
+                                  - img
+                                  - generic: Consider using descriptive variable names for better code readability.
+                              - alert:
+                                - generic:
+                                  - img
+                                  - generic: "Good: Code includes comments for clarity."
+                          - generic:
+                            - heading [level=4]:
+                              - img
+                              - text: Recommendations
+                            - list:
+                              - listitem:
+                                - generic: •
+                                - generic: Excellent conversion! Code follows best practices.
+                              - listitem:
+                                - generic: •
+                                - generic: Consider using semantic locators like getByRole(), getByText(), or getByLabel() for better accessibility testing
+                              - listitem:
+                                - generic: •
+                                - generic: Wrap test logic in try-catch blocks for better error handling
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=3]: Saved Conversions
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - img
+                              - paragraph: No saved conversions yet
+                              - paragraph: Save your first conversion to see it here
+  - dialog "Save Conversion" [ref=e1491]:
+    - heading "Save Conversion" [level=2] [ref=e1493]
+    - generic [ref=e1494]:
+      - generic [ref=e1495]:
+        - text: Snippet Title
+        - textbox "Snippet Title" [active] [ref=e1496]:
+          - /placeholder: e.g., Login test conversion
+      - button "Save" [disabled]
+    - button "Close" [ref=e1497] [cursor=pointer]:
+      - img [ref=e1498]
+      - generic [ref=e1501]: Close

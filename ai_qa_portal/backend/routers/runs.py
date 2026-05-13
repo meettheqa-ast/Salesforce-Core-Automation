@@ -7,11 +7,10 @@ import re
 import subprocess
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor  # pylint: disable=no-name-in-module
+from datetime import UTC, datetime
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -19,6 +18,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ai_qa_portal.backend.config import REPO_ROOT, settings
+
 from ..models.org import SalesforceOrg
 from ..models.persona import RunRequest, RunResponse
 from ..models.test_case import TestCase, TestCaseStatus
@@ -27,20 +27,24 @@ from ..prompts import assembler as _assembler
 from ..routers.personas import load_personas_for_user
 from ..services.audit import log_action
 from ..services.auth import get_current_user
+from ..services.credential_service import CredentialService
 from ..services.db import (
     RunRecord,
     User,
     get_db,
     list_memberships_for_user,
 )
-from ..services.credential_service import CredentialService
 from ..services.failure_diagnoser import (
     diagnose_run,
+)
+from ..services.failure_diagnoser import (
     format_for_prompt as format_diag_for_prompt,
 )
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
     parse_output_xml as _shared_parse_output_xml,
+)
+from ..services.robot_results import (
     parse_robot_ts as _shared_parse_robot_ts,
 )
 from ..services.script_runner import ScriptRunner
@@ -157,13 +161,13 @@ async def trigger_run(
 
 class RunUserStoryBody(BaseModel):
     org_id: UUID
-    persona_id: Optional[UUID] = None
+    persona_id: UUID | None = None
 
 
 class RunTagBody(BaseModel):
     project_id: UUID
     org_id: UUID
-    persona_id: Optional[UUID] = None
+    persona_id: UUID | None = None
 
 
 @router.post("/user-story/{story_id}", response_model=list[RunResponse])
@@ -562,7 +566,7 @@ def _bulk_event_stream(
             user_prompt = _assembler.build_user_prompt_with_catalog(user_body, include_full_catalog=True)
             system_prompt = _assembler.build_system_prompt("healer")
 
-            screenshot_bytes: Optional[bytes] = None
+            screenshot_bytes: bytes | None = None
             if diag.screenshot_path:
                 p = Path(diag.screenshot_path)
                 try:
@@ -586,7 +590,7 @@ def _bulk_event_stream(
             tmp_path.write_text(new_script + "\n", encoding="utf-8")
             tmp_path.replace(script_abs)
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             row = _store.get_test_case(tc.id)
             row["script_built_at"] = now.isoformat()
             row["heal_attempts"] = int(row.get("heal_attempts", 0) or 0) + 1
@@ -671,7 +675,7 @@ def _bulk_event_stream(
 def _resolve_story_bulk_inputs(
     story_id: UUID,
     org_id: UUID,
-    persona_id: Optional[UUID],
+    persona_id: UUID | None,
     current_user: User,
 ) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
     """Shared resolver for the user-story bulk endpoints. Returns
@@ -719,7 +723,7 @@ def _resolve_tag_bulk_inputs(
     tag_name: str,
     project_id: UUID,
     org_id: UUID,
-    persona_id: Optional[UUID],
+    persona_id: UUID | None,
     current_user: User,
 ) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
     tcs_raw = _store.get_test_cases_by_tag(project_id, tag_name)
@@ -754,7 +758,7 @@ def _resolve_tag_bulk_inputs(
 def _resolve_sprint_bulk_inputs(
     sprint_id: UUID,
     org_id: UUID,
-    persona_id: Optional[UUID],
+    persona_id: UUID | None,
     current_user: User,
 ) -> tuple[list[TestCase], object, SalesforceOrg, str, str]:
     """Sprint-scoped resolver. Walks every story under the sprint, then
@@ -818,7 +822,7 @@ def _resolve_sprint_bulk_inputs(
 def run_user_story_stream(
     story_id: UUID,
     org_id: UUID = Query(...),
-    persona_id: Optional[UUID] = Query(None),
+    persona_id: UUID | None = Query(None),
     auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
     current_user: User = Depends(get_current_user),
 ):
@@ -847,7 +851,7 @@ def run_tag_stream(
     tag_name: str,
     project_id: UUID = Query(...),
     org_id: UUID = Query(...),
-    persona_id: Optional[UUID] = Query(None),
+    persona_id: UUID | None = Query(None),
     auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
     current_user: User = Depends(get_current_user),
 ):
@@ -870,7 +874,7 @@ def run_tag_stream(
 def run_sprint_stream(
     sprint_id: UUID,
     org_id: UUID = Query(...),
-    persona_id: Optional[UUID] = Query(None),
+    persona_id: UUID | None = Query(None),
     auto_heal: bool = Query(False, description="When true, failed tests are healed and re-run once."),
     current_user: User = Depends(get_current_user),
 ):
@@ -899,7 +903,7 @@ def run_sprint_stream(
 def run_single_test_case_stream(
     test_case_id: UUID,
     org_id: UUID = Query(...),
-    persona_id: Optional[UUID] = Query(None),
+    persona_id: UUID | None = Query(None),
     current_user: User = Depends(get_current_user),
 ):
     """Re-run a single test case as SSE.
@@ -988,9 +992,9 @@ class ExecuteResponse(BaseModel):
     failed: int = 0
     skipped: int = 0
     output_dir: str = ""
-    log_html: Optional[str] = None
-    report_html: Optional[str] = None
-    error_message: Optional[str] = None
+    log_html: str | None = None
+    report_html: str | None = None
+    error_message: str | None = None
 
 
 def _safe_within_repo(path: Path) -> bool:
@@ -1542,11 +1546,22 @@ def run_summary(run_folder: str):
     status = "PASS" if total > 0 and failed == 0 else ("FAIL" if failed > 0 else "EMPTY")
     pass_rate = round((passed / total * 100), 1) if total > 0 else 0.0
 
+    # Phase 4: Playwright trace files. Surfaced as a list of filenames
+    # so the frontend can build "Open trace viewer" links per file
+    # (suites that capture multiple traces -- one per test case --
+    # produce e.g. ``smoke.trace.zip`` + ``regression.trace.zip``).
+    # The standard PlaywrightDebug.robot wrapper writes a single
+    # ``trace.zip``; this glob handles both cases additively.
+    trace_files = sorted(
+        p.name for p in run_dir.glob("*trace.zip") if p.is_file()
+    )
+
     artefacts = {
         "log_html": "log.html" if log_html.is_file() else None,
         "report_html": "report.html" if report_html.is_file() else None,
         "output_xml": "output.xml" if output_xml.is_file() else None,
         "screenshots": _list_screenshots(run_dir),
+        "playwright_traces": trace_files,
     }
 
     return {
@@ -1614,12 +1629,26 @@ def run_file(run_folder: str, filename: str, download: bool = Query(False)):
 
 @exec_router.get("/{run_folder}/bundle.zip")
 def run_bundle(run_folder: str):
-    """Stream a ZIP of log.html + report.html + output.xml + screenshots."""
+    """Stream a ZIP of log.html + report.html + output.xml + screenshots
+    + (Phase 4) Playwright trace.zip when present.
+
+    The trace file is included additively -- bundles for runs that
+    didn't capture a Playwright trace contain exactly the same files
+    they always did. Only opt-in suites that import
+    ``Resources/Common/PlaywrightDebug.robot`` and were launched with
+    ``--variable USE_PLAYWRIGHT_TRACE:1`` produce a trace.zip.
+    """
     import io
     import zipfile
 
     run_dir = _resolve_run_dir(run_folder)
     candidates = ["log.html", "report.html", "output.xml"] + _list_screenshots(run_dir)
+    # Phase 4: Playwright trace. Conventionally named "trace.zip" by
+    # ``PlaywrightDebug.robot`` -- we glob for any *.trace.zip too so
+    # custom Suite Setup steps that name traces after the test case
+    # also surface in the bundle.
+    trace_files = [p.name for p in run_dir.glob("*trace.zip") if p.is_file()]
+    candidates.extend(trace_files)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:

@@ -1,0 +1,206 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1977]:
+      - generic [ref=e1979]:
+        - generic [ref=e1981]: TB
+        - generic [ref=e1982]:
+          - generic [ref=e1983]: TestingBuddy AI
+          - generic [ref=e1984]: Testing Platform
+      - generic [ref=e1985]:
+        - generic [ref=e1986]:
+          - generic [ref=e1987]: Main
+          - list [ref=e1989]:
+            - listitem [ref=e1990]:
+              - link "Dashboard" [ref=e1991] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1992]
+                - generic [ref=e1995]: Dashboard
+            - listitem [ref=e1996]:
+              - link "Curriculum" [ref=e1997] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1998]
+                - generic [ref=e2000]: Curriculum
+            - listitem [ref=e2001]:
+              - link "Settings" [ref=e2002] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e2003]
+                - generic [ref=e2006]: Settings
+        - generic [ref=e2008] [cursor=pointer]:
+          - generic [ref=e2009]: 🎯 Planning & Strategy
+          - img [ref=e2010]
+        - generic [ref=e2013] [cursor=pointer]:
+          - generic [ref=e2014]: ✏️ Test Design & Creation
+          - img [ref=e2015]
+        - generic [ref=e2018] [cursor=pointer]:
+          - generic [ref=e2019]: 🤖 Automation & Framework
+          - img [ref=e2020]
+        - generic [ref=e2023] [cursor=pointer]:
+          - generic [ref=e2024]: ⚡ Test Execution & Management
+          - img [ref=e2025]
+        - generic [ref=e2028] [cursor=pointer]:
+          - generic [ref=e2029]: 📊 Reporting & Insights
+          - img [ref=e2030]
+        - generic [ref=e2033] [cursor=pointer]:
+          - generic [ref=e2034]: 🔧 Optimization & Maintenance
+          - img [ref=e2035]
+        - generic [ref=e2038] [cursor=pointer]:
+          - generic [ref=e2039]: 🧠 AI Intelligence & Prediction
+          - img [ref=e2040]
+      - generic [ref=e2043]:
+        - list [ref=e2044]:
+          - listitem [ref=e2045]:
+            - button "Chat History" [ref=e2046] [cursor=pointer]:
+              - img [ref=e2047]
+              - generic [ref=e2049]: Chat History
+        - generic [ref=e2050]:
+          - generic [ref=e2052]: M
+          - generic [ref=e2053]:
+            - paragraph [ref=e2054]: Meet Sheth
+            - paragraph [ref=e2055]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e2056] [cursor=pointer]:
+          - img [ref=e2057]
+          - generic [ref=e2060]: Sign Out
+      - button "Toggle Sidebar" [ref=e2061]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e2404]:
+          - button "Back to Curriculum" [ref=e2406] [cursor=pointer]:
+            - img
+            - text: Back to Curriculum
+          - generic [ref=e2407]:
+            - generic [ref=e2409]: 🚧 Coming Soon
+            - heading "AI Automation Tester Engineer" [level=1] [ref=e2410]:
+              - img [ref=e2411]
+              - text: AI Automation Tester Engineer
+            - paragraph [ref=e2413]: Phase 2 of your 100-day journey to mastering AI testing
+            - generic [ref=e2414]:
+              - img [ref=e2415]
+              - text: Requires Phase 1 completion
+          - generic [ref=e2418]:
+            - generic [ref=e2419]:
+              - generic [ref=e2420]:
+                - img [ref=e2421]
+                - paragraph [ref=e2424]: 1-2 Months
+                - paragraph [ref=e2425]: Duration
+              - generic [ref=e2426]:
+                - img [ref=e2427]
+                - paragraph [ref=e2429]: 13 Modules
+                - paragraph [ref=e2430]: Advanced
+              - generic [ref=e2431]:
+                - img [ref=e2432]
+                - paragraph [ref=e2435]: $95K-$130K
+                - paragraph [ref=e2436]: Target Salary
+              - generic [ref=e2437]:
+                - img [ref=e2438]
+                - paragraph [ref=e2440]: Intermediate
+                - paragraph [ref=e2441]: Level
+            - generic [ref=e2442]:
+              - heading "Course Modules (Locked)" [level=2] [ref=e2443]:
+                - img [ref=e2444]
+                - text: Course Modules (Locked)
+              - generic [ref=e2447]:
+                - generic [ref=e2448]:
+                  - img [ref=e2449]
+                  - generic [ref=e2452]:
+                    - paragraph [ref=e2453]: "Module 1: Autonomous Testing Agents"
+                    - paragraph [ref=e2454]: Build self-learning agents that adapt to application changes
+                - generic [ref=e2455]:
+                  - img [ref=e2456]
+                  - generic [ref=e2459]:
+                    - paragraph [ref=e2460]: "Module 2: MCP Server Architecture"
+                    - paragraph [ref=e2461]: Create scalable testing server infrastructure
+                - generic [ref=e2462]:
+                  - img [ref=e2463]
+                  - generic [ref=e2466]:
+                    - paragraph [ref=e2467]: "Module 3: Browser Automation with AI"
+                    - paragraph [ref=e2468]: Intelligent web testing with Playwright and AI
+                - generic [ref=e2469]:
+                  - img [ref=e2470]
+                  - generic [ref=e2473]:
+                    - paragraph [ref=e2474]: "Module 4: Visual Testing & AI"
+                    - paragraph [ref=e2475]: Computer vision for visual regression testing
+                - generic [ref=e2476]:
+                  - img [ref=e2477]
+                  - generic [ref=e2480]:
+                    - paragraph [ref=e2481]: "Module 5: API Test Automation"
+                    - paragraph [ref=e2482]: AI-powered API testing and validation
+                - generic [ref=e2483]:
+                  - img [ref=e2484]
+                  - generic [ref=e2487]:
+                    - paragraph [ref=e2488]: "Module 6: Test Data Generation"
+                    - paragraph [ref=e2489]: Smart synthetic data creation with AI
+                - generic [ref=e2490]:
+                  - img [ref=e2491]
+                  - generic [ref=e2494]:
+                    - paragraph [ref=e2495]: "Module 7: Defect Prediction Models"
+                    - paragraph [ref=e2496]: Machine learning for bug detection and prevention
+                - generic [ref=e2497]:
+                  - img [ref=e2498]
+                  - generic [ref=e2501]:
+                    - paragraph [ref=e2502]: "Module 8: Self-Healing UI Tests"
+                    - paragraph [ref=e2503]: Build resilient test scripts that auto-repair
+                - generic [ref=e2504]:
+                  - img [ref=e2505]
+                  - generic [ref=e2508]:
+                    - paragraph [ref=e2509]: "Module 9: Chrome Extension Development"
+                    - paragraph [ref=e2510]: Create professional testing tools in the browser
+                - generic [ref=e2511]:
+                  - img [ref=e2512]
+                  - generic [ref=e2515]:
+                    - paragraph [ref=e2516]: "Module 10: CI/CD Integration"
+                    - paragraph [ref=e2517]: Automated deployment pipelines with AI testing
+                - generic [ref=e2518]:
+                  - img [ref=e2519]
+                  - generic [ref=e2522]:
+                    - paragraph [ref=e2523]: "Module 11: Production Monitoring"
+                    - paragraph [ref=e2524]: AI-driven observability and incident detection
+                - generic [ref=e2525]:
+                  - img [ref=e2526]
+                  - generic [ref=e2529]:
+                    - paragraph [ref=e2530]: "Module 12: Performance Testing AI"
+                    - paragraph [ref=e2531]: Load testing with intelligent analysis
+                - generic [ref=e2532]:
+                  - img [ref=e2533]
+                  - generic [ref=e2536]:
+                    - paragraph [ref=e2537]: "Module 13: Capstone Project"
+                    - paragraph [ref=e2538]: Build your full-stack AI testing platform
+            - generic [ref=e2539]:
+              - generic [ref=e2540]:
+                - img [ref=e2541]
+                - heading "Get notified when this course launches" [level=3] [ref=e2544]
+              - paragraph [ref=e2545]: Be the first to know when enrollment opens for Phase 2
+              - generic [ref=e2546]:
+                - textbox "Enter your email" [ref=e2547]
+                - button "Notify Me" [ref=e2548] [cursor=pointer]
+            - generic [ref=e2549]:
+              - heading "What You'll Master" [level=4] [ref=e2550]:
+                - img [ref=e2551]
+                - text: What You'll Master
+              - list [ref=e2553]:
+                - listitem [ref=e2554]:
+                  - generic [ref=e2555]: ✓
+                  - generic [ref=e2556]: Build autonomous testing agents and self-healing test frameworks
+                - listitem [ref=e2557]:
+                  - generic [ref=e2558]: ✓
+                  - generic [ref=e2559]: Create professional Chrome extensions and testing tools
+                - listitem [ref=e2560]:
+                  - generic [ref=e2561]: ✓
+                  - generic [ref=e2562]: Master MCP server architecture and production-grade CI/CD
+                - listitem [ref=e2563]:
+                  - generic [ref=e2564]: ✓
+                  - generic [ref=e2565]: Achieve salary potential of $95K-$130K+ as an AI Testing Engineer
+                - listitem [ref=e2566]:
+                  - generic [ref=e2567]: ✓
+                  - generic [ref=e2568]: Build a complete portfolio with enterprise-ready AI testing projects
+            - generic [ref=e2569]:
+              - heading "Prerequisites" [level=4] [ref=e2570]:
+                - img [ref=e2571]
+                - text: Prerequisites
+              - paragraph [ref=e2573]: "This advanced course requires completion of Phase 1: GenAI Foundation. You should be comfortable with GenAI fundamentals, LLM APIs, and basic prompt engineering before starting Phase 2."

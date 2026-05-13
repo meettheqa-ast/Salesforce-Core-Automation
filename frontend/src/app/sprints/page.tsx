@@ -16,10 +16,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
+import CreateSprintModal from "@/components/sprints/CreateSprintModal";
 import { api } from "@/lib/api";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 type SprintRow = {
   id: string;
@@ -64,9 +67,11 @@ export default function SprintsPage() {
   const [storyCountBySprint, setStoryCountBySprint] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ name: "", goal: "", start_date: "", end_date: "" });
-  const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [selectedSprintIds, setSelectedSprintIds] = useState<string[]>([]);
+  const [bulkState, setBulkState] = useState<SprintRow["state"]>("active");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState("");
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => setProjects([]));
@@ -106,7 +111,24 @@ export default function SprintsPage() {
       })
       .finally(() => setLoading(false));
   };
-  useEffect(reload, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(reload, [projectId]);  
+
+  useEffect(() => {
+    setSelectedSprintIds((prev) => prev.filter((id) => sprints.some((s) => s.id === id)));
+  }, [sprints]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || (e.target as HTMLElement | null)?.isContentEditable) return;
+      if (e.key.toLowerCase() === "n" && projectId) {
+        e.preventDefault();
+        setShowCreate(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [projectId]);
 
   const backlogCount = useMemo(
     () => stories.filter((s) => !s.sprint_id).length,
@@ -124,40 +146,48 @@ export default function SprintsPage() {
     return out;
   }, [sprints]);
 
-  const handleCreate = async () => {
-    if (!projectId || !createForm.name.trim()) return;
-    setCreating(true);
-    setErr(null);
-    try {
-      await api.sprints.create({
-        project_id: projectId,
-        name: createForm.name.trim(),
-        goal: createForm.goal.trim() || null,
-        state: "planned",
-        start_date: createForm.start_date || null,
-        end_date: createForm.end_date || null,
-      });
-      setCreateForm({ name: "", goal: "", start_date: "", end_date: "" });
-      setShowCreate(false);
-      reload();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not create sprint");
-    } finally {
-      setCreating(false);
-    }
+  const allSelected = sprints.length > 0 && selectedSprintIds.length === sprints.length;
+  const toggleSprint = (id: string) => {
+    setSelectedSprintIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+  const toggleAllSprints = () => {
+    if (allSelected) setSelectedSprintIds([]);
+    else setSelectedSprintIds(sprints.map((s) => s.id));
+  };
+
+  const applyBulkState = async () => {
+    if (selectedSprintIds.length === 0) return;
+    setBulkBusy(true);
+    setBulkMsg("");
+    let ok = 0;
+    let failed = 0;
+    await Promise.all(
+      selectedSprintIds.map(async (id) => {
+        const current = sprints.find((s) => s.id === id);
+        if (!current || current.state === bulkState) return;
+        try {
+          await api.sprints.update(id, { state: bulkState });
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }),
+    );
+    setBulkBusy(false);
+    setSelectedSprintIds([]);
+    setBulkMsg(failed > 0 ? `Updated ${ok}; ${failed} failed.` : `Updated ${ok} sprint(s).`);
+    reload();
+    notifyTreeRefresh({ kind: "sprint", projectId: projectId || undefined });
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">
-          <span className="bg-gradient-to-r from-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
-            Sprints
-          </span>
-        </h1>
-        <p className="text-slate-400">
-          Group user stories into sprints. A story can also live outside any sprint -- those land in the backlog.
-        </p>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <PageHeader
+          eyebrow="Delivery"
+          title="Sprints"
+          description="Group stories into planned iterations while keeping backlog stories visible and manageable."
+        />
       </motion.div>
 
       <div className="grid md:grid-cols-3 gap-4 mb-6">
@@ -175,85 +205,53 @@ export default function SprintsPage() {
           {projectId && (
             <button
               type="button"
-              onClick={() => setShowCreate((v) => !v)}
+              onClick={() => setShowCreate(true)}
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-500 text-white text-sm font-semibold"
             >
-              {showCreate ? "Cancel" : "+ New sprint"}
+              + New sprint
             </button>
           )}
         </div>
       </div>
-
-      <AnimatePresence>
-        {showCreate && projectId && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-6"
+      {projectId && sprints.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={allSelected} onChange={toggleAllSprints} className="accent-cyan-500" />
+            Select all ({sprints.length})
+          </label>
+          <GlassSelect
+            className="min-w-[13rem]"
+            value={bulkState}
+            onChange={(v) => setBulkState(v as SprintRow["state"])}
+            options={[
+              { value: "active", label: "Active" },
+              { value: "planned", label: "Planned" },
+              { value: "completed", label: "Completed" },
+              { value: "cancelled", label: "Cancelled" },
+            ]}
+          />
+          <button
+            type="button"
+            disabled={bulkBusy || selectedSprintIds.length === 0}
+            onClick={applyBulkState}
+            className="px-3 py-1.5 rounded-lg bg-cyan-600/35 text-cyan-100 text-xs disabled:opacity-40"
           >
-            <AnimatedCard glow="purple">
-              <h3 className="text-sm font-bold text-white mb-3">New sprint</h3>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Name</span>
-                  <input
-                    value={createForm.name}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-                    placeholder="e.g. Sprint 23"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Goal (optional)</span>
-                  <input
-                    value={createForm.goal}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, goal: e.target.value }))}
-                    placeholder="One-line objective"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500">Start date (optional)</span>
-                  <input
-                    type="date"
-                    value={createForm.start_date}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, start_date: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500">End date (optional)</span>
-                  <input
-                    type="date"
-                    value={createForm.end_date}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, end_date: e.target.value }))}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
-                  />
-                </label>
-              </div>
-              {err && <p className="mt-3 text-xs text-red-300">{err}</p>}
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreate(false)}
-                  className="px-3 py-1.5 rounded-lg glass text-xs text-slate-300 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreate}
-                  disabled={creating || !createForm.name.trim()}
-                  className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-cyan-500 text-white text-xs font-semibold disabled:opacity-50"
-                >
-                  {creating ? "Creating…" : "Create sprint"}
-                </button>
-              </div>
-            </AnimatedCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            Update selected state
+          </button>
+          {bulkMsg && <span className="text-xs text-slate-400">{bulkMsg}</span>}
+        </div>
+      )}
+
+      <CreateSprintModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        projectId={projectId || undefined}
+        onCreated={() => {
+          setErr(null);
+          reload();
+          notifyTreeRefresh({ kind: "sprint", projectId: projectId || undefined });
+        }}
+      />
 
       {!projectId && (
         <p className="text-sm text-slate-500">Pick a project to see its sprints.</p>
@@ -273,34 +271,37 @@ export default function SprintsPage() {
                 </h2>
                 <div className="grid md:grid-cols-2 gap-4">
                   {list.map((sprint) => (
-                    <Link
-                      key={sprint.id}
-                      href={`/sprints/${encodeURIComponent(sprint.id)}`}
-                    >
-                      <AnimatedCard glow="purple" className="cursor-pointer">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <div className="min-w-0">
+                    <AnimatedCard key={sprint.id} glow="purple" className="cursor-pointer">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <label className="inline-flex items-start gap-2 min-w-0 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedSprintIds.includes(sprint.id)}
+                            onChange={() => toggleSprint(sprint.id)}
+                            className="accent-cyan-500 mt-1"
+                          />
+                          <Link href={`/sprints/${encodeURIComponent(sprint.id)}?project=${encodeURIComponent(projectName)}`} className="min-w-0">
                             <h3 className="text-base font-bold text-white truncate">{sprint.name}</h3>
                             {sprint.goal && (
                               <p className="text-[11px] text-slate-400 line-clamp-2 mt-1">{sprint.goal}</p>
                             )}
-                          </div>
-                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${STATE_PILL[sprint.state]}`}>
-                            {sprint.state}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-3">
+                          </Link>
+                        </label>
+                        <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${STATE_PILL[sprint.state]}`}>
+                          {sprint.state}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-3">
+                        <span>
+                          {storyCountBySprint[sprint.id] || 0} stor{(storyCountBySprint[sprint.id] || 0) === 1 ? "y" : "ies"}
+                        </span>
+                        {(sprint.start_date || sprint.end_date) && (
                           <span>
-                            {storyCountBySprint[sprint.id] || 0} stor{(storyCountBySprint[sprint.id] || 0) === 1 ? "y" : "ies"}
+                            {sprint.start_date ?? "?"} → {sprint.end_date ?? "?"}
                           </span>
-                          {(sprint.start_date || sprint.end_date) && (
-                            <span>
-                              {sprint.start_date ?? "?"} → {sprint.end_date ?? "?"}
-                            </span>
-                          )}
-                        </div>
-                      </AnimatedCard>
-                    </Link>
+                        )}
+                      </div>
+                    </AnimatedCard>
                   ))}
                 </div>
               </div>
@@ -334,6 +335,6 @@ export default function SprintsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageScaffold>
   );
 }

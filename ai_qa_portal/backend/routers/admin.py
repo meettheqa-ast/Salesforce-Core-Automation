@@ -18,16 +18,16 @@ architecture decision):
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-import project_manager
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+import project_manager
 from ai_qa_portal.backend.services.audit import log_action
-from ai_qa_portal.backend.services.auth import get_current_user, require_global_role
+from ai_qa_portal.backend.services.auth import get_current_user
 from ai_qa_portal.backend.services.db import (
     AuditLog,
     GlobalRole,
@@ -207,7 +207,7 @@ def revoke_session(
     u = get_user_by_id(db, user_id)
     if u is None:
         raise HTTPException(404, "User not found")
-    u.session_revoked_at = datetime.now(timezone.utc)
+    u.session_revoked_at = datetime.now(UTC)
     db.commit()
     db.refresh(u)
     log_action(

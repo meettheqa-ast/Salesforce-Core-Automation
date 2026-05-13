@@ -9,6 +9,10 @@ export type PipelinePhase =
   | "session"
   | "executing"
   | "build"
+  // Phase 1 (Playwright integration): the locator-validation gate runs
+  // after build + AST + dryrun. Backend emits this phase event only
+  // when the gate is enabled for the project.
+  | "locator_check"
   | "fallback"
   | "done";
 
@@ -50,6 +54,7 @@ const PHASE_LABEL: Record<PipelinePhase, string> = {
   "session": "Opening session",
   "executing": "Executing keywords",
   "build": "Building suite",
+  "locator_check": "Verifying locators on live page",
   "fallback": "Falling back to Quick Generate",
   "done": "Done",
 };

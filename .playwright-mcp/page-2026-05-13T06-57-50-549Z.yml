@@ -1,0 +1,124 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e308]:
+      - generic [ref=e310]:
+        - generic [ref=e312]: TB
+        - generic [ref=e313]:
+          - generic [ref=e314]: TestingBuddy AI
+          - generic [ref=e315]: Testing Platform
+      - generic [ref=e316]:
+        - generic [ref=e317]:
+          - generic [ref=e318]: Main
+          - list [ref=e320]:
+            - listitem [ref=e321]:
+              - link "Dashboard" [ref=e322] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e323]
+                - generic [ref=e326]: Dashboard
+            - listitem [ref=e327]:
+              - link "Curriculum" [ref=e328] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e329]
+                - generic [ref=e331]: Curriculum
+            - listitem [ref=e332]:
+              - link "Settings" [ref=e333] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e334]
+                - generic [ref=e337]: Settings
+        - generic [ref=e339] [cursor=pointer]:
+          - generic [ref=e340]: 🎯 Planning & Strategy
+          - img [ref=e341]
+        - generic [ref=e344] [cursor=pointer]:
+          - generic [ref=e345]: ✏️ Test Design & Creation
+          - img [ref=e346]
+        - generic [ref=e348]:
+          - generic [ref=e349] [cursor=pointer]:
+            - generic [ref=e350]: 🤖 Automation & Framework
+            - img [ref=e351]
+          - list [ref=e395]:
+            - listitem [ref=e396]:
+              - button "🤖 Automation Framework Setup Agent" [ref=e397] [cursor=pointer]:
+                - generic [ref=e398]: 🤖 Automation Framework Setup Agent
+            - listitem [ref=e399]:
+              - button "🎯 Selenium Locator Intelligence Agent" [ref=e400] [cursor=pointer]:
+                - generic [ref=e401]: 🎯 Selenium Locator Intelligence Agent
+            - listitem [ref=e402]:
+              - button "🔄 Selenium to Playwright Converter" [ref=e403] [cursor=pointer]:
+                - generic [ref=e404]: 🔄 Selenium to Playwright Converter
+            - listitem [ref=e405]:
+              - button "📤 Postman to Automation Converter Agent" [ref=e406] [cursor=pointer]:
+                - generic [ref=e407]: 📤 Postman to Automation Converter Agent
+            - listitem [ref=e408]:
+              - button "📄 API Code Generator (Swagger Assistant)" [ref=e409] [cursor=pointer]:
+                - generic [ref=e410]: 📄 API Code Generator (Swagger Assistant)
+            - listitem [ref=e411]:
+              - button "✅ API Response Validator Agent" [ref=e412] [cursor=pointer]:
+                - generic [ref=e413]: ✅ API Response Validator Agent
+            - listitem [ref=e414]:
+              - button "🔗 API Dependency Analyzer Agent" [ref=e415] [cursor=pointer]:
+                - generic [ref=e416]: 🔗 API Dependency Analyzer Agent
+            - listitem [ref=e417]:
+              - button "🎤 Voice Command QA Agent" [ref=e418] [cursor=pointer]:
+                - generic [ref=e419]: 🎤 Voice Command QA Agent
+        - generic [ref=e354] [cursor=pointer]:
+          - generic [ref=e355]: ⚡ Test Execution & Management
+          - img [ref=e356]
+        - generic [ref=e359] [cursor=pointer]:
+          - generic [ref=e360]: 📊 Reporting & Insights
+          - img [ref=e361]
+        - generic [ref=e364] [cursor=pointer]:
+          - generic [ref=e365]: 🔧 Optimization & Maintenance
+          - img [ref=e366]
+        - generic [ref=e369] [cursor=pointer]:
+          - generic [ref=e370]: 🧠 AI Intelligence & Prediction
+          - img [ref=e371]
+      - generic [ref=e374]:
+        - list [ref=e375]:
+          - listitem [ref=e376]:
+            - button "Chat History" [ref=e377] [cursor=pointer]:
+              - img [ref=e378]
+              - generic [ref=e380]: Chat History
+        - generic [ref=e381]:
+          - generic [ref=e383]: M
+          - generic [ref=e384]:
+            - paragraph [ref=e385]: Meet Sheth
+            - paragraph [ref=e386]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e387] [cursor=pointer]:
+          - img [ref=e388]
+          - generic [ref=e391]: Sign Out
+      - button "Toggle Sidebar" [ref=e392]
+    - generic [ref=e93]:
+      - banner [ref=e94]:
+        - button "Toggle Sidebar" [ref=e95] [cursor=pointer]:
+          - img
+          - generic [ref=e96]: Toggle Sidebar
+      - main [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e100]:
+            - generic [ref=e101]:
+              - heading "TestingBuddy AI" [level=1] [ref=e102]
+              - paragraph [ref=e103]: Your Expert QA Testing Assistant
+            - generic [ref=e104]:
+              - generic [ref=e105]:
+                - img [ref=e106]
+                - text: 0 day streak
+              - generic [ref=e108]: 0 total days
+          - generic [ref=e284]:
+            - img [ref=e288]
+            - generic [ref=e291]:
+              - heading "TestingBuddy AI" [level=1] [ref=e292]:
+                - text: TestingBuddy AI
+                - img [ref=e293]
+              - paragraph [ref=e295]: Your Expert QA Testing Assistant
+              - paragraph [ref=e296]: I'm here to help you with test automation, best practices, debugging, and everything QA-related. Ask me anything!
+            - generic [ref=e297]:
+              - paragraph [ref=e298]: "Try asking:"
+              - generic [ref=e299]:
+                - button "How do I write better Playwright selectors?" [ref=e300] [cursor=pointer]
+                - button "What's the difference between E2E and integration tests?" [ref=e301] [cursor=pointer]
+                - button "Help me debug a flaky test" [ref=e302] [cursor=pointer]
+                - button "Best practices for test data management" [ref=e303] [cursor=pointer]
+                - button "Explain Page Object Model pattern" [ref=e304] [cursor=pointer]

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from ai_qa_portal.backend.config import REPO_ROOT
 from ai_qa_portal.backend.services import keyword_catalog
@@ -198,10 +198,10 @@ _TAILS: dict[Role, str] = {
 # --- Caching --------------------------------------------------------------
 
 
-_playbook_cache: Optional[str] = None
-_playbook_mtime: Optional[float] = None
-_legacy_cache: Optional[str] = None
-_legacy_mtime: Optional[float] = None
+_playbook_cache: str | None = None
+_playbook_mtime: float | None = None
+_legacy_cache: str | None = None
+_legacy_mtime: float | None = None
 
 
 def _read_playbook() -> str:
@@ -279,7 +279,7 @@ def build_system_prompt(role: Role, *, include_legacy_quick_guidance: bool = Tru
     return "\n\n".join(p for p in parts if p).strip() + "\n"
 
 
-def render_persona_context(default_app: Optional[str] = None) -> str:
+def render_persona_context(default_app: str | None = None) -> str:
     """Format an optional 'Persona context' block for inclusion in a user
     prompt. Returns empty string when nothing relevant is set, so callers
     can unconditionally concatenate.
@@ -307,7 +307,8 @@ def build_user_prompt_with_catalog(
     *,
     include_full_catalog: bool = True,
     catalog_section_title: str = "Keyword Catalog",
-    default_app: Optional[str] = None,
+    default_app: str | None = None,
+    rag_context: str = "",
 ) -> str:
     """Wrap a caller-provided user prompt with the keyword catalog.
 
@@ -317,6 +318,11 @@ def build_user_prompt_with_catalog(
     `default_app`, when set, prepends a one-section "Persona context"
     block so the LLM frames generated steps around the right Salesforce
     app for this user license.
+
+    `rag_context`, when non-empty, prepends a "Project context" block --
+    produced by ``services.rag_retrieval.format_passages_block`` -- so
+    the LLM sees the most relevant Jira issues, comments, uploaded docs,
+    and test-data rows for this generation.
     """
     if include_full_catalog:
         catalog_text = keyword_catalog.compact_json()
@@ -325,7 +331,11 @@ def build_user_prompt_with_catalog(
         catalog_text = "\n".join(f"- {n}" for n in names)
 
     persona_block = render_persona_context(default_app)
+    context_block = rag_context.strip()
+    context_section = f"{context_block}\n\n" if context_block else ""
+
     return (
+        f"{context_section}"
         f"{persona_block}"
         f"## {catalog_section_title}\n\n"
         f"{catalog_text}\n\n"

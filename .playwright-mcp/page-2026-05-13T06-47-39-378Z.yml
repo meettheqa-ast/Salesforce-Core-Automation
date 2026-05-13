@@ -1,0 +1,161 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e4]:
+    - generic [ref=e8]:
+      - generic [ref=e10]:
+        - generic [ref=e12]: TB
+        - generic [ref=e13]:
+          - generic [ref=e14]: TestingBuddy AI
+          - generic [ref=e15]: Testing Platform
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: Main
+          - list [ref=e20]:
+            - listitem [ref=e21]:
+              - link "Dashboard" [ref=e22] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e23]
+                - generic [ref=e26]: Dashboard
+            - listitem [ref=e27]:
+              - link "Curriculum" [ref=e28] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e29]
+                - generic [ref=e31]: Curriculum
+            - listitem [ref=e32]:
+              - link "Settings" [ref=e33] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e34]
+                - generic [ref=e37]: Settings
+        - generic [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: 🎯 Planning & Strategy
+          - img [ref=e41]
+        - generic [ref=e43]:
+          - generic [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]: ✏️ Test Design & Creation
+            - img [ref=e46]
+          - list [ref=e50]:
+            - listitem [ref=e51]:
+              - button "✏️ Test Case Creator Agent" [ref=e52] [cursor=pointer]:
+                - generic [ref=e53]: ✏️ Test Case Creator Agent
+            - listitem [ref=e54]:
+              - button "🗄️ Test Data Builder Agent" [ref=e55] [cursor=pointer]:
+                - generic [ref=e56]: 🗄️ Test Data Builder Agent
+            - listitem [ref=e57]:
+              - button "🌐 API Mock & Virtualization Agent" [ref=e58] [cursor=pointer]:
+                - generic [ref=e59]: 🌐 API Mock & Virtualization Agent
+            - listitem [ref=e60]:
+              - button "🔎 Exploratory Testing Assistant" [ref=e61] [cursor=pointer]:
+                - generic [ref=e62]: 🔎 Exploratory Testing Assistant
+            - listitem [ref=e63]:
+              - button "🗺️ Requirements Traceability Agent" [ref=e64] [cursor=pointer]:
+                - generic [ref=e65]: 🗺️ Requirements Traceability Agent
+        - generic [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: 🤖 Automation & Framework
+          - img [ref=e69]
+        - generic [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: ⚡ Test Execution & Management
+          - img [ref=e74]
+        - generic [ref=e77] [cursor=pointer]:
+          - generic [ref=e78]: 📊 Reporting & Insights
+          - img [ref=e79]
+        - generic [ref=e82] [cursor=pointer]:
+          - generic [ref=e83]: 🔧 Optimization & Maintenance
+          - img [ref=e84]
+        - generic [ref=e87] [cursor=pointer]:
+          - generic [ref=e88]: 🧠 AI Intelligence & Prediction
+          - img [ref=e89]
+      - generic [ref=e92]:
+        - list [ref=e93]:
+          - listitem [ref=e94]:
+            - button "Chat History" [ref=e95] [cursor=pointer]:
+              - img [ref=e96]
+              - generic [ref=e98]: Chat History
+        - generic [ref=e99]:
+          - generic [ref=e101]: M
+          - generic [ref=e102]:
+            - paragraph [ref=e103]: Meet Sheth
+            - paragraph [ref=e104]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e105] [cursor=pointer]:
+          - img [ref=e106]
+          - generic [ref=e109]: Sign Out
+      - button "Toggle Sidebar" [ref=e110]
+    - generic [ref=e111]:
+      - banner [ref=e112]:
+        - button "Toggle Sidebar" [ref=e113] [cursor=pointer]:
+          - img
+          - generic [ref=e114]: Toggle Sidebar
+      - main [ref=e115]:
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - img [ref=e119]
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - heading "Test Case Generator" [level=1] [ref=e123]
+                - generic [ref=e124]:
+                  - img [ref=e125]
+                  - text: AI Powered
+              - paragraph [ref=e127]: Generate comprehensive test cases from user stories, requirements, or code
+          - generic [ref=e128]:
+            - generic [ref=e129]:
+              - generic [ref=e130]:
+                - heading "Input" [level=3] [ref=e131]
+                - paragraph [ref=e132]: Provide your user story, requirements, code, or API specification
+              - generic [ref=e133]:
+                - generic [ref=e134]:
+                  - text: Input Type
+                  - combobox [ref=e135] [cursor=pointer]:
+                    - generic: User Story
+                    - img [ref=e136]
+                - generic [ref=e138]:
+                  - text: Test Framework
+                  - combobox [ref=e139] [cursor=pointer]:
+                    - generic: Playwright
+                    - img [ref=e140]
+                - generic [ref=e142]:
+                  - text: Output Format
+                  - combobox [ref=e143] [cursor=pointer]:
+                    - generic: All Formats
+                    - img [ref=e144]
+                - generic [ref=e146]:
+                  - generic [ref=e147]:
+                    - generic [ref=e148]: Content
+                    - button "Load Example" [ref=e149] [cursor=pointer]
+                  - textbox "Enter your user story here..." [ref=e150]: "As a user, I want to login to the application using my email and password, so that I can access my personalized dashboard. Acceptance Criteria: - Valid credentials should log the user in successfully - Invalid credentials should show an error message - Locked accounts should be handled with appropriate messaging - Password should be masked during entry - \"Remember me\" option should be available"
+                - button "Generate Test Cases" [ref=e177] [cursor=pointer]:
+                  - img
+                  - text: Generate Test Cases
+            - generic [ref=e151]:
+              - generic [ref=e152]:
+                - heading "Generated Test Cases" [level=3] [ref=e153]
+                - paragraph [ref=e154]: 9 test cases generated
+              - generic [ref=e194]:
+                - generic [ref=e195]:
+                  - generic [ref=e196]:
+                    - paragraph [ref=e197]: Total Cases
+                    - paragraph [ref=e198]: "9"
+                  - generic [ref=e199]:
+                    - paragraph [ref=e200]: Estimated Effort
+                    - paragraph [ref=e201]: 2-3 days
+                - generic [ref=e202]:
+                  - tablist [ref=e203]:
+                    - tab "Cases" [ref=e204] [cursor=pointer]
+                    - tab "Gherkin" [ref=e205] [cursor=pointer]
+                    - tab "Code" [active] [selected] [ref=e206] [cursor=pointer]
+                  - tabpanel "Code" [ref=e370]:
+                    - code [ref=e372]:
+                      - text: "import { test, expect } from \"@playwright/test\"; test.describe(\"Login Functionality\", () => { const LOGIN_URL = \"/login\"; // Assuming a base URL is configured in playwright.config.ts test.beforeEach(async ({ page }) => { await page.goto(LOGIN_URL); }); test(\"TC001_Successful Login with Valid Credentials\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"testuser@example.com\"); await page.fill('input[name=\"password\"]', \"Password123\"); await page.click('button[type=\"submit\"]'); await expect(page).toHaveURL(/.*dashboard/); // Adjust with your actual dashboard URL pattern // Optionally, check for a success message // await expect(page.locator('.success-message')).toBeVisible(); }); test(\"TC002_Login with Invalid Password\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"testuser@example.com\"); await page.fill('input[name=\"password\"]', \"wrongpassword\"); await page.click('button[type=\"submit\"]'); await expect(page.locator('.error-message')).toHaveText(\"Invalid email or password.\"); // Adjust selector and text await expect(page).toHaveURL(/.*login/); // User remains on login page }); test(\"TC003_Login with Invalid Email Format\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"invalid-email\"); await page.fill('input[name=\"password\"]', \"Password123\"); await page.click('button[type=\"submit\"]'); // Expect browser-level validation message or application-specific error const emailInput = page.locator('input[name=\"email\"]'); const validationMessage = await emailInput.evaluate(input => (input as HTMLInputElement).validationMessage); if (validationMessage) { expect(validationMessage).toContain(\"Please enter an email address\"); } else { await expect(page.locator('.error-message')).toHaveText(\"Please enter a valid email address.\"); // Adjust selector and text } await expect(page).toHaveURL(/.*login/); // User remains on login page }); test(\"TC004_Login with Non-existent Email\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"nonexist@example.com\"); await page.fill('input[name=\"password\"]', \"anypassword\"); await page.click('button[type=\"submit\"]'); await expect(page.locator('.error-message')).toHaveText(\"Invalid email or password.\"); // Adjust selector and text await expect(page).toHaveURL(/.*login/); // User remains on login page }); test(\"TC005_Login with Locked Account\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"lockeduser@example.com\"); await page.fill('input[name=\"password\"]', \"LockedPassword1\"); await page.click('button[type=\"submit\"]'); await expect(page.locator('.error-message')).toHaveText(\"Your account is locked. Please contact support.\"); // Adjust selector and text await expect(page).toHaveURL(/.*login/); // User remains on login page }); test(\"TC006_Password Masking\", async ({ page }) => { const passwordInput = page.locator('input[name=\"password\"]'); await passwordInput.fill(\"secretpassword\"); await expect(passwordInput).toHaveAttribute(\"type\", \"password\"); // Optionally, check if the value is not visible directly (though type=\"password\" handles this) }); test(\"TC007_Remember Me Functionality\", async ({ page }) => { // This test might require a more complex setup to clear cookies/local storage for proper isolation. // Playwright's context management helps with this. await page.fill('input[name=\"email\"]', \"testuser@example.com\"); await page.fill('input[name=\"password\"]', \"Password123\"); await page.locator('input[type=\"checkbox\"]', { hasText: \"Remember me\" }).check(); // Adjust selector await page.click('button[type=\"submit\"]'); await expect(page).toHaveURL(/.*dashboard/); // User logged in // Close and reopen the browser (simulated by creating a new page in a fresh context) const newContext = await page.context().browser()?.newContext(); if (!newContext) throw new Error(\"Could not create new browser context\"); const newPage = await newContext.newPage(); await newPage.goto(LOGIN_URL); // Expect to be redirected to the dashboard, or email pre-filled // This part depends on the exact implementation of \"Remember me\" // Option 1: Directly redirected to dashboard await expect(newPage).toHaveURL(/.*dashboard/, {timeout: 10000}); // Increased timeout as it might take a moment // Option 2: Email pre-filled (if only credentials are remembered, not active session) // await newPage.goto(LOGIN_URL); // await expect(newPage.locator('input[name=\"email\"]')).toHaveValue(\"testuser@example.com\"); await newContext.close(); }); test(\"TC008_Empty Email and Password Submission\", async ({ page }) => { await page.click('button[type=\"submit\"]'); await expect(page.locator('.error-message').first()).toHaveText(\"Email is required.\"); // Adjust selector and text await expect(page.locator('.error-message').nth(1)).toHaveText(\"Password is required.\"); // Adjust selector and text await expect(page).toHaveURL(/.*login/); // User remains on login page }); test(\"TC009_SQL Injection Attempt in Email Field\", async ({ page }) => { await page.fill('input[name=\"email\"]', \"\\' OR \\'1\\'=\\'1 --\"); await page.fill('input[name=\"password\"]', \"Password123\"); await page.click('button[type=\"submit\"]'); // Expect an error message indicating invalid credentials or proper input sanitization await expect(page.locator('.error-message')).toHaveText(\"Invalid email or password.\"); // Adjust selector and text await expect(page).toHaveURL(/.*login/); // Should not proceed to dashboard or crash });"
+                      - text: "});"
+          - generic [ref=e163]:
+            - heading "Key Features" [level=3] [ref=e165]
+            - generic [ref=e167]:
+              - generic [ref=e168]:
+                - heading "🎯 Comprehensive Coverage" [level=4] [ref=e169]
+                - paragraph [ref=e170]: Generates functional, edge case, and negative test scenarios automatically
+              - generic [ref=e171]:
+                - heading "📝 Multiple Formats" [level=4] [ref=e172]
+                - paragraph [ref=e173]: Output as Gherkin/BDD scenarios or executable test code
+              - generic [ref=e174]:
+                - heading "⚡ Framework Support" [level=4] [ref=e175]
+                - paragraph [ref=e176]: Supports Playwright, Selenium, Cypress, Jest, JUnit, and TestNG

@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from ..models.org import SalesforceOrg
 from ..models.persona import Persona
@@ -40,12 +39,23 @@ class TestCaseScriptBuilder:
     def build_robot_script(
         self,
         tc: TestCase,
-        persona: Optional[Persona] = None,
-        org: Optional[SalesforceOrg] = None,
+        persona: Persona | None = None,
+        org: SalesforceOrg | None = None,
         *,
         validate: bool = True,
         skip_dryrun: bool = False,
+        db=None,
+        project_slug: str | None = None,
     ) -> str:
+        """Compile an approved test case into a ``.robot`` file.
+
+        When ``db`` and ``project_slug`` are both supplied, the builder
+        pulls retrieval-augmented context (Jira issues + comments, uploaded
+        docs, related test-data rows) and injects it as a "Project context"
+        block at the top of the user message. Both arguments are optional
+        so legacy callers (``runs.py``, batch builders) keep working byte
+        for byte until they opt in.
+        """
         from ai_bridge import call_llm, extract_robot_code
 
         steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(tc.steps))
@@ -72,11 +82,27 @@ class TestCaseScriptBuilder:
             getattr(persona, "default_app", None) if persona is not None else None
         )
 
+        rag_block = ""
+        if db is not None and project_slug:
+            try:
+                from .rag_retrieval import format_passages_block, retrieve
+                passages = retrieve(
+                    db,
+                    project_slug=project_slug,
+                    query=f"{tc.title}\n{tc.expected_result or ''}",
+                    story_id=str(tc.user_story_id) if tc.user_story_id else None,
+                    limit=6,
+                )
+                rag_block = format_passages_block(passages)
+            except Exception as exc:  # noqa: BLE001 -- RAG miss is non-fatal
+                logger.warning("RAG retrieval skipped for build: %s", exc)
+
         system_prompt = assembler.build_system_prompt("builder")
         user_prompt = assembler.build_user_prompt_with_catalog(
             user_body,
             include_full_catalog=True,
             default_app=persona_default_app,
+            rag_context=rag_block,
         )
 
         if not validate:
@@ -94,7 +120,7 @@ class TestCaseScriptBuilder:
             scratch_path = Path(scratch.name)
 
         try:
-            def _llm(fix_prompt: Optional[str]) -> str:
+            def _llm(fix_prompt: str | None) -> str:
                 content = user_prompt
                 if fix_prompt:
                     content = (
@@ -109,8 +135,8 @@ class TestCaseScriptBuilder:
                     fix_misplaced_setup_teardown,
                     strip_credential_variable_overrides,
                     strip_empty_variable_overrides,
-                    strip_llm_robot_garbage,
                     strip_hallucinated_csv_variables_from_suite,
+                    strip_llm_robot_garbage,
                 )
                 cleaned = strip_credential_variable_overrides(robot_source)
                 cleaned = strip_empty_variable_overrides(cleaned)

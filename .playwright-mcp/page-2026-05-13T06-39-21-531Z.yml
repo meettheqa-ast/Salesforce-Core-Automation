@@ -1,0 +1,97 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1977]:
+      - generic [ref=e1979]:
+        - generic [ref=e1981]: TB
+        - generic [ref=e1982]:
+          - generic [ref=e1983]: TestingBuddy AI
+          - generic [ref=e1984]: Testing Platform
+      - generic [ref=e1985]:
+        - generic [ref=e1986]:
+          - generic [ref=e1987]: Main
+          - list [ref=e1989]:
+            - listitem [ref=e1990]:
+              - link "Dashboard" [ref=e1991] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e1992]
+                - generic [ref=e1995]: Dashboard
+            - listitem [ref=e1996]:
+              - link "Curriculum" [ref=e1997] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e1998]
+                - generic [ref=e2000]: Curriculum
+            - listitem [ref=e2001]:
+              - link "Settings" [active] [ref=e2002] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e2003]
+                - generic [ref=e2006]: Settings
+        - generic [ref=e2008] [cursor=pointer]:
+          - generic [ref=e2009]: 🎯 Planning & Strategy
+          - img [ref=e2010]
+        - generic [ref=e2013] [cursor=pointer]:
+          - generic [ref=e2014]: ✏️ Test Design & Creation
+          - img [ref=e2015]
+        - generic [ref=e2018] [cursor=pointer]:
+          - generic [ref=e2019]: 🤖 Automation & Framework
+          - img [ref=e2020]
+        - generic [ref=e2023] [cursor=pointer]:
+          - generic [ref=e2024]: ⚡ Test Execution & Management
+          - img [ref=e2025]
+        - generic [ref=e2028] [cursor=pointer]:
+          - generic [ref=e2029]: 📊 Reporting & Insights
+          - img [ref=e2030]
+        - generic [ref=e2033] [cursor=pointer]:
+          - generic [ref=e2034]: 🔧 Optimization & Maintenance
+          - img [ref=e2035]
+        - generic [ref=e2038] [cursor=pointer]:
+          - generic [ref=e2039]: 🧠 AI Intelligence & Prediction
+          - img [ref=e2040]
+      - generic [ref=e2043]:
+        - list [ref=e2044]:
+          - listitem [ref=e2045]:
+            - button "Chat History" [ref=e2046] [cursor=pointer]:
+              - img [ref=e2047]
+              - generic [ref=e2049]: Chat History
+        - generic [ref=e2050]:
+          - generic [ref=e2052]: M
+          - generic [ref=e2053]:
+            - paragraph [ref=e2054]: Meet Sheth
+            - paragraph [ref=e2055]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e2056] [cursor=pointer]:
+          - img [ref=e2057]
+          - generic [ref=e2060]: Sign Out
+      - button "Toggle Sidebar" [ref=e2061]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e2574]:
+          - generic [ref=e2576]:
+            - generic [ref=e2577]:
+              - heading "Settings" [level=1] [ref=e2578]
+              - paragraph [ref=e2579]: Manage your account and preferences
+            - generic [ref=e2580]:
+              - generic [ref=e2581]:
+                - img [ref=e2582]
+                - text: 0 day streak
+              - generic [ref=e2584]: 0 total days
+          - generic [ref=e2586]:
+            - generic [ref=e2587]:
+              - heading "Profile Information" [level=3] [ref=e2588]
+              - paragraph [ref=e2589]: Update your account details and preferences
+            - generic [ref=e2590]:
+              - generic [ref=e2591]:
+                - text: Full Name
+                - textbox "Full Name" [ref=e2592]:
+                  - /placeholder: Your full name
+                  - text: Meet Sheth
+              - generic [ref=e2593]:
+                - text: Email
+                - textbox "Email" [disabled] [ref=e2594]: m.sheth@astounddigital.com
+                - paragraph [ref=e2595]: Email cannot be changed
+              - button "Save Changes" [ref=e2596] [cursor=pointer]

@@ -9,7 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from ai_qa_portal.backend.models.schemas import SchemaRequest, SchemaResponse, SOQLRequest, SOQLResponse
+from ai_qa_portal.backend.models.schemas import (
+    SchemaRequest,
+    SchemaResponse,
+    SOQLRequest,
+    SOQLResponse,
+)
 from ai_qa_portal.backend.services.auth import get_current_user
 
 router = APIRouter(

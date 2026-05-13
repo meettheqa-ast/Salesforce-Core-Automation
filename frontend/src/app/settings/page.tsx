@@ -4,30 +4,62 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { api } from "@/lib/api";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
+
+const PROVIDER_PREF_KEY = "ai_qa_portal.preferred_llm_provider";
 
 export default function SettingsPage() {
   const [providers, setProviders] = useState<any[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("gemini");
+  const [savedProvider, setSavedProvider] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [providerStatus, setProviderStatus] = useState<string | null>(null);
   const [mcpStatus, setMcpStatus] = useState<any>(null);
+  const [mcpError, setMcpError] = useState<string | null>(null);
   const [catalogStatus, setCatalogStatus] = useState("");
-  // SF DX status hidden -- re-enable along with the UI card below.
-  // const [dxStatus, setDxStatus] = useState<any>(null);
 
   useEffect(() => {
-    api.llm.providers().then((d) => setProviders(d.providers || [])).catch(() => {});
+    api.llm.providers().then((d) => setProviders(d.providers || [])).catch((e) => {
+      setProviderStatus(`Could not load providers: ${e instanceof Error ? e.message : String(e)}`);
+    });
     api.mcp.health().then(setMcpStatus).catch(() => setMcpStatus({ running: false }));
-    // SF DX status fetch hidden along with its UI card -- re-enable when the
-    // SF DX feature is demo-ready.
-    // fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/salesforce/dx/status`)
-    //   .then((r) => r.json()).then(setDxStatus).catch(() => setDxStatus({ available: false }));
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(PROVIDER_PREF_KEY);
+      if (stored) {
+        setSelectedProvider(stored);
+        setSavedProvider(stored);
+      }
+    }
   }, []);
 
+  const handleApplyProvider = async () => {
+    setProviderStatus("Verifying...");
+    try {
+      // Round-trip through /api/llm/chat (provider override) so we surface
+      // a real success / failure rather than just toggling local state.
+      await api.llm.chat({
+        provider: selectedProvider,
+        system_prompt: "Reply with the single word OK and nothing else.",
+        user_message: "ping",
+      });
+      if (typeof window !== "undefined") {
+        localStorage.setItem(PROVIDER_PREF_KEY, selectedProvider);
+      }
+      setSavedProvider(selectedProvider);
+      setProviderStatus(`Active provider for new generations: ${selectedProvider}`);
+    } catch (e) {
+      setProviderStatus(`Provider check failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const handleMCPToggle = async () => {
+    setMcpError(null);
     try {
       if (mcpStatus?.running) await api.mcp.stop(); else await api.mcp.start();
       setMcpStatus(await api.mcp.health());
-    } catch {}
+    } catch (e) {
+      setMcpError(e instanceof Error ? e.message : String(e));
+    }
   };
 
   const handleRebuildCatalog = async () => {
@@ -42,12 +74,13 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8">
+    <PageScaffold>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-4xl font-bold mb-2">
-          <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">Settings</span>
-        </h1>
-        <p className="text-slate-400 mb-8">Configure AI providers, MCP server, and platform preferences.</p>
+        <PageHeader
+          eyebrow="Platform"
+          title="Settings"
+          description="Configure providers, runtime services, and platform maintenance tools."
+        />
       </motion.div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -68,11 +101,20 @@ export default function SettingsPage() {
             ))}
           </div>
           <div className="space-y-2">
-            <input type="password" placeholder="API Key (overrides .env)" value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 placeholder-slate-600 outline-none focus:border-purple-500" />
-            <p className="text-xs text-slate-600">Leave blank to use the key from .env</p>
+            <input type="password" placeholder="API Key (server-side override; not yet wired)" value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)} disabled
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 placeholder-slate-600 outline-none focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed" />
+            <p className="text-xs text-slate-600">API keys live in the backend .env. The selector below only changes which provider this browser session prefers.</p>
           </div>
+          <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={handleApplyProvider}
+            className="mt-3 w-full py-2 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-xl font-semibold text-sm hover:bg-purple-500/30 transition-all">
+            {savedProvider === selectedProvider ? "Re-verify provider" : "Apply provider"}
+          </motion.button>
+          {providerStatus && (
+            <p className={`text-xs mt-2 ${providerStatus.startsWith("Provider check failed") || providerStatus.startsWith("Could not") ? "text-red-400" : "text-emerald-400"}`}>
+              {providerStatus}
+            </p>
+          )}
         </AnimatedCard>
 
         {/* MCP Server */}
@@ -91,6 +133,7 @@ export default function SettingsPage() {
             }`}>
             {mcpStatus?.running ? "Stop Server" : "Start Server"}
           </motion.button>
+          {mcpError && <p className="text-xs mt-2 text-red-400">{mcpError}</p>}
         </AnimatedCard>
 
         {/* Keyword Catalog */}
@@ -119,6 +162,6 @@ export default function SettingsPage() {
         </AnimatedCard>
         */}
       </div>
-    </div>
+    </PageScaffold>
   );
 }

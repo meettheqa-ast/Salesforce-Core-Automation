@@ -35,12 +35,36 @@ Vercel (Next.js)  --(NEXT_PUBLIC_API_URL, HTTPS)-->  Fly Machine (FastAPI :8000)
 - A free **Vercel** account connected to that repo.
 - A free **Fly.io** account; install `flyctl` (`https://fly.io/docs/flyctl/install/`).
 - **Docker Desktop** (or Docker Engine) installed locally.
+- A **Postgres database with the `vector` extension** (Postgres 14+). Local dev gets one from `docker compose up postgres`; production wants a managed instance (Fly Postgres + `CREATE EXTENSION vector`, Neon, Supabase, or RDS with the extension enabled).
 - Real values for the secrets you intend to use:
   - `FERNET_KEY` (generate once, never change after personas are saved):
     ```bash
     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     ```
-  - LLM API keys you actually use (`GEMINI_API_KEY`, `OPENAI_API_KEY`, etc).
+  - `DATABASE_URL` — example: `postgresql+psycopg://portal:portal@db:5432/portal`. Leaving this empty falls back to legacy SQLite under `DATA_DIR/users.db`, which still works for solo dev but disables Jira/GitHub/RAG/scheduler features.
+  - LLM API keys. **Recommended primary: `CURSOR_API_KEY`** (mint at <https://cursor.com/dashboard/integrations>) — the backend's `_default_primary_provider()` picks Cursor as the primary as soon as this is set. Fallbacks: `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, etc. -- the failover chain runs through whichever keys you set. See [`docs/cursor-sdk-integration.md`](docs/cursor-sdk-integration.md).
+  - `OPENAI_API_KEY` (or `OPENAI_EMBEDDINGS_API_KEY`) for the default OpenAI embedding model used by the RAG index. Override with `EMBEDDING_PROVIDER=ollama` or `EMBEDDING_PROVIDER=gemini` if you'd rather not depend on OpenAI for embeddings.
+  - `JIRA_BASE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` for the optional org-wide Jira connection.
+  - `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` for the optional GitHub App integration. Per-project PAT fallbacks live in the database, not env.
+
+### Postgres + pgvector quick-start (local)
+
+```bash
+# Brings up Postgres 16 with pgvector pre-installed, plus the backend
+# wired to it via DATABASE_URL. The first boot creates the `vector`
+# extension automatically.
+docker compose up -d postgres
+
+# Apply migrations against the freshly-provisioned DB:
+DATABASE_URL='postgresql+psycopg://portal:portal@localhost:5432/portal' \
+    python -m alembic -c ai_qa_portal/alembic.ini upgrade head
+
+# If you have an existing SQLite users.db, copy its rows over:
+DATABASE_URL='postgresql+psycopg://portal:portal@localhost:5432/portal' \
+    python scripts/migrate_sqlite_to_postgres.py
+```
+
+After this, start the backend normally; it will detect `DATABASE_URL`, skip the SQLite fallback, and use Postgres for users + RBAC + runs + every new Jira/GitHub/RAG/scheduler table.
 
 ---
 
@@ -106,10 +130,15 @@ flyctl launch --no-deploy --copy-config        # accept defaults; pick region ne
 flyctl volumes create data --size 3 --region <your-region>
 
 # Secrets — set every key you would otherwise put in .env.
+# Recommended baseline: Cursor SDK as primary, plus one or more
+# fallback providers so the failover chain can route around quota /
+# rate-limit issues without operator intervention.
 flyctl secrets set \
   FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())") \
-  LLM_PROVIDER=gemini \
-  GEMINI_API_KEY=...
+  LLM_PROVIDER=cursor \
+  CURSOR_API_KEY=cursor_... \
+  GEMINI_API_KEY=... \
+  LLM_FAILOVER_ORDER=cursor,gemini,openai,anthropic,groq
 
 # Deploy.
 flyctl deploy

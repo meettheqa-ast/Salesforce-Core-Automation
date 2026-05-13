@@ -1,0 +1,180 @@
+# Python tooling config for the Salesforce Automation portal.
+#
+# This file is the single source of truth for ruff (primary linter) and
+# pylint (legacy, kept so the IDE doesn't fight existing integrations).
+# Cursor / VS Code picks up these sections automatically when the
+# respective extensions are installed.
+
+[tool.ruff]
+# Match the Python version we actually ship with (Docker base + dev
+# machines). The user's local interpreter is 3.14; CI/Docker run 3.13.
+# Linting against 3.13 keeps us compatible with both.
+target-version = "py313"
+line-length = 100
+extend-exclude = [
+  ".cursor",
+  ".next",
+  ".pytest_cache",
+  "_local_data",
+  "Results",
+  "Saved_Projects",
+  "Tests/Generated",
+  "ai_qa_portal/data",
+  "ai_qa_portal/outputs",
+  "frontend",
+  "venv",
+]
+
+[tool.ruff.lint]
+# Curated rule set: catch real bugs without spamming style noise. The
+# agent-side lint hook (.cursor/hooks/lint-after-edit.js) runs with
+# ``--select F`` so it surfaces only the strictest bug-bucket; this
+# project-level config is what `py -3 -m ruff check` uses by default.
+select = [
+  "F",     # pyflakes -- undefined names, unused imports, duplicate keys
+  "E",     # pycodestyle errors
+  "W",     # pycodestyle warnings
+  "I",     # isort -- import order / grouping
+  "B",     # bugbear -- common gotchas (mutable defaults, etc.)
+  "UP",    # pyupgrade -- modernise stale idioms
+  "C4",    # comprehensions
+  "SIM",   # simplifications
+  "ARG",   # unused arguments
+  "RET",   # return-statement hygiene
+]
+ignore = [
+  "E501",     # line-too-long -- formatter handles wrapping; informational only
+  "E402",     # module-level import not at top -- intentional for sys.path-mangling bridges
+  "B008",     # function calls in argument defaults -- FastAPI ``Depends(...)`` pattern
+  "B017",     # blanket pytest.raises(Exception) -- intentional in some bridge tests
+  "B904",     # raise without `from` -- intentional in some message-rewrap paths
+  "RET504",   # unnecessary assignment before return -- often hurts readability
+  "SIM102",   # collapsible-if -- nested ifs are often clearer
+  "SIM103",   # needless-bool -- explicit returns are clearer in some flows
+  "SIM105",   # suppressible-exception -- bridge cleanup uses try/except: pass deliberately
+  "SIM108",   # ternary instead of if/else -- often less readable
+  "SIM110",   # any/all loops -- explicit loops are clearer with side effects
+  "SIM117",   # multiple-with-statements -- nested context managers are often clearer
+  "UP007",    # use X | Y instead of Optional[X] -- mixed style throughout codebase
+  "UP028",    # yield from -- explicit loops sometimes carry intent
+  "UP042",    # StrEnum -- requires Python 3.11+ for some paths; not a universal upgrade
+  "ARG001",   # unused function argument -- FastAPI / overrides legitimately need them
+  "ARG002",   # unused method argument -- same
+  "ARG005",   # unused lambda argument -- same
+  "B007",     # unused loop control variable -- common in destructured iteration
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can be more permissive: unused-arg, magic numbers, long lines.
+"**/tests/**" = ["ARG", "B", "F841"]
+# Generated Robot test files / generated code aren't ours to lint.
+"Tests/Generated/**" = ["ALL"]
+# The Streamlit-era top-level scripts are scheduled for retirement;
+# applying ruff's full kit would generate noise on code we're already
+# planning to delete (see docs/cursor-sdk-integration.md for the
+# Streamlit retirement plan).
+"app*.py" = ["F", "E"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ai_qa_portal", "ai_bridge", "cursor_sdk_bridge", "mcp_bridge", "pw_mcp_bridge"]
+
+
+# ---------------------------------------------------------------------------
+# Pylint -- kept so Cursor's Python extension stops fighting our codebase.
+# ---------------------------------------------------------------------------
+# We are NOT relying on pylint for correctness checking; ruff is the
+# source of truth. This block exists purely to silence the noisiest
+# false positives that ship with default pylint when it analyses a
+# FastAPI + SQLAlchemy + Enum codebase. If your editor picks up the
+# project-level config and switches Pylint diagnostics off entirely,
+# even better.
+
+[tool.pylint.main]
+# Allow pylint to find first-party imports without --add-paths gymnastics.
+init-hook = "import sys; sys.path.insert(0, '.')"
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint."messages control"]
+# These are the rules generating the bulk of the 697-problem Pylint
+# noise on this codebase. Each disable is documented so future
+# maintainers know WHY it's off.
+disable = [
+  # E1101 / no-member: pylint can't follow SQLAlchemy declarative-base
+  # attributes (Mapped[...] columns), Enum subclasses, or Pydantic
+  # model fields. Every ``ProjectRole.lead`` / ``User.email`` / etc.
+  # fires this rule. ruff + basedpyright catch real attribute errors.
+  "no-member",
+
+  # W0611 / unused-import: every FastAPI dependency type
+  # (``Session``, ``get_db``, ``get_current_user``) imported only for
+  # use in ``Depends(...)`` typed parameters trips this. ruff's F401
+  # already handles genuinely-unused imports correctly.
+  "unused-import",
+
+  # C0114 / missing-module-docstring: not every module needs a
+  # docstring; the agent shouldn't be coerced into writing
+  # boilerplate.
+  "missing-module-docstring",
+  # C0115 / missing-class-docstring: ditto for tiny Pydantic models.
+  "missing-class-docstring",
+  # C0116 / missing-function-docstring: getters / property accessors
+  # don't need docstrings.
+  "missing-function-docstring",
+
+  # R0903 / too-few-public-methods: Pydantic / dataclass models
+  # frequently have <2 methods; that's the entire point.
+  "too-few-public-methods",
+  # R0914 / too-many-locals: routers + script_validation_loop
+  # genuinely need many locals.
+  "too-many-locals",
+  # R0913 / too-many-arguments: FastAPI handlers + bridges pass many
+  # DI args; pylint's default cap is too low.
+  "too-many-arguments",
+  # R0902 / too-many-instance-attributes: state-heavy classes
+  # (Recorder, SessionCache) hit this.
+  "too-many-instance-attributes",
+  # R0912 / too-many-branches: parsers / dispatchers genuinely have
+  # many branches.
+  "too-many-branches",
+  # R0915 / too-many-statements: long handlers are accepted in this
+  # codebase.
+  "too-many-statements",
+  # R0911 / too-many-return-statements: validation pipelines genuinely
+  # short-circuit a lot.
+  "too-many-return-statements",
+  # W0212 / protected-access: bridges legitimately reach into
+  # ``_internal`` state across module boundaries.
+  "protected-access",
+  # W0703 / broad-except: bridge cleanup paths use ``except
+  # Exception`` deliberately (mirrors mcp_bridge / pw_mcp_bridge).
+  "broad-except",
+  # W0702 / bare-except: same justification.
+  "bare-except",
+
+  # Pylint warns about logging f-strings; we prefer them anyway for
+  # readability. Performance impact is negligible.
+  "logging-fstring-interpolation",
+  "logging-not-lazy",
+
+  # E0401 / import-error: pylint runs in the IDE without our virtual-
+  # env activated, so it can't resolve project deps (PIL, pixelmatch,
+  # rf-mcp). Real missing imports surface at runtime; ruff's F401 is
+  # accurate without needing the imports to actually resolve.
+  "import-error",
+
+  # C0415 / import-outside-toplevel: bridges + recipe matchers lazy-
+  # import on purpose so module-load stays fast. This is the
+  # documented pattern across mcp_bridge, pw_mcp_bridge, and
+  # cursor_sdk_bridge.
+  "import-outside-toplevel",
+
+  # W0107 / unnecessary-pass: ``pass`` after a docstring is a valid
+  # placeholder for forward-declared classes.
+  "unnecessary-pass",
+
+  # R0401 / cyclic-import: a couple of the legacy module pairs have
+  # late-bound circular imports that are not worth refactoring today.
+  "cyclic-import",
+]

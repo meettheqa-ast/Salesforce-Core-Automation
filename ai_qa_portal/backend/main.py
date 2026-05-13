@@ -27,6 +27,7 @@ from .routers import (
     analytics,
     catalog,
     generate,
+    integrations,
     invitations,
     llm,
     locators,
@@ -39,8 +40,11 @@ from .routers import (
     runs,
     salesforce,
     sprints,
+    tags,
+    test_cases,
     user_stories,
     users,
+    visual_regression,
 )
 
 app = FastAPI(
@@ -89,16 +93,18 @@ app.include_router(personas.router)
 app.include_router(runs.router)
 app.include_router(runs.exec_router)
 app.include_router(generate.router)
-app.include_router(llm.router)
 app.include_router(mcp.router)
 app.include_router(salesforce.router)
 app.include_router(catalog.router)
 app.include_router(analytics.router)
 app.include_router(locators.router)
-app.include_router(user_stories.router)
-app.include_router(user_stories.test_cases_router)
-app.include_router(user_stories.tags_router)
 app.include_router(sprints.router)
+app.include_router(user_stories.router)
+app.include_router(test_cases.router)
+app.include_router(tags.router)
+app.include_router(llm.router)
+app.include_router(integrations.router)
+app.include_router(visual_regression.router)
 app.include_router(users.router)
 app.include_router(admin.router)
 
@@ -126,11 +132,77 @@ def _prewarm_rfmcp() -> None:
         logger.warning("RF-MCP pre-warm failed (non-fatal): %s", exc)
 
 
+def _probe_ollama() -> None:
+    """Check whether a local Ollama server is reachable. Logs the result
+    so operators can see at a glance whether the local-LLM tier is
+    active. Best-effort: a failed probe just means the failover chain
+    will skip the ``ollama`` provider until ``_ollama_is_reachable``
+    re-checks (every 60s, lazily, on the next call).
+    """
+    try:
+        import requests
+
+        from ai_bridge import _ollama_base_url, _ollama_is_reachable
+
+        if not _ollama_is_reachable(force=True):
+            logger.info(
+                "Ollama (local LLM) not detected at %s; "
+                "failover chain will skip the local tier until it's started. "
+                "See README 'Local LLM setup' for install instructions.",
+                _ollama_base_url(),
+            )
+            return
+
+        # Reachable: also list available models so the operator sees
+        # what's pulled and ready to use.
+        try:
+            resp = requests.get(f"{_ollama_base_url()}/api/tags", timeout=2.0)
+            tags = resp.json().get("models") or []
+            names = [m.get("name") for m in tags if m.get("name")]
+            logger.info(
+                "Ollama (local LLM) detected at %s; models available: %s",
+                _ollama_base_url(),
+                ", ".join(names) if names else "(none pulled yet -- run `ollama pull qwen2.5-coder:7b`)",
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.info("Ollama detected at %s; model list unavailable.", _ollama_base_url())
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.debug("Ollama probe skipped: %s", exc)
+
+
 @app.on_event("startup")
 def _on_startup() -> None:
     init_db()
     if os.environ.get("MCP_PREWARM", "1").strip() not in ("0", "false", "False", ""):
         threading.Thread(target=_prewarm_rfmcp, name="rfmcp-prewarm", daemon=True).start()
+    # Probe Ollama once at startup (non-blocking via thread). The
+    # reachability cache then drives the failover chain build for the
+    # next 60s; subsequent probes happen lazily inside _has_api_key.
+    threading.Thread(target=_probe_ollama, name="ollama-probe", daemon=True).start()
+
+    # Start APScheduler and re-register every enabled local schedule.
+    # github_actions schedules are intentionally not registered here --
+    # their cron lives in the connected repo's workflow YAML.
+    try:
+        from .services import scheduler as _scheduler_service
+        from .services.db import SessionLocal
+
+        _scheduler_service.start()
+        if settings.scheduler_enabled:
+            with SessionLocal() as session:
+                reloaded = _scheduler_service.reload_all(session)
+            logger.info("APScheduler: re-registered %d local schedule(s)", reloaded)
+    except Exception as exc:  # noqa: BLE001 -- scheduler failure should never block boot
+        logger.warning("Scheduler startup failed (non-fatal): %s", exc)
+
+
+@app.on_event("shutdown")
+def _on_shutdown() -> None:
+    try:
+        from .services import scheduler as _scheduler_service
+        _scheduler_service.shutdown()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @app.get("/")

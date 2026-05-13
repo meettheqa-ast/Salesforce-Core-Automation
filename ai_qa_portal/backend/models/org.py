@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import enum
-from typing import Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -20,6 +19,6 @@ class SalesforceOrg(BaseModel):
     name: str
     login_url: str
     org_type: OrgType
-    default_persona_id: Optional[UUID] = None
+    default_persona_id: UUID | None = None
     # Phase 1 isolation: stamped on create. Empty string for legacy records.
     owner_user_id: str = ""

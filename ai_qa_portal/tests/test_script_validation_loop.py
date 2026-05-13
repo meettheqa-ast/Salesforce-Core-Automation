@@ -10,12 +10,8 @@ from __future__ import annotations
 
 import textwrap
 from pathlib import Path
-from typing import Optional
-
-import pytest
 
 from ai_qa_portal.backend.services import script_validation_loop as svl
-
 
 # Self-contained scripts (no external Resource imports) so the
 # validator can run them in a tmpfile without needing the project's
@@ -64,9 +60,9 @@ def test_loop_converges_after_one_correction(tmp_path: Path):
     on attempt 2 and surfaces the trail."""
     suite_path = tmp_path / "suite.robot"
     responses = iter([BAD_SCRIPT, GOOD_SCRIPT])
-    fix_prompts_seen: list[Optional[str]] = []
+    fix_prompts_seen: list[str | None] = []
 
-    def llm(fix_prompt: Optional[str]) -> str:
+    def llm(fix_prompt: str | None) -> str:
         fix_prompts_seen.append(fix_prompt)
         return next(responses)
 
@@ -94,7 +90,7 @@ def test_loop_returns_partial_result_when_budget_exhausted(tmp_path: Path):
     attempt."""
     suite_path = tmp_path / "suite.robot"
 
-    def llm(fix_prompt: Optional[str]) -> str:
+    def llm(fix_prompt: str | None) -> str:
         # Always return the bad script; the loop should give up.
         return BAD_SCRIPT
 
@@ -125,7 +121,7 @@ def test_loop_handles_empty_llm_output(tmp_path: Path):
     suite_path = tmp_path / "suite.robot"
     responses = iter(["", GOOD_SCRIPT])
 
-    def llm(fix_prompt: Optional[str]) -> str:
+    def llm(fix_prompt: str | None) -> str:
         return next(responses)
 
     result = svl.run_with_validation(
@@ -149,7 +145,7 @@ def test_loop_uses_default_budget_when_max_attempts_none(tmp_path: Path):
     default (currently 2 retries -> 3 total attempts) without crashing."""
     suite_path = tmp_path / "suite.robot"
 
-    def always_good(fix_prompt: Optional[str]) -> str:
+    def always_good(fix_prompt: str | None) -> str:
         return GOOD_SCRIPT
 
     result = svl.run_with_validation(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from ..models.user_story import UserStory, UserStoryStatus, UserStoryUpdate
@@ -18,7 +18,7 @@ class StoryVersioner:
         archived = existing.model_copy(
             update={
                 "status": UserStoryStatus.archived,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
         )
         storage.save_user_story(archived.model_dump(mode="json"))
@@ -31,8 +31,13 @@ class StoryVersioner:
             status=UserStoryStatus.active,
             version=existing.version + 1,
             prev_version_id=existing.id,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            owner_user_id=existing.owner_user_id,
+            # Preserve sprint membership across versions. Without this, editing
+            # any story currently in a sprint would silently drop it back to
+            # the backlog -- the new row's ``sprint_id`` would default to None.
+            sprint_id=existing.sprint_id,
         )
         storage.save_user_story(new_story.model_dump(mode="json"))
 

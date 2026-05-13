@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -33,10 +33,10 @@ class Sprint(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     project_id: UUID
     name: str
-    goal: Optional[str] = None
+    goal: str | None = None
     state: SprintState = SprintState.planned
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: date | None = None
+    end_date: date | None = None
     created_at: datetime
     updated_at: datetime
     # Phase 1 isolation: stamped on create. Empty string for legacy records.
@@ -46,30 +46,30 @@ class Sprint(BaseModel):
     # Jira / Azure DevOps integration writes these on import + sync.
     # Nothing in the local-only flow ever touches them, so adding them is
     # a no-op for existing behaviour.
-    external_id: Optional[str] = None
-    external_source: Optional[str] = None  # "jira" | reserved for "azure-devops" etc.
-    external_url: Optional[str] = None
-    last_synced_at: Optional[datetime] = None
+    external_id: str | None = None
+    external_source: str | None = None  # "jira" | reserved for "azure-devops" etc.
+    external_url: str | None = None
+    last_synced_at: datetime | None = None
     # Raw source-system payload kept verbatim. Useful for two-way sync
     # so we can detect "is the external state divergent from ours?"
     # without re-fetching every field individually.
-    external_payload: Optional[dict[str, Any]] = None
+    external_payload: dict[str, Any] | None = None
 
 
 class SprintCreate(BaseModel):
     project_id: UUID
     name: str
-    goal: Optional[str] = None
+    goal: str | None = None
     state: SprintState = SprintState.planned
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 class SprintUpdate(BaseModel):
     """Partial update; every field optional. PUT /sprints/{id} applies
     only the keys actually provided."""
-    name: Optional[str] = None
-    goal: Optional[str] = None
-    state: Optional[SprintState] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    name: str | None = None
+    goal: str | None = None
+    state: SprintState | None = None
+    start_date: date | None = None
+    end_date: date | None = None

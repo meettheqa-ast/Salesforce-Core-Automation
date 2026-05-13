@@ -15,7 +15,6 @@ Usage in Robot (via GlobalApi.robot):
 
 from __future__ import annotations
 
-import re
 from urllib.parse import urlparse
 
 from robot.api import logger
@@ -162,7 +161,7 @@ class SalesforceApiLibrary:
         logger.info("Salesforce API session established.")
         return self._sf
 
-    def _try_reuse_selenium_session(self) -> "tuple[str, str] | None":
+    def _try_reuse_selenium_session(self) -> tuple[str, str] | None:
         """Inspect the live SeleniumLibrary session for a Salesforce
         session cookie that is valid for ``services/data/`` REST calls.
         Returns ``(session_id, instance_url)`` or ``None``.
@@ -305,7 +304,7 @@ class SalesforceApiLibrary:
             return []
 
     @staticmethod
-    def _pick_api_session(cookies: list[dict]) -> "tuple[str | None, str | None]":
+    def _pick_api_session(cookies: list[dict]) -> tuple[str | None, str | None]:
         """Pick the ``sid`` cookie whose domain is the canonical API
         host (``*.my.salesforce.com``). Returns ``(sid, domain)`` or
         ``(None, None)``."""
@@ -322,7 +321,7 @@ class SalesforceApiLibrary:
     @staticmethod
     def _pick_lightning_session(
         cookies: list[dict],
-    ) -> "tuple[str | None, str | None]":
+    ) -> tuple[str | None, str | None]:
         """Pick a ``sid`` on a ``.lightning.force.com`` (or any other
         Salesforce-shaped) host. Used as the input to the
         ``frontdoor.jsp`` upgrade."""
@@ -371,7 +370,7 @@ class SalesforceApiLibrary:
         *,
         lightning_sid: str,
         my_domain_host: str,
-    ) -> "tuple[str, str] | None":
+    ) -> tuple[str, str] | None:
         """Use Salesforce's documented session-bridging endpoint to
         convert a Lightning session into an API-eligible one.
 

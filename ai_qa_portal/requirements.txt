@@ -5,7 +5,54 @@ pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 cryptography>=44.0.0
 python-Levenshtein>=0.26.0
+# Required by FastAPI for any File()/Form() upload endpoint (context files,
+# test-data tables, persona bulk import). FastAPI raises at first request
+# rather than at import time, so missing this hides until a user uploads.
+python-multipart>=0.0.9
 
 # Auth & RBAC (Phase 1+)
 PyJWT[crypto]>=2.9.0
 SQLAlchemy>=2.0.30
+
+# Postgres + pgvector (Phase: Jira RAG + GitHub + Scheduler)
+# When DATABASE_URL points at Postgres, the backend uses psycopg + pgvector.
+# SQLite stays as the fallback for local dev when DATABASE_URL is unset.
+psycopg[binary]>=3.2.0
+pgvector>=0.3.6
+alembic>=1.13.0
+
+# Jira REST client (Phase: Jira ingestion)
+# Lightweight: we use httpx directly rather than atlassian-python-api so we
+# only pay for the methods we actually call (paginated search + comments).
+# httpx ships transitively via fastapi[all] / uvicorn; pin it for clarity:
+httpx>=0.27.0
+
+# Context-file parsers (Phase: RAG context store)
+pandas>=2.2.0
+openpyxl>=3.1.0
+pypdf>=4.2.0
+python-docx>=1.1.0
+tiktoken>=0.7.0
+
+# GitHub provider (Phase: GitHub integration)
+# httpx is already pinned above; PyJWT[crypto] (pinned with the Auth section)
+# is what signs the GitHub App JWT with the App's RSA private key. Jinja2
+# renders the workflow YAML template that ships into customer repos.
+Jinja2>=3.1.0
+PyYAML>=6.0
+
+# Scheduled runs (Phase: Hybrid scheduler)
+APScheduler>=3.10.0
+croniter>=2.0.0
+
+# Playwright-MCP integration (Phase 0+)
+# Drives locator validation, recording mode, visual regression, and
+# (later) AI exploratory testing. Browser binaries must be installed
+# separately:
+#     python -m playwright install chromium --with-deps
+# In Docker, base off mcr.microsoft.com/playwright/python:v1.49.0-noble
+# which has chromium + system deps pre-installed.
+playwright>=1.49.0
+# pixelmatch for visual regression diffing (Phase 3). Pure-Python port
+# of the algorithm Playwright uses internally; no native deps.
+pixelmatch>=0.3.0

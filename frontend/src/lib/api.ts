@@ -2,8 +2,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // --- Auth token plumbing -------------------------------------------------
 // Fetched lazily from /api/auth/jwt the first time `apiFetch` runs in the
-// browser, then cached. On 401 from the backend we drop the cache so the next
-// call refetches a fresh token (covers the 1h JWT lifetime + login flips).
+// browser, then cached. The token is the **Google ID token** copied from
+// NextAuth's session (see frontend/src/auth.ts); the FastAPI backend verifies
+// it against Google's JWKS. On 401 we drop the cache and refetch from the
+// session -- if the ID token is still expired (Google IDs live ~1h with no
+// silent refresh wired up), we redirect to /login.
 
 let _cachedToken: string | null = null;
 let _inFlight: Promise<string | null> | null = null;
@@ -94,6 +97,21 @@ export function clearAuthCache(): void {
   _cachedToken = null;
 }
 
+/** Best-effort toast for non-React callers. The ToastProvider listens on a
+ *  module-level emitter; if it isn't mounted (e.g. during SSR or before
+ *  layout hydrates), the call is a no-op rather than throwing. Imported
+ *  lazily so we don't pull React component code into the API module's
+ *  bundle graph at the top level. */
+async function _maybeToast(message: string, kind: "error" | "success" | "info" = "info"): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    const mod = await import("@/components/ui/ToastProvider");
+    mod.pushToast(message, kind);
+  } catch {
+    // Toast module unavailable; keep silence rather than fail the request.
+  }
+}
+
 /** Pre-warm the token cache. Useful before rendering URLs that embed the
  *  token in the query string (downloads, EventSource, <img>). Safe to call
  *  multiple times -- in-flight requests are deduplicated. */
@@ -107,11 +125,23 @@ if (typeof window !== "undefined") {
   void _fetchJwt();
 }
 
-export type RunStatus = "PASS" | "FAIL" | "EMPTY";
+export type RunStatus = "PASS" | "FAIL" | "EMPTY" | "VISUAL_DRIFT";
+
+/** Phase 3: a single visual-regression baseline candidate. The "Pending
+ *  baselines" panel renders a list of these per project. */
+export interface PendingBaseline {
+  test_case_id: string;
+  step_label: string;
+  baseline_path: string | null;
+  current_path: string;
+  diff_percent: number;
+  is_new: boolean;
+}
 
 export interface RunHistoryRow {
   run_name: string;
   timestamp: string;
+  project_slug?: string | null;
   passed: number;
   failed: number;
   skipped: number;
@@ -143,6 +173,11 @@ export interface RunArtefacts {
   report_html: string | null;
   output_xml: string | null;
   screenshots: string[];
+  /** Phase 4: Playwright trace files. Empty when the run didn't opt
+   *  into ``--variable USE_PLAYWRIGHT_TRACE:1``. Each entry is a
+   *  filename inside the run folder; the frontend opens
+   *  https://trace.playwright.dev/?trace=<file-url> to view. */
+  playwright_traces?: string[];
 }
 
 export interface RunSummary {
@@ -174,15 +209,39 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
       ...options,
     });
   };
+  return _runFetch(doFetch);
+}
+
+/** Multipart upload helper. Mirrors apiFetch's auth + 401 recovery but skips
+ *  the JSON Content-Type so the browser populates the multipart boundary.
+ *  Use for file uploads (context files, persona / test-data CSVs). */
+async function apiFetchMultipart<T>(path: string, form: FormData, options?: Omit<RequestInit, "body" | "headers">): Promise<T> {
+  const doFetch = async (): Promise<Response> => {
+    const auth = await authHeader();
+    return fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      ...options,
+      headers: {
+        ...auth,
+      },
+      body: form,
+    });
+  };
+  return _runFetch(doFetch);
+}
+
+async function _runFetch<T>(doFetch: () => Promise<Response>): Promise<T> {
 
   let res: Response;
   try {
     res = await doFetch();
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Network error";
-    throw new Error(
-      `${msg}. Is the API running at ${API_BASE}? (Set NEXT_PUBLIC_API_URL if needed.)`
-    );
+    const wrapped = `${msg}. Is the API running at ${API_BASE}? (Set NEXT_PUBLIC_API_URL if needed.)`;
+    // Surface network failures in a global toast so callers using
+    // `.catch(() => setX([]))` don't silently swallow connectivity loss.
+    void _maybeToast(wrapped, "error");
+    throw new Error(wrapped);
   }
 
   // Token may have expired; refresh once and retry.
@@ -576,6 +635,30 @@ export const api = {
         method: "PUT",
         body: JSON.stringify(data),
       }),
+    assign: (id: string, owner_user_id?: string) =>
+      apiFetch<any>(`/user-stories/${encodeURIComponent(id)}/assign`, {
+        method: "POST",
+        body: JSON.stringify({ owner_user_id: owner_user_id || null }),
+      }),
+    comments: (id: string) =>
+      apiFetch<Array<{
+        id: string;
+        story_id: string;
+        author_user_id: string;
+        author_email: string;
+        body: string;
+        mentions: string[];
+        created_at: string;
+      }>>(`/user-stories/${encodeURIComponent(id)}/comments`),
+    addComment: (id: string, body: string) =>
+      apiFetch<any>(`/user-stories/${encodeURIComponent(id)}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      }),
+    activity: (id: string, limit = 30) =>
+      apiFetch<{ story_id: string; items: Array<any> }>(
+        `/user-stories/${encodeURIComponent(id)}/activity?limit=${limit}`,
+      ),
     /** AI-generates draft test cases AND persists them as status=draft.
      *  Frontend should refetch testCases.list(id) afterwards to get the
      *  canonical rows with their server-assigned ids. */
@@ -599,6 +682,7 @@ export const api = {
       }),
   },
   testCases: {
+    get: (id: string) => apiFetch<any>(`/test-cases/${encodeURIComponent(id)}`),
     list: (userStoryId: string) =>
       apiFetch<any[]>(`/test-cases?user_story_id=${encodeURIComponent(userStoryId)}`),
     /** Per-case patch. Every field is optional -- the backend applies only
@@ -643,6 +727,34 @@ export const api = {
         content: string;
         built_at: string | null;
       }>(`/test-cases/${encodeURIComponent(id)}/script`),
+    saveScript: (id: string, content: string) =>
+      apiFetch<{ ok: boolean; test_case_id: string; path: string; bytes_written: number }>(
+        `/test-cases/${encodeURIComponent(id)}/script`,
+        {
+          method: "PUT",
+          body: JSON.stringify({ content }),
+        },
+      ),
+    scriptHistory: (id: string) =>
+      apiFetch<{
+        test_case_id: string;
+        items: Array<{ name: string; path: string; modified_at: string; size: number }>;
+      }>(`/test-cases/${encodeURIComponent(id)}/script/history`),
+    scriptHistoryItem: (id: string, name: string) =>
+      apiFetch<{ test_case_id: string; name: string; content: string }>(
+        `/test-cases/${encodeURIComponent(id)}/script/history/${encodeURIComponent(name)}`,
+      ),
+    /** Build/refresh one test case's Robot script on demand. */
+    buildScript: (id: string) =>
+      apiFetch<{
+        ok: boolean;
+        test_case_id: string;
+        script_path: string;
+        built_at: string;
+      }>(`/test-cases/${encodeURIComponent(id)}/build-script`, {
+        method: "POST",
+        body: "{}",
+      }),
     /** Self-heal a failed test case: feed its output.xml + screenshot back to
      *  the LLM and rewrite the saved Robot script. The frontend can then open
      *  api.runs.testCaseStreamUrl to verify the rewrite. Capped at 2
@@ -677,6 +789,13 @@ export const api = {
   },
   tags: {
     list: (projectId: string) => apiFetch<any[]>(`/tags?project_id=${encodeURIComponent(projectId)}`),
+    create: (body: { project_id: string; name: string; color?: string }) =>
+      apiFetch<any>("/tags", { method: "POST", body: JSON.stringify(body) }),
+    delete: (tagId: string, projectId: string) =>
+      apiFetch<{ ok: boolean; deleted: string }>(
+        `/tags/${encodeURIComponent(tagId)}?project_id=${encodeURIComponent(projectId)}`,
+        { method: "DELETE" },
+      ),
   },
   sprints: {
     /** Create a sprint under a project. Owner check is enforced by the
@@ -749,11 +868,75 @@ export const api = {
         }>;
       }>(`/sprints/${encodeURIComponent(id)}/test-cases`),
   },
+  /** Phase 3: visual regression endpoints. Per-project baseline
+   *  management. Server-side gated by ``settings.pw_visual_regression``;
+   *  callers should catch 403 to handle "feature not enabled" cleanly. */
+  visualRegression: {
+    pending: (projectSlug: string) =>
+      apiFetch<PendingBaseline[]>(
+        `/api/visual-regression/${encodeURIComponent(projectSlug)}/pending-baselines`,
+      ),
+    promote: (projectSlug: string, body: { test_case_id: string; step_label?: string }) =>
+      apiFetch<{ ok: boolean; test_case_id: string; step_label: string }>(
+        `/api/visual-regression/${encodeURIComponent(projectSlug)}/promote-baseline`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Returns a sync URL for embedding via <img> -- includes the JWT. */
+    screenshotUrl: (
+      projectSlug: string,
+      kind: "baseline" | "current" | "diff",
+      filename: string,
+      runFolder?: string,
+    ) => {
+      const sp = new URLSearchParams({ kind, filename });
+      if (runFolder) sp.set("run_folder", runFolder);
+      return withAuthQuery(
+        `${API_BASE}/api/visual-regression/${encodeURIComponent(projectSlug)}/screenshot?${sp.toString()}`,
+      );
+    },
+  },
   generate: {
     quick: (data: any) => apiFetch<any>("/api/generate/robot-suite", { method: "POST", body: JSON.stringify(data) }),
     stepwise: (data: any) => apiFetch<any>("/api/generate/mcp-stepwise", { method: "POST", body: JSON.stringify(data) }),
     /** SSE -- the JWT is embedded in the query string because EventSource cannot set headers. */
     stepwiseStreamUrl: () => withAuthQuery(`${API_BASE}/api/generate/mcp-stepwise/stream`),
+    /** Deterministic recipe registry. Drives the "Recipes" panel in /generate. */
+    recipes: () => apiFetch<Array<{ name: string; description: string; sample_prompt: string }>>("/api/generate/recipes"),
+    /** Save edited generated script to disk. */
+    saveScript: (data: { robot_code: string; test_path?: string }) =>
+      apiFetch<{ ok: boolean; test_path: string; bytes_written: number }>("/api/generate/save", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    /** Phase 2: Recording mode. Three endpoints orchestrate a session:
+     *    record.start -> launches Playwright + auto-login, returns id
+     *    record.actions -> polls captured actions while recording
+     *    record.stop -> closes browser, returns LLM-translated .robot
+     *
+     *  Gated server-side by ``settings.pw_recording``; clients should
+     *  catch 403 / 503 and surface "feature not enabled" gracefully. */
+    record: {
+      start: (data: {
+        sandbox_url: string;
+        username: string;
+        password: string;
+        persona_id?: string;
+        test_name?: string;
+      }) =>
+        apiFetch<{ session_id: string }>("/api/generate/record/start", {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      actions: (sessionId: string) =>
+        apiFetch<{ session_id: string; actions: any[]; count: number }>(
+          `/api/generate/record/${encodeURIComponent(sessionId)}/actions`,
+        ),
+      stop: (sessionId: string) =>
+        apiFetch<any>(
+          `/api/generate/record/${encodeURIComponent(sessionId)}/stop`,
+          { method: "POST", body: "{}" },
+        ),
+    },
   },
   runs: {
     execute: (data: any) => apiFetch<any>("/api/runs/execute", { method: "POST", body: JSON.stringify(data) }),
@@ -898,4 +1081,374 @@ export const api = {
       return apiFetch<UserSearchHit[]>(`/api/users/search?${sp.toString()}`);
     },
   },
+
+  // ---- Jira integration (per-project) ----
+  jira: {
+    getOrgConnection: () => apiFetch<JiraConnectionView | null>(`/integrations/jira/connection`),
+    upsertOrgConnection: (body: JiraConnectionWrite) =>
+      apiFetch<JiraConnectionView>(`/integrations/jira/connection`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    deleteOrgConnection: () =>
+      apiFetch<void>(`/integrations/jira/connection`, { method: "DELETE" }),
+    getProjectConnection: (slug: string) =>
+      apiFetch<JiraConnectionView | null>(`/projects/${encodeURIComponent(slug)}/integrations/jira/connection`),
+    upsertProjectConnection: (slug: string, body: JiraConnectionWrite) =>
+      apiFetch<JiraConnectionView>(`/projects/${encodeURIComponent(slug)}/integrations/jira/connection`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    deleteProjectConnection: (slug: string) =>
+      apiFetch<void>(`/projects/${encodeURIComponent(slug)}/integrations/jira/connection`, { method: "DELETE" }),
+    test: (slug: string) =>
+      apiFetch<{ ok: boolean; account_id?: string; display_name?: string; email?: string }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/test`,
+        { method: "POST" },
+      ),
+    listProjects: (slug: string) =>
+      apiFetch<JiraProjectRow[]>(`/projects/${encodeURIComponent(slug)}/integrations/jira/projects`),
+    sync: (slug: string, jiraProjectKey: string, includeComments = true) => {
+      const sp = new URLSearchParams({ jira_project_key: jiraProjectKey, include_comments: String(includeComments) });
+      return apiFetch<JiraSyncStats>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/sync?${sp.toString()}`,
+        { method: "POST" },
+      );
+    },
+    listSyncedSprints: (slug: string, jiraProjectKey?: string) => {
+      const qs = jiraProjectKey ? `?jira_project_key=${encodeURIComponent(jiraProjectKey)}` : "";
+      return apiFetch<JiraSyncedSprint[]>(`/projects/${encodeURIComponent(slug)}/integrations/jira/sprints${qs}`);
+    },
+    listSyncedIssues: (slug: string, opts?: { jiraProjectKey?: string; sprintJiraId?: string; limit?: number; offset?: number }) => {
+      const sp = new URLSearchParams();
+      if (opts?.jiraProjectKey) sp.set("jira_project_key", opts.jiraProjectKey);
+      if (opts?.sprintJiraId) sp.set("sprint_jira_id", opts.sprintJiraId);
+      if (opts?.limit) sp.set("limit", String(opts.limit));
+      if (opts?.offset) sp.set("offset", String(opts.offset));
+      const qs = sp.toString();
+      return apiFetch<JiraSyncedIssue[]>(`/projects/${encodeURIComponent(slug)}/integrations/jira/issues${qs ? `?${qs}` : ""}`);
+    },
+    importToPortal: (slug: string, body: { sprint_jira_ids: string[]; issue_jira_ids: string[] }) =>
+      apiFetch<{ imported_sprint_ids: string[]; imported_story_ids: string[] }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/import`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+  },
+
+  // ---- GitHub integration ----
+  github: {
+    getInstallUrl: () => apiFetch<{ install_url: string; app_id: string }>(`/integrations/github/app-install-url`),
+    createAppConnection: (body: { installation_id: string; owner_login?: string }) =>
+      apiFetch<GitHubConnectionView & { webhook_secret_plaintext: string }>(
+        `/integrations/github/connections/app`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    getProjectConnection: (slug: string) =>
+      apiFetch<GitHubConnectionView | null>(`/projects/${encodeURIComponent(slug)}/integrations/github/connection`),
+    upsertProjectPAT: (slug: string, body: { access_token: string; owner_login: string }) =>
+      apiFetch<GitHubConnectionView & { webhook_secret_plaintext: string }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/github/connection/pat`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    deleteProjectConnection: (slug: string) =>
+      apiFetch<void>(`/projects/${encodeURIComponent(slug)}/integrations/github/connection`, { method: "DELETE" }),
+    test: (slug: string) =>
+      apiFetch<{ ok: boolean; result: unknown }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/github/test`,
+        { method: "POST" },
+      ),
+    listRepos: (slug: string) =>
+      apiFetch<GitHubRepoListing[]>(`/projects/${encodeURIComponent(slug)}/integrations/github/repos`),
+    connectRepo: (slug: string, body: { owner: string; name: string; default_branch?: string; suites_root_path?: string }) =>
+      apiFetch<GitHubRepoRow>(`/projects/${encodeURIComponent(slug)}/integrations/github/repos`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    listConnectedRepos: (slug: string) =>
+      apiFetch<GitHubRepoRow[]>(`/projects/${encodeURIComponent(slug)}/integrations/github/connected-repos`),
+    pushScripts: (slug: string, repoId: string) =>
+      apiFetch<{ committed: number; files: string[] }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/github/repos/${encodeURIComponent(repoId)}/push`,
+        { method: "POST" },
+      ),
+    refreshWorkflow: (slug: string, repoId: string) =>
+      apiFetch<{ path: string; yaml: string }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/github/repos/${encodeURIComponent(repoId)}/workflow`,
+        { method: "POST" },
+      ),
+  },
+
+  // ---- Context files ----
+  contextFiles: {
+    list: (slug: string) =>
+      apiFetch<ContextFileRow[]>(`/projects/${encodeURIComponent(slug)}/context-files`),
+    upload: (slug: string, file: File, description?: string) => {
+      const form = new FormData();
+      form.append("file", file);
+      const qs = description ? `?description=${encodeURIComponent(description)}` : "";
+      return apiFetchMultipart<ContextFileRow & { columns: string[] }>(
+        `/projects/${encodeURIComponent(slug)}/context-files${qs}`,
+        form,
+      );
+    },
+    preview: (slug: string, fileId: string, limit = 20) =>
+      apiFetch<{ file: ContextFileRow; rows: { row_index: number; data: Record<string, string>; searchable_text: string }[] }>(
+        `/projects/${encodeURIComponent(slug)}/context-files/${encodeURIComponent(fileId)}/preview?limit=${limit}`,
+      ),
+    delete: (slug: string, fileId: string) =>
+      apiFetch<void>(`/projects/${encodeURIComponent(slug)}/context-files/${encodeURIComponent(fileId)}`, {
+        method: "DELETE",
+      }),
+  },
+
+  // ---- Test data tables ----
+  testData: {
+    list: (slug: string) =>
+      apiFetch<TestDataTableRow[]>(`/projects/${encodeURIComponent(slug)}/test-data-tables`),
+    sampleCsvUrl: (slug: string, kind: "user_types" | "accounts" | "opportunities" | "leads") =>
+      withAuthQuery(
+        `${API_BASE}/projects/${encodeURIComponent(slug)}/test-data-tables/sample-csv?kind=${kind}`,
+      ),
+    create: (slug: string, params: { name: string; description?: string; kind?: string; file: File }) => {
+      const form = new FormData();
+      form.append("name", params.name);
+      if (params.description) form.append("description", params.description);
+      if (params.kind) form.append("kind", params.kind);
+      form.append("file", params.file);
+      return apiFetchMultipart<TestDataTableRow>(`/projects/${encodeURIComponent(slug)}/test-data-tables`, form);
+    },
+    get: (slug: string, tableId: string, limit = 200) =>
+      apiFetch<{ table: TestDataTableRow; rows: { row_index: number; data: Record<string, string> }[] }>(
+        `/projects/${encodeURIComponent(slug)}/test-data-tables/${encodeURIComponent(tableId)}?limit=${limit}`,
+      ),
+    delete: (slug: string, tableId: string) =>
+      apiFetch<void>(`/projects/${encodeURIComponent(slug)}/test-data-tables/${encodeURIComponent(tableId)}`, {
+        method: "DELETE",
+      }),
+  },
+
+  // ---- Schedules ----
+  schedules: {
+    list: (slug: string) =>
+      apiFetch<ScheduleRow[]>(`/projects/${encodeURIComponent(slug)}/schedules`),
+    create: (slug: string, body: ScheduleWrite) =>
+      apiFetch<ScheduleRow>(`/projects/${encodeURIComponent(slug)}/schedules`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    update: (slug: string, id: string, body: Partial<ScheduleWrite>) =>
+      apiFetch<ScheduleRow>(`/projects/${encodeURIComponent(slug)}/schedules/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    delete: (slug: string, id: string) =>
+      apiFetch<void>(`/projects/${encodeURIComponent(slug)}/schedules/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      }),
+    runNow: (slug: string, id: string) =>
+      apiFetch<ScheduleRunRow>(`/projects/${encodeURIComponent(slug)}/schedules/${encodeURIComponent(id)}/run-now`, {
+        method: "POST",
+        body: "{}",
+      }),
+    history: (slug: string, id: string, limit = 50) =>
+      apiFetch<ScheduleRunRow[]>(
+        `/projects/${encodeURIComponent(slug)}/schedules/${encodeURIComponent(id)}/runs?limit=${limit}`,
+      ),
+  },
+
+  // ---- Personas: bulk import + sample CSV (extension surface) ----
+  personasBulk: {
+    sampleCsvUrl: () => withAuthQuery(`${API_BASE}/personas/sample-csv`),
+    bulkImport: (projectId: string, orgId: string, file: File, dryRun = false) => {
+      const form = new FormData();
+      form.append("project_id", projectId);
+      form.append("org_id", orgId);
+      form.append("file", file);
+      const qs = dryRun ? "?dry_run=true" : "";
+      return apiFetchMultipart<PersonaBulkImportResult>(`/personas/bulk-import${qs}`, form);
+    },
+  },
 };
+
+// ---- Type contracts for new endpoints --------------------------------
+
+export interface JiraConnectionView {
+  id: string;
+  scope: "org" | "project";
+  project_slug: string | null;
+  base_url: string;
+  email: string;
+  default_jira_project_key: string | null;
+  has_token: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+export interface JiraConnectionWrite {
+  base_url: string;
+  email: string;
+  api_token: string;
+  default_jira_project_key?: string;
+}
+export interface JiraProjectRow {
+  id: string;
+  key: string;
+  name: string;
+  project_type_key?: string | null;
+  lead?: string | null;
+}
+export interface JiraSyncStats {
+  project_key: string;
+  projects_seen: number;
+  sprints_upserted: number;
+  issues_upserted: number;
+  comments_upserted: number;
+  errors: string[];
+}
+export interface JiraSyncedSprint {
+  id: string;
+  jira_id: string;
+  name: string;
+  state: string;
+  start_date: string | null;
+  end_date: string | null;
+  portal_sprint_id: string | null;
+}
+export interface JiraSyncedIssue {
+  id: string;
+  jira_id: string;
+  jira_key: string;
+  issue_type: string | null;
+  status: string | null;
+  summary: string | null;
+  assignee: string | null;
+  sprint_jira_id: string | null;
+  portal_story_id: string | null;
+  jira_updated_at: string | null;
+}
+
+export interface GitHubConnectionView {
+  id: string;
+  scope: "org" | "project";
+  project_slug: string | null;
+  auth_kind: "app" | "pat";
+  owner_login: string | null;
+  app_id: string | null;
+  installation_id: string | null;
+  has_private_key: boolean;
+  has_access_token: boolean;
+  has_webhook_secret: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+export interface GitHubRepoListing {
+  id: number;
+  name: string;
+  owner: string;
+  full_name: string;
+  default_branch: string;
+  private: boolean;
+  html_url: string;
+}
+export interface GitHubRepoRow {
+  id: string;
+  connection_id: string;
+  project_slug: string;
+  owner: string;
+  name: string;
+  full_name: string;
+  default_branch: string;
+  is_connected: boolean;
+  workflow_path: string;
+  suites_root_path: string;
+  last_pushed_at: string | null;
+  last_workflow_run_id: string | null;
+  created_at: string | null;
+}
+
+export interface ContextFileRow {
+  id: string;
+  project_slug: string;
+  filename: string;
+  mime: string;
+  kind: "csv" | "xlsx" | "pdf" | "docx" | "md" | "txt";
+  size: number;
+  sha256: string;
+  row_count: number;
+  chunk_count: number;
+  description: string | null;
+  uploaded_by_user_id: string | null;
+  uploaded_at: string | null;
+}
+
+export interface TestDataTableRow {
+  id: string;
+  project_slug: string;
+  name: string;
+  description: string | null;
+  kind: string;
+  columns: string[];
+  source_file_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export type ScheduleRunner = "local" | "github_actions";
+export type ScheduleTargetKind = "sprint" | "story" | "test_case" | "tag";
+export interface ScheduleRow {
+  id: string;
+  project_slug: string;
+  name: string;
+  target_kind: ScheduleTargetKind;
+  target_id: string;
+  cron: string;
+  timezone: string;
+  runner: ScheduleRunner;
+  github_repo_id: string | null;
+  persona_id: string | null;
+  org_id: string | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+export interface ScheduleWrite {
+  name: string;
+  target_kind: ScheduleTargetKind;
+  target_id: string;
+  cron: string;
+  timezone?: string;
+  runner?: ScheduleRunner;
+  github_repo_id?: string | null;
+  persona_id?: string | null;
+  org_id?: string | null;
+  enabled?: boolean;
+}
+export interface ScheduleRunRow {
+  id: string;
+  schedule_id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: "queued" | "running" | "passed" | "failed" | "error" | "cancelled";
+  runner: ScheduleRunner;
+  github_workflow_run_id: string | null;
+  github_workflow_run_url: string | null;
+  local_run_id: string | null;
+  result_summary: unknown;
+  error_message: string | null;
+}
+
+export interface PersonaBulkImportResult {
+  dry_run: boolean;
+  created_count: number;
+  preview: Array<{
+    name: string;
+    username: string;
+    visibility: string;
+    is_default: boolean;
+    role_profile: string | null;
+    default_app: string | null;
+    credentials_pending: boolean;
+  }>;
+  skipped: Array<{ row_index: number; reason: string; row: Record<string, string> }>;
+}

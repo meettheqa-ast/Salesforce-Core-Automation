@@ -1,0 +1,16 @@
+# Dev / tooling deps -- not installed into the Docker image or
+# production runtime. Run ``py -3 -m pip install -r requirements-dev.txt``
+# on a fresh checkout to get the linters + test runner + type checker
+# the agent-side lint hook (.cursor/hooks/lint-after-edit.js) and the
+# editor (.vscode/settings.json) expect.
+
+# Linting / formatting
+ruff>=0.6.0
+
+# Type checking. basedpyright is a fork of pyright with friendlier
+# defaults; the .vscode/settings.json wires python.analysis.* to it.
+basedpyright>=1.18.0
+
+# Tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

@@ -1,13 +1,8 @@
-"""LLM interaction endpoints."""
+"""LLM utility endpoints used by settings + diagnostics UI."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, HTTPException
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
+from fastapi import APIRouter, Depends
 
 from ai_qa_portal.backend.models.schemas import (
     FailureAnalysis,
@@ -24,58 +19,51 @@ router = APIRouter(
 )
 
 
+@router.get("/providers")
+def list_llm_providers():
+    from ai_bridge import LLM_PROVIDERS, PROVIDER_LABELS, _default_primary_provider, _has_api_key  # type: ignore[attr-defined]
+
+    primary = _default_primary_provider()
+    out: list[dict] = []
+    for pid, (_key_env, model_env, default_model) in LLM_PROVIDERS.items():
+        out.append(
+            {
+                "id": pid,
+                "label": PROVIDER_LABELS.get(pid, pid),
+                "configured": bool(_has_api_key(pid)),
+                "model": default_model,
+                "model_env": model_env,
+                "is_primary": pid == primary,
+            }
+        )
+    return {"providers": out, "primary": primary}
+
+
 @router.post("/chat", response_model=LLMChatResponse)
-def chat(body: LLMChatRequest):
-    """Send a message to the configured LLM and return the response."""
-    try:
-        from ai_bridge import call_llm, hydrate_llm_env
-        import os
+def llm_chat(body: LLMChatRequest):
+    from ai_bridge import LLM_PROVIDERS, call_llm
 
-        hydrate_llm_env()
-        if body.provider:
-            os.environ["LLM_PROVIDER"] = body.provider
+    content = call_llm(
+        body.system_prompt or "",
+        body.user_message,
+        provider=body.provider,
+    )
+    provider = (body.provider or "").strip().lower()
+    if not provider:
+        from ai_bridge import _default_primary_provider  # type: ignore[attr-defined]
 
-        response = call_llm(body.system_prompt, body.user_message)
-        provider = os.environ.get("LLM_PROVIDER", "gemini")
-        return LLMChatResponse(content=response, provider=provider)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        provider = _default_primary_provider()
+    provider_info = LLM_PROVIDERS.get(provider)
+    model = provider_info[2] if provider_info else ""
+    return LLMChatResponse(content=content, provider=provider, model=model)
 
 
 @router.post("/analyze-failure", response_model=FailureAnalysisResponse)
 def analyze_failure(body: FailureAnalysis):
-    """Ask the LLM to analyze a test failure and suggest fixes."""
-    try:
-        from ai_bridge import analyze_test_failure
+    from ai_bridge import analyze_test_failure
 
-        analysis = analyze_test_failure(body.robot_code, body.error_message)
-        return FailureAnalysisResponse(analysis=analysis)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@router.post("/plan-steps")
-def plan_robot_steps(prompt: str):
-    """Decompose a natural language prompt into Robot Framework keyword steps."""
-    try:
-        from ai_bridge import break_prompt_into_steps
-
-        steps = break_prompt_into_steps(prompt)
-        return {"steps": steps}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@router.get("/providers")
-def list_providers():
-    """List available LLM providers."""
-    try:
-        from ai_bridge import PROVIDER_LABELS
-        return {
-            "providers": [
-                {"id": k, "label": v}
-                for k, v in PROVIDER_LABELS.items()
-            ]
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    analysis = analyze_test_failure(
+        test_name=(body.prompt or "failed test"),
+        error_message=body.error_message or "unknown error",
+    )
+    return FailureAnalysisResponse(analysis=analysis, suggested_fix="")

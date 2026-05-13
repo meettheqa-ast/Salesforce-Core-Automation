@@ -1,0 +1,98 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e1673]:
+    - generic [ref=e1977]:
+      - generic [ref=e1979]:
+        - generic [ref=e1981]: TB
+        - generic [ref=e1982]:
+          - generic [ref=e1983]: TestingBuddy AI
+          - generic [ref=e1984]: Testing Platform
+      - generic [ref=e1985]:
+        - generic [ref=e2624]:
+          - generic [ref=e2625]: Main
+          - list [ref=e2627]:
+            - listitem [ref=e2628]:
+              - link "Dashboard" [active] [ref=e2629] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e2630]
+                - generic [ref=e2633]: Dashboard
+            - listitem [ref=e2634]:
+              - link "Curriculum" [ref=e2635] [cursor=pointer]:
+                - /url: /dashboard/curriculum
+                - img [ref=e2636]
+                - generic [ref=e2638]: Curriculum
+            - listitem [ref=e2639]:
+              - link "Settings" [ref=e2640] [cursor=pointer]:
+                - /url: /dashboard/settings
+                - img [ref=e2641]
+                - generic [ref=e2644]: Settings
+        - generic [ref=e2646] [cursor=pointer]:
+          - generic [ref=e2647]: 🎯 Planning & Strategy
+          - img [ref=e2648]
+        - generic [ref=e2651] [cursor=pointer]:
+          - generic [ref=e2652]: ✏️ Test Design & Creation
+          - img [ref=e2653]
+        - generic [ref=e2656] [cursor=pointer]:
+          - generic [ref=e2657]: 🤖 Automation & Framework
+          - img [ref=e2658]
+        - generic [ref=e2661] [cursor=pointer]:
+          - generic [ref=e2662]: ⚡ Test Execution & Management
+          - img [ref=e2663]
+        - generic [ref=e2666] [cursor=pointer]:
+          - generic [ref=e2667]: 📊 Reporting & Insights
+          - img [ref=e2668]
+        - generic [ref=e2671] [cursor=pointer]:
+          - generic [ref=e2672]: 🔧 Optimization & Maintenance
+          - img [ref=e2673]
+        - generic [ref=e2676] [cursor=pointer]:
+          - generic [ref=e2677]: 🧠 AI Intelligence & Prediction
+          - img [ref=e2678]
+      - generic [ref=e2043]:
+        - list [ref=e2044]:
+          - listitem [ref=e2045]:
+            - button "Chat History" [ref=e2680] [cursor=pointer]:
+              - img [ref=e2047]
+              - generic [ref=e2049]: Chat History
+        - generic [ref=e2050]:
+          - generic [ref=e2052]: M
+          - generic [ref=e2053]:
+            - paragraph [ref=e2054]: Meet Sheth
+            - paragraph [ref=e2055]: m.sheth@astounddigital.com
+        - button "Sign Out" [ref=e2056] [cursor=pointer]:
+          - img [ref=e2057]
+          - generic [ref=e2060]: Sign Out
+      - button "Toggle Sidebar" [ref=e2061]
+    - generic [ref=e1762]:
+      - banner [ref=e1763]:
+        - button "Toggle Sidebar" [ref=e1764] [cursor=pointer]:
+          - img
+          - generic [ref=e1765]: Toggle Sidebar
+      - main [ref=e1766]:
+        - generic [ref=e2681]:
+          - generic [ref=e2683]:
+            - generic [ref=e2684]:
+              - heading "TestingBuddy AI" [level=1] [ref=e2685]
+              - paragraph [ref=e2686]: Your Expert QA Testing Assistant
+            - generic [ref=e2687]:
+              - generic [ref=e2688]:
+                - img [ref=e2689]
+                - text: 0 day streak
+              - generic [ref=e2691]: 0 total days
+          - generic [ref=e2693]:
+            - img [ref=e2697]
+            - generic [ref=e2700]:
+              - heading "TestingBuddy AI" [level=1] [ref=e2701]:
+                - text: TestingBuddy AI
+                - img [ref=e2702]
+              - paragraph [ref=e2704]: Your Expert QA Testing Assistant
+              - paragraph [ref=e2705]: I'm here to help you with test automation, best practices, debugging, and everything QA-related. Ask me anything!
+            - generic [ref=e2706]:
+              - paragraph [ref=e2707]: "Try asking:"
+              - generic [ref=e2708]:
+                - button "How do I write better Playwright selectors?" [ref=e2709] [cursor=pointer]
+                - button "What's the difference between E2E and integration tests?" [ref=e2710] [cursor=pointer]
+                - button "Help me debug a flaky test" [ref=e2711] [cursor=pointer]
+                - button "Best practices for test data management" [ref=e2712] [cursor=pointer]
+                - button "Explain Page Object Model pattern" [ref=e2713] [cursor=pointer]

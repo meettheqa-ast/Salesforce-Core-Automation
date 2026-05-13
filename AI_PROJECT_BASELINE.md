@@ -1,6 +1,8 @@
 # Salesforce AI Automation Architect — Technical Baseline
 
-This document describes the **current** architecture, data flow, and capabilities of the *Salesforce AI Automation Architect* Streamlit application. It is intended for AI assistants and engineers onboarding to the repository.
+This document describes the **legacy Streamlit** architecture, data flow, and capabilities of the *Salesforce AI Automation Architect*. It is intended for AI assistants and engineers onboarding to the repository.
+
+> **Status note:** the user-facing UI is now **Next.js** (`frontend/`) talking to a **FastAPI** backend (`ai_qa_portal/backend/`). The Streamlit `app.py` described below still exists as a CLI / dev entry point but is not the primary interface. For the modern stack and the current LLM stack (Cursor SDK as default primary, with Gemini / OpenAI / Anthropic / Groq / Ollama / etc. as fallback chain), see [`README.md`](README.md), [`DEPLOY.md`](DEPLOY.md), [`docs/cursor-sdk-integration.md`](docs/cursor-sdk-integration.md), and [`docs/storage_layout.md`](docs/storage_layout.md).
 
 ---
 
@@ -41,7 +43,7 @@ The project turns **natural-language test intents** into **Robot Framework** `.r
 2. **Smoke Test App Name** (if `smoke_templates` loads): text field (default `Sales`) used as the **`Launch App`** argument in smoke templates — stored in **`st.session_state["smoke_app_name"]`**.
 3. **Salesforce credentials** — Sandbox URL, Username, Password, Security Token. Displayed as read-only markdown in **view mode** (secrets shown as `••••••••`, empty values as *Not set*); editable `st.text_input` widgets in **edit mode** toggled by **✏️ Edit Credentials**. Placeholder text is never persisted (`write_project_credentials` strips known placeholder strings).
 4. **Execution mode** — **Background (Fast)** ⇒ headless Chrome; **Watch on Screen (Debug)** ⇒ visible browser + MFA pause variable.
-5. **AI (LLM)** — Provider radio (**Gemini** / **OpenAI**), optional session API keys via **`_sync_sidebar_api_key`**.
+5. **AI (LLM)** — Provider radio. The **modern backend** (`ai_qa_portal`) defaults to the **Cursor SDK** when `CURSOR_API_KEY` is set, with Gemini / OpenAI / Anthropic / Groq / Ollama as fallback providers (see [`docs/cursor-sdk-integration.md`](docs/cursor-sdk-integration.md)). The Streamlit sidebar UI described here historically only surfaced Gemini and OpenAI as toggles; the underlying `ai_bridge` module supports the full provider list via `LLM_PROVIDER` / `LLM_FAILOVER_ORDER`. Optional session API keys are still synced via **`_sync_sidebar_api_key`**.
 
 ### 2.3 Main area: prompt, CSV, projects, run
 
@@ -133,7 +135,7 @@ If a module fails to import, the UI shows a **warning** and disables that featur
 - **Sidebar — Smoke Test App Name** — Launcher name for smoke templates (e.g. Sales).
 - **Sidebar — Salesforce credentials** — Sandbox URL, Username, Password (password field masked).
 - **Sidebar — Execution mode** — **Background (Fast)** ⇒ headless Chrome; **Watch on Screen (Debug)** ⇒ visible browser + MFA pause variable.
-- **Sidebar — AI (LLM)** — Provider radio (**Gemini** / **OpenAI**), sets `LLM_PROVIDER`; optional **session** API key fields with **env sync** so clearing the field restores `.env`/secrets behavior.
+- **Sidebar — AI (LLM)** — Provider radio (Streamlit-era: **Gemini** / **OpenAI**; modern Next.js portal supports the full Cursor / Gemini / OpenAI / Anthropic / Groq / Ollama / etc. chain), sets `LLM_PROVIDER`; optional **session** API key fields with **env sync** so clearing the field restores `.env`/secrets behavior.
 - **Quick Smoke Tests** — One-click prompt presets for Lead / Account / Contact / Opportunity lifecycle wording.
 - **User prompt** — Large text area; may be **replaced** when smoke intent is detected (see §2.4).
 - **Test Case Name** — When a project is active, names the file saved under **`Saved_Projects/<project>/Tests/`**; overwrite confirmation when the file exists.
@@ -196,7 +198,7 @@ Verify against git history for exact dates.
 
 ## 7. Operational notes for assistants
 
-- **Models:** Default Gemini model name from env (e.g. **`GEMINI_MODEL`**); OpenAI uses **`OPENAI_MODEL`**. **`ai_bridge`** surfaces actionable hints on Gemini **429 / quota** errors.
+- **Models:** When the modern backend is configured with `CURSOR_API_KEY`, the primary model defaults to **`composer-2`** via the Cursor SDK Node sidecar (configurable via `CURSOR_MODEL`). Fallback providers each have their own env vars: **`GEMINI_MODEL`**, **`OPENAI_MODEL`**, **`ANTHROPIC_MODEL`**, **`GROQ_MODEL`**, **`OLLAMA_MODEL`**, etc. **`ai_bridge`** surfaces actionable hints on **429 / quota** errors and auto-fails over to the next provider in `LLM_FAILOVER_ORDER`.
 - **Dry runs:** Use `robot --dryrun` on a suite path to validate syntax without hitting Salesforce.
 - **CLI-only path:** `python ai_bridge.py "…"` then `python run_test.py --sandbox_url … --username … --password … --test_path Tests/Generated/temp_test.robot [--headless]`.
 

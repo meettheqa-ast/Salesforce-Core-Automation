@@ -1,0 +1,1185 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - generic [ref=e8]: TB
+          - generic [ref=e9]: TestingBuddy AI
+        - navigation [ref=e10]:
+          - link "Features" [ref=e11] [cursor=pointer]:
+            - /url: "#features"
+          - link "Courses" [ref=e12] [cursor=pointer]:
+            - /url: "#courses"
+          - link "Testimonials" [ref=e13] [cursor=pointer]:
+            - /url: "#testimonials"
+          - link "Contact" [ref=e14] [cursor=pointer]:
+            - /url: "#contact"
+        - generic [ref=e15]:
+          - link "Sign In" [ref=e16] [cursor=pointer]:
+            - /url: /auth
+            - button "Sign In" [ref=e17]
+          - link "Get Started" [ref=e18] [cursor=pointer]:
+            - /url: /auth
+            - button "Get Started" [ref=e19]
+    - main [ref=e20]:
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - img [ref=e25]
+          - text: Free & Open Source
+        - heading "Become AI Automation Tester Engineer in 100 Days" [level=1] [ref=e27]
+        - paragraph [ref=e28]: Teaching QA professionals to build their own AI Testing Agents and MCP servers. Free tools + comprehensive courses to master AI-powered test automation—from basics to production.
+        - generic [ref=e29]:
+          - button "Get Started Free" [ref=e30] [cursor=pointer]:
+            - text: Get Started Free
+            - img
+          - button "Explore Courses" [ref=e31] [cursor=pointer]
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - img [ref=e34]
+            - text: 100% Free & Open Source
+          - generic [ref=e36]:
+            - img [ref=e37]
+            - text: Built for QA Professionals
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - heading "50+ Live AI Agents 🚀" [level=2] [ref=e44]
+          - paragraph [ref=e45]: Complete STLC coverage from Planning to Intelligence — Intelligent agents that adapt to your testing lifecycle
+        - generic [ref=e46]:
+          - generic [ref=e48]:
+            - generic [ref=e49]:
+              - generic [ref=e50]:
+                - img [ref=e52]
+                - generic [ref=e56]: COMING SOON
+              - heading "🎯 Intelligent Test Planning Agent" [level=3] [ref=e57]
+              - paragraph [ref=e58]: Automatically builds data-driven test plans based on sprint goals, risk areas, and historical results.
+            - list [ref=e60]:
+              - listitem [ref=e61]:
+                - img [ref=e62]
+                - text: Sprint-based planning
+              - listitem [ref=e65]:
+                - img [ref=e66]
+                - text: Risk-aware prioritization
+              - listitem [ref=e69]:
+                - img [ref=e70]
+                - text: Auto-generated strategy
+          - generic [ref=e74]:
+            - generic [ref=e75]:
+              - generic [ref=e76]:
+                - img [ref=e78]
+                - generic [ref=e81]: COMING SOON
+              - heading "📋 Test Strategy Builder Agent" [level=3] [ref=e82]
+              - paragraph [ref=e83]: Creates customized test strategies aligned with project scope, tech stack, and release goals.
+            - list [ref=e85]:
+              - listitem [ref=e86]:
+                - img [ref=e87]
+                - text: Strategy templates
+              - listitem [ref=e90]:
+                - img [ref=e91]
+                - text: Scope and risk definition
+              - listitem [ref=e94]:
+                - img [ref=e95]
+                - text: Tool recommendations
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]:
+                - img [ref=e103]
+                - generic [ref=e108]: COMING SOON
+              - heading "🔍 AI Requirement Clarifier Agent" [level=3] [ref=e109]
+              - paragraph [ref=e110]: Analyzes user stories to identify unclear or missing acceptance criteria before testing starts.
+            - list [ref=e112]:
+              - listitem [ref=e113]:
+                - img [ref=e114]
+                - text: Requirement gap analysis
+              - listitem [ref=e117]:
+                - img [ref=e118]
+                - text: Ambiguity detection
+              - listitem [ref=e121]:
+                - img [ref=e122]
+                - text: Improvement suggestions
+          - generic [ref=e126]:
+            - generic [ref=e127]:
+              - generic [ref=e128]:
+                - img [ref=e130]
+                - generic [ref=e132]: COMING SOON
+              - heading "📊 STLC Lifecycle Tracker Agent" [level=3] [ref=e133]
+              - paragraph [ref=e134]: Tracks all stages of the Software Testing Life Cycle and generates real-time progress dashboards.
+            - list [ref=e136]:
+              - listitem [ref=e137]:
+                - img [ref=e138]
+                - text: Phase tracking
+              - listitem [ref=e141]:
+                - img [ref=e142]
+                - text: Defect visualization
+              - listitem [ref=e145]:
+                - img [ref=e146]
+                - text: Automated summaries
+          - generic [ref=e150]:
+            - generic [ref=e151]:
+              - generic [ref=e152]:
+                - img [ref=e154]
+                - generic [ref=e156]: COMING SOON
+              - heading "🛡️ Release Readiness Agent" [level=3] [ref=e157]
+              - paragraph [ref=e158]: Evaluates test coverage, pass rate, and defect density to produce a release confidence score.
+            - list [ref=e160]:
+              - listitem [ref=e161]:
+                - img [ref=e162]
+                - text: Readiness scoring
+              - listitem [ref=e165]:
+                - img [ref=e166]
+                - text: Risk indicators
+              - listitem [ref=e169]:
+                - img [ref=e170]
+                - text: Confidence index
+          - generic [ref=e174]:
+            - generic [ref=e175]:
+              - generic [ref=e176]:
+                - img [ref=e178]
+                - generic [ref=e183]: READY
+              - heading "✏️ Test Case Creator Agent" [level=3] [ref=e184]
+              - paragraph [ref=e185]: Transforms Jira or ADO user stories into structured, reusable test cases.
+            - list [ref=e187]:
+              - listitem [ref=e188]:
+                - img [ref=e189]
+                - text: Jira/ADO integration
+              - listitem [ref=e192]:
+                - img [ref=e193]
+                - text: Scenario generation
+              - listitem [ref=e196]:
+                - img [ref=e197]
+                - text: Auto case design
+          - generic [ref=e201]:
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - img [ref=e205]
+                - generic [ref=e209]: READY
+              - heading "🗄️ Test Data Builder Agent" [level=3] [ref=e210]
+              - paragraph [ref=e211]: Generates schema-compliant, realistic test data for APIs, UI, and databases.
+            - list [ref=e213]:
+              - listitem [ref=e214]:
+                - img [ref=e215]
+                - text: Schema validation
+              - listitem [ref=e218]:
+                - img [ref=e219]
+                - text: Data masking
+              - listitem [ref=e222]:
+                - img [ref=e223]
+                - text: JSON/CSV/SQL export
+          - generic [ref=e227]:
+            - generic [ref=e228]:
+              - generic [ref=e229]:
+                - img [ref=e231]
+                - generic [ref=e234]: COMING SOON
+              - heading "🌐 API Mock & Virtualization Agent" [level=3] [ref=e235]
+              - paragraph [ref=e236]: Creates API mocks to simulate real backend systems for isolated testing.
+            - list [ref=e238]:
+              - listitem [ref=e239]:
+                - img [ref=e240]
+                - text: Mock creation
+              - listitem [ref=e243]:
+                - img [ref=e244]
+                - text: Contract validation
+              - listitem [ref=e247]:
+                - img [ref=e248]
+                - text: Virtual service setup
+          - generic [ref=e252]:
+            - generic [ref=e253]:
+              - generic [ref=e254]:
+                - img [ref=e256]
+                - generic [ref=e259]: COMING SOON
+              - heading "🔎 Exploratory Testing Assistant" [level=3] [ref=e260]
+              - paragraph [ref=e261]: Suggests intelligent hints, test ideas, and edge cases during manual exploratory testing sessions.
+            - list [ref=e263]:
+              - listitem [ref=e264]:
+                - img [ref=e265]
+                - text: Session-based tracking
+              - listitem [ref=e268]:
+                - img [ref=e269]
+                - text: Real-time idea generation
+              - listitem [ref=e272]:
+                - img [ref=e273]
+                - text: AI guidance
+          - generic [ref=e277]:
+            - generic [ref=e278]:
+              - generic [ref=e279]:
+                - img [ref=e281]
+                - generic [ref=e283]: COMING SOON
+              - heading "🗺️ Requirements Traceability Agent" [level=3] [ref=e284]
+              - paragraph [ref=e285]: Maps stories, test cases, and defects for end-to-end traceability and coverage assurance.
+            - list [ref=e287]:
+              - listitem [ref=e288]:
+                - img [ref=e289]
+                - text: Story-to-test mapping
+              - listitem [ref=e292]:
+                - img [ref=e293]
+                - text: Coverage matrix
+              - listitem [ref=e296]:
+                - img [ref=e297]
+                - text: Change tracking
+          - generic [ref=e301]:
+            - generic [ref=e302]:
+              - generic [ref=e303]:
+                - img [ref=e305]
+                - generic [ref=e308]: COMING SOON
+              - heading "🤖 Automation Framework Setup Agent" [level=3] [ref=e309]
+              - paragraph [ref=e310]: Bootstraps complete Selenium, Playwright, or Cypress frameworks with standard structures and dependencies.
+            - list [ref=e312]:
+              - listitem [ref=e313]:
+                - img [ref=e314]
+                - text: One-click setup
+              - listitem [ref=e317]:
+                - img [ref=e318]
+                - text: Reporting integration
+              - listitem [ref=e321]:
+                - img [ref=e322]
+                - text: Multi-language support
+          - generic [ref=e326]:
+            - generic [ref=e327]:
+              - generic [ref=e328]:
+                - img [ref=e330]
+                - generic [ref=e332]: COMING SOON
+              - heading "🎯 Selenium Locator Intelligence Agent" [level=3] [ref=e333]
+              - paragraph [ref=e334]: Uses AI to detect the most stable and optimal locators from any web page.
+            - list [ref=e336]:
+              - listitem [ref=e337]:
+                - img [ref=e338]
+                - text: Smart locator generation
+              - listitem [ref=e341]:
+                - img [ref=e342]
+                - text: DOM analysis
+              - listitem [ref=e345]:
+                - img [ref=e346]
+                - text: Auto CSS/XPath creation
+          - generic [ref=e350]:
+            - generic [ref=e351]:
+              - generic [ref=e352]:
+                - img [ref=e354]
+                - generic [ref=e357]: READY
+              - heading "🔄 Selenium to Playwright Converter" [level=3] [ref=e358]
+              - paragraph [ref=e359]: Automatically converts Selenium code into Playwright-compatible scripts.
+            - list [ref=e361]:
+              - listitem [ref=e362]:
+                - img [ref=e363]
+                - text: Script translation
+              - listitem [ref=e366]:
+                - img [ref=e367]
+                - text: Locator modernization
+              - listitem [ref=e370]:
+                - img [ref=e371]
+                - text: Multi-browser support
+          - generic [ref=e375]:
+            - generic [ref=e376]:
+              - generic [ref=e377]:
+                - img [ref=e379]
+                - generic [ref=e382]: COMING SOON
+              - heading "📤 Postman to Automation Converter Agent" [level=3] [ref=e383]
+              - paragraph [ref=e384]: Converts Postman collections into executable automation code for API testing.
+            - list [ref=e386]:
+              - listitem [ref=e387]:
+                - img [ref=e388]
+                - text: Collection import
+              - listitem [ref=e391]:
+                - img [ref=e392]
+                - text: Code generation
+              - listitem [ref=e395]:
+                - img [ref=e396]
+                - text: Framework mapping
+          - generic [ref=e400]:
+            - generic [ref=e401]:
+              - generic [ref=e402]:
+                - img [ref=e404]
+                - generic [ref=e407]: READY
+              - heading "📄 API Code Generator (Swagger Assistant)" [level=3] [ref=e408]
+              - paragraph [ref=e409]: Transforms OpenAPI or Swagger specs into runnable API test scripts.
+            - list [ref=e411]:
+              - listitem [ref=e412]:
+                - img [ref=e413]
+                - text: API spec parsing
+              - listitem [ref=e416]:
+                - img [ref=e417]
+                - text: Script creation
+              - listitem [ref=e420]:
+                - img [ref=e421]
+                - text: Multi-framework export
+          - generic [ref=e425]:
+            - generic [ref=e426]:
+              - generic [ref=e427]:
+                - img [ref=e429]
+                - generic [ref=e432]: COMING SOON
+              - heading "✅ API Response Validator Agent" [level=3] [ref=e433]
+              - paragraph [ref=e434]: Validates API responses, schema, and data consistency during runtime.
+            - list [ref=e436]:
+              - listitem [ref=e437]:
+                - img [ref=e438]
+                - text: Schema comparison
+              - listitem [ref=e441]:
+                - img [ref=e442]
+                - text: Assertion generation
+              - listitem [ref=e445]:
+                - img [ref=e446]
+                - text: REST/GraphQL support
+          - generic [ref=e450]:
+            - generic [ref=e451]:
+              - generic [ref=e452]:
+                - img [ref=e454]
+                - generic [ref=e457]: COMING SOON
+              - heading "🔗 API Dependency Analyzer Agent" [level=3] [ref=e458]
+              - paragraph [ref=e459]: Identifies API dependencies and execution order to avoid cascading failures.
+            - list [ref=e461]:
+              - listitem [ref=e462]:
+                - img [ref=e463]
+                - text: Dependency mapping
+              - listitem [ref=e466]:
+                - img [ref=e467]
+                - text: Failure prediction
+              - listitem [ref=e470]:
+                - img [ref=e471]
+                - text: Execution sequence optimization
+          - generic [ref=e475]:
+            - generic [ref=e476]:
+              - generic [ref=e477]:
+                - img [ref=e479]
+                - generic [ref=e482]: COMING SOON
+              - heading "🎤 Voice Command QA Agent" [level=3] [ref=e483]
+              - paragraph [ref=e484]: Allows testers to run tests, fetch reports, or analyze results using voice commands.
+            - list [ref=e486]:
+              - listitem [ref=e487]:
+                - img [ref=e488]
+                - text: Voice trigger recognition
+              - listitem [ref=e491]:
+                - img [ref=e492]
+                - text: Test execution control
+              - listitem [ref=e495]:
+                - img [ref=e496]
+                - text: Real-time status updates
+          - generic [ref=e500]:
+            - generic [ref=e501]:
+              - generic [ref=e502]:
+                - img [ref=e504]
+                - generic [ref=e509]: READY
+              - heading "🔀 Regression Selector Agent" [level=3] [ref=e510]
+              - paragraph [ref=e511]: Selects the most relevant regression tests based on recent code changes.
+            - list [ref=e513]:
+              - listitem [ref=e514]:
+                - img [ref=e515]
+                - text: Smart selection
+              - listitem [ref=e518]:
+                - img [ref=e519]
+                - text: Impact analysis
+              - listitem [ref=e522]:
+                - img [ref=e523]
+                - text: Test suite optimization
+          - generic [ref=e527]:
+            - generic [ref=e528]:
+              - generic [ref=e529]:
+                - img [ref=e531]
+                - generic [ref=e535]: COMING SOON
+              - heading "🚦 CI/CD Quality Gate Agent" [level=3] [ref=e536]
+              - paragraph [ref=e537]: Acts as a checkpoint in CI/CD pipelines to ensure only stable builds are deployed.
+            - list [ref=e539]:
+              - listitem [ref=e540]:
+                - img [ref=e541]
+                - text: Pipeline integration
+              - listitem [ref=e544]:
+                - img [ref=e545]
+                - text: Quality scoring
+              - listitem [ref=e548]:
+                - img [ref=e549]
+                - text: Threshold enforcement
+          - generic [ref=e553]:
+            - generic [ref=e554]:
+              - generic [ref=e555]:
+                - img [ref=e557]
+                - generic [ref=e560]: COMING SOON
+              - heading "📈 Test Impact Analyzer Agent" [level=3] [ref=e561]
+              - paragraph [ref=e562]: Analyzes new commits and identifies affected modules and test cases.
+            - list [ref=e564]:
+              - listitem [ref=e565]:
+                - img [ref=e566]
+                - text: Code diff analysis
+              - listitem [ref=e569]:
+                - img [ref=e570]
+                - text: Impact scoring
+              - listitem [ref=e573]:
+                - img [ref=e574]
+                - text: Risk area detection
+          - generic [ref=e578]:
+            - generic [ref=e579]:
+              - generic [ref=e580]:
+                - img [ref=e582]
+                - generic [ref=e585]: COMING SOON
+              - heading "🖥️ Test Environment Orchestrator Agent" [level=3] [ref=e586]
+              - paragraph [ref=e587]: Automates environment setup, versioning, and teardown for testing pipelines.
+            - list [ref=e589]:
+              - listitem [ref=e590]:
+                - img [ref=e591]
+                - text: Environment provisioning
+              - listitem [ref=e594]:
+                - img [ref=e595]
+                - text: Configuration tracking
+              - listitem [ref=e598]:
+                - img [ref=e599]
+                - text: Resource management
+          - generic [ref=e603]:
+            - generic [ref=e604]:
+              - generic [ref=e605]:
+                - img [ref=e607]
+                - generic [ref=e610]: COMING SOON
+              - heading "⚡ Performance Analyzer Agent" [level=3] [ref=e611]
+              - paragraph [ref=e612]: Runs load, stress, and endurance tests to benchmark application performance.
+            - list [ref=e614]:
+              - listitem [ref=e615]:
+                - img [ref=e616]
+                - text: Load simulation
+              - listitem [ref=e619]:
+                - img [ref=e620]
+                - text: Latency and throughput metrics
+              - listitem [ref=e623]:
+                - img [ref=e624]
+                - text: Auto-tuning insights
+          - generic [ref=e628]:
+            - generic [ref=e629]:
+              - generic [ref=e630]:
+                - img [ref=e632]
+                - generic [ref=e635]: COMING SOON
+              - heading "🔒 Security Testing Agent" [level=3] [ref=e636]
+              - paragraph [ref=e637]: Performs API and UI security scans for vulnerabilities during test runs.
+            - list [ref=e639]:
+              - listitem [ref=e640]:
+                - img [ref=e641]
+                - text: OWASP checks
+              - listitem [ref=e644]:
+                - img [ref=e645]
+                - text: Token validation
+              - listitem [ref=e648]:
+                - img [ref=e649]
+                - text: Security reporting
+          - generic [ref=e653]:
+            - generic [ref=e654]:
+              - generic [ref=e655]:
+                - img [ref=e657]
+                - generic [ref=e663]: READY
+              - heading "♿ Accessibility Auditor Agent" [level=3] [ref=e664]
+              - paragraph [ref=e665]: Ensures digital accessibility and compliance with WCAG, ARIA, and ADA standards.
+            - list [ref=e667]:
+              - listitem [ref=e668]:
+                - img [ref=e669]
+                - text: Accessibility validation
+              - listitem [ref=e672]:
+                - img [ref=e673]
+                - text: Contrast and label checks
+              - listitem [ref=e676]:
+                - img [ref=e677]
+                - text: Keyboard navigation testing
+          - generic [ref=e681]:
+            - generic [ref=e682]:
+              - generic [ref=e683]:
+                - img [ref=e685]
+                - generic [ref=e690]: READY
+              - heading "🎬 Chrome Recorder Agent" [level=3] [ref=e691]
+              - paragraph [ref=e692]: Captures browser interactions and generates test scripts automatically.
+            - list [ref=e694]:
+              - listitem [ref=e695]:
+                - img [ref=e696]
+                - text: Flow recording
+              - listitem [ref=e699]:
+                - img [ref=e700]
+                - text: Selector generation
+              - listitem [ref=e703]:
+                - img [ref=e704]
+                - text: Script export
+          - generic [ref=e708]:
+            - generic [ref=e709]:
+              - generic [ref=e710]:
+                - img [ref=e712]
+                - generic [ref=e714]: COMING SOON
+              - heading "📊 Dynamic Test Report Generator Agent" [level=3] [ref=e715]
+              - paragraph [ref=e716]: Produces detailed, interactive test reports by aggregating data from multiple tools.
+            - list [ref=e718]:
+              - listitem [ref=e719]:
+                - img [ref=e720]
+                - text: Multi-tool reporting
+              - listitem [ref=e723]:
+                - img [ref=e724]
+                - text: Visual analytics
+              - listitem [ref=e727]:
+                - img [ref=e728]
+                - text: Trend analysis
+          - generic [ref=e732]:
+            - generic [ref=e733]:
+              - generic [ref=e734]:
+                - img [ref=e736]
+                - generic [ref=e745]: READY
+              - heading "🐛 Defect Reporting & Insights Agent" [level=3] [ref=e746]
+              - paragraph [ref=e747]: Aggregates defect data and provides real-time defect analytics and severity insights.
+            - list [ref=e749]:
+              - listitem [ref=e750]:
+                - img [ref=e751]
+                - text: Defect trends
+              - listitem [ref=e754]:
+                - img [ref=e755]
+                - text: Reopen rate analysis
+              - listitem [ref=e758]:
+                - img [ref=e759]
+                - text: Severity breakdown
+          - generic [ref=e763]:
+            - generic [ref=e764]:
+              - generic [ref=e765]:
+                - img [ref=e767]
+                - generic [ref=e769]: READY
+              - heading "🗺️ Test Coverage Mapper" [level=3] [ref=e770]
+              - paragraph [ref=e771]: Maps test cases, stories, and code changes to ensure 100% coverage.
+            - list [ref=e773]:
+              - listitem [ref=e774]:
+                - img [ref=e775]
+                - text: Gap detection
+              - listitem [ref=e778]:
+                - img [ref=e779]
+                - text: Coverage visualization
+              - listitem [ref=e782]:
+                - img [ref=e783]
+                - text: Traceability links
+          - generic [ref=e787]:
+            - generic [ref=e788]:
+              - generic [ref=e789]:
+                - img [ref=e791]
+                - generic [ref=e797]: COMING SOON
+              - heading "📋 Release Note Generator Agent" [level=3] [ref=e798]
+              - paragraph [ref=e799]: Creates detailed release notes automatically from commits, test runs, and defect logs.
+            - list [ref=e801]:
+              - listitem [ref=e802]:
+                - img [ref=e803]
+                - text: Commit summary extraction
+              - listitem [ref=e806]:
+                - img [ref=e807]
+                - text: Auto formatting
+              - listitem [ref=e810]:
+                - img [ref=e811]
+                - text: PDF/Markdown export
+          - generic [ref=e815]:
+            - generic [ref=e816]:
+              - generic [ref=e817]:
+                - img [ref=e819]
+                - generic [ref=e821]: COMING SOON
+              - heading "📖 Test Documentation Agent" [level=3] [ref=e822]
+              - paragraph [ref=e823]: Automatically documents test suites, execution results, and regression summaries.
+            - list [ref=e825]:
+              - listitem [ref=e826]:
+                - img [ref=e827]
+                - text: Case documentation
+              - listitem [ref=e830]:
+                - img [ref=e831]
+                - text: Version tracking
+              - listitem [ref=e834]:
+                - img [ref=e835]
+                - text: Export in multiple formats
+          - generic [ref=e839]:
+            - generic [ref=e840]:
+              - generic [ref=e841]:
+                - img [ref=e843]
+                - generic [ref=e846]: COMING SOON
+              - heading "📜 Log Intelligence Agent" [level=3] [ref=e847]
+              - paragraph [ref=e848]: Analyzes logs from failed tests to identify hidden patterns and common failure causes.
+            - list [ref=e850]:
+              - listitem [ref=e851]:
+                - img [ref=e852]
+                - text: Log parsing
+              - listitem [ref=e855]:
+                - img [ref=e856]
+                - text: Failure clustering
+              - listitem [ref=e859]:
+                - img [ref=e860]
+                - text: Root cause insights
+          - generic [ref=e864]:
+            - generic [ref=e865]:
+              - generic [ref=e866]:
+                - img [ref=e868]
+                - generic [ref=e870]: READY
+              - heading "🔧 Self-Healing Automation Agent" [level=3] [ref=e871]
+              - paragraph [ref=e872]: Detects and repairs broken locators during runtime to stabilize tests.
+            - list [ref=e874]:
+              - listitem [ref=e875]:
+                - img [ref=e876]
+                - text: Dynamic recovery
+              - listitem [ref=e879]:
+                - img [ref=e880]
+                - text: Real-time healing
+              - listitem [ref=e883]:
+                - img [ref=e884]
+                - text: Maintenance reduction
+          - generic [ref=e888]:
+            - generic [ref=e889]:
+              - generic [ref=e890]:
+                - img [ref=e892]
+                - generic [ref=e894]: COMING SOON
+              - heading "✨ Test Maintenance Advisor Agent" [level=3] [ref=e895]
+              - paragraph [ref=e896]: Reviews automation health and suggests refactoring or test consolidation.
+            - list [ref=e898]:
+              - listitem [ref=e899]:
+                - img [ref=e900]
+                - text: Failure pattern detection
+              - listitem [ref=e903]:
+                - img [ref=e904]
+                - text: Refactor recommendations
+              - listitem [ref=e907]:
+                - img [ref=e908]
+                - text: Stability scoring
+          - generic [ref=e912]:
+            - generic [ref=e913]:
+              - generic [ref=e914]:
+                - img [ref=e916]
+                - generic [ref=e918]: READY
+              - heading "⚠️ Flaky Test Detector Agent" [level=3] [ref=e919]
+              - paragraph [ref=e920]: Identifies unstable tests and suggests fixes based on history.
+            - list [ref=e922]:
+              - listitem [ref=e923]:
+                - img [ref=e924]
+                - text: Flakiness analysis
+              - listitem [ref=e927]:
+                - img [ref=e928]
+                - text: Auto retry logic
+              - listitem [ref=e931]:
+                - img [ref=e932]
+                - text: Root cause detection
+          - generic [ref=e936]:
+            - generic [ref=e937]:
+              - generic [ref=e938]:
+                - img [ref=e940]
+                - generic [ref=e944]: COMING SOON
+              - heading "🔍 Test Case Optimizer Agent" [level=3] [ref=e945]
+              - paragraph [ref=e946]: Finds redundant test cases and optimizes the test suite for faster execution.
+            - list [ref=e948]:
+              - listitem [ref=e949]:
+                - img [ref=e950]
+                - text: Duplication removal
+              - listitem [ref=e953]:
+                - img [ref=e954]
+                - text: Execution efficiency
+              - listitem [ref=e957]:
+                - img [ref=e958]
+                - text: Optimization reporting
+          - generic [ref=e962]:
+            - generic [ref=e963]:
+              - generic [ref=e964]:
+                - img [ref=e966]
+                - generic [ref=e970]: COMING SOON
+              - heading "💻 Automation Code Review Agent" [level=3] [ref=e971]
+              - paragraph [ref=e972]: Reviews automation code for anti-patterns and best-practice compliance.
+            - list [ref=e974]:
+              - listitem [ref=e975]:
+                - img [ref=e976]
+                - text: Code quality check
+              - listitem [ref=e979]:
+                - img [ref=e980]
+                - text: Maintainability rating
+              - listitem [ref=e983]:
+                - img [ref=e984]
+                - text: Performance tips
+          - generic [ref=e988]:
+            - generic [ref=e989]:
+              - generic [ref=e990]:
+                - img [ref=e992]
+                - generic [ref=e997]: COMING SOON
+              - heading "📁 Test Case Versioning Agent" [level=3] [ref=e998]
+              - paragraph [ref=e999]: Manages version control for test cases across releases and environments.
+            - list [ref=e1001]:
+              - listitem [ref=e1002]:
+                - img [ref=e1003]
+                - text: Version tracking
+              - listitem [ref=e1006]:
+                - img [ref=e1007]
+                - text: Change comparison
+              - listitem [ref=e1010]:
+                - img [ref=e1011]
+                - text: Historical reference
+          - generic [ref=e1015]:
+            - generic [ref=e1016]:
+              - generic [ref=e1017]:
+                - img [ref=e1019]
+                - generic [ref=e1029]: READY
+              - heading "🧠 Risk & Defect Predictor Agent" [level=3] [ref=e1030]
+              - paragraph [ref=e1031]: Predicts high-risk areas and potential defects using machine learning models.
+            - list [ref=e1033]:
+              - listitem [ref=e1034]:
+                - img [ref=e1035]
+                - text: Risk forecasting
+              - listitem [ref=e1038]:
+                - img [ref=e1039]
+                - text: Trend analysis
+              - listitem [ref=e1042]:
+                - img [ref=e1043]
+                - text: Failure probability metrics
+          - generic [ref=e1047]:
+            - generic [ref=e1048]:
+              - generic [ref=e1049]:
+                - img [ref=e1051]
+                - generic [ref=e1054]: COMING SOON
+              - heading "🔁 Bug Reproduction Agent" [level=3] [ref=e1055]
+              - paragraph [ref=e1056]: Automatically reproduces reported issues by analyzing logs, screenshots, and test data.
+            - list [ref=e1058]:
+              - listitem [ref=e1059]:
+                - img [ref=e1060]
+                - text: Log replay
+              - listitem [ref=e1063]:
+                - img [ref=e1064]
+                - text: Step simulation
+              - listitem [ref=e1067]:
+                - img [ref=e1068]
+                - text: Auto environment setup
+          - generic [ref=e1072]:
+            - generic [ref=e1073]:
+              - generic [ref=e1074]:
+                - img [ref=e1076]
+                - generic [ref=e1079]: COMING SOON
+              - heading "🎓 Knowledge Base Trainer Agent" [level=3] [ref=e1080]
+              - paragraph [ref=e1081]: Learns from historical defects and test cases to provide contextual recommendations.
+            - list [ref=e1083]:
+              - listitem [ref=e1084]:
+                - img [ref=e1085]
+                - text: Past data learning
+              - listitem [ref=e1088]:
+                - img [ref=e1089]
+                - text: Continuous improvement
+              - listitem [ref=e1092]:
+                - img [ref=e1093]
+                - text: Predictive guidance
+          - generic [ref=e1097]:
+            - generic [ref=e1098]:
+              - generic [ref=e1099]:
+                - img [ref=e1101]
+                - generic [ref=e1106]: COMING SOON
+              - heading "👥 User Behavior Analyzer Agent" [level=3] [ref=e1107]
+              - paragraph [ref=e1108]: Analyzes production usage data to recommend high-impact test coverage areas.
+            - list [ref=e1110]:
+              - listitem [ref=e1111]:
+                - img [ref=e1112]
+                - text: Real user path analysis
+              - listitem [ref=e1115]:
+                - img [ref=e1116]
+                - text: Behavior-based prioritization
+              - listitem [ref=e1119]:
+                - img [ref=e1120]
+                - text: Coverage expansion
+          - generic [ref=e1124]:
+            - generic [ref=e1125]:
+              - generic [ref=e1126]:
+                - img [ref=e1128]
+                - generic [ref=e1131]: COMING SOON
+              - heading "📋 Smart Test Prioritization Agent" [level=3] [ref=e1132]
+              - paragraph [ref=e1133]: Ranks test cases dynamically using code changes, history, and business impact.
+            - list [ref=e1135]:
+              - listitem [ref=e1136]:
+                - img [ref=e1137]
+                - text: Change-based ranking
+              - listitem [ref=e1140]:
+                - img [ref=e1141]
+                - text: Risk scoring
+              - listitem [ref=e1144]:
+                - img [ref=e1145]
+                - text: Smart scheduling
+          - generic [ref=e1149]:
+            - generic [ref=e1150]:
+              - generic [ref=e1151]:
+                - img [ref=e1153]
+                - generic [ref=e1158]: COMING SOON
+              - heading "🕸️ Multi-Agent Orchestrator" [level=3] [ref=e1159]
+              - paragraph [ref=e1160]: Connects multiple agents to work together in a unified QA workflow.
+            - list [ref=e1162]:
+              - listitem [ref=e1163]:
+                - img [ref=e1164]
+                - text: Agent collaboration
+              - listitem [ref=e1167]:
+                - img [ref=e1168]
+                - text: Process orchestration
+              - listitem [ref=e1171]:
+                - img [ref=e1172]
+                - text: Unified insights
+          - generic [ref=e1176]:
+            - generic [ref=e1177]:
+              - generic [ref=e1178]:
+                - img [ref=e1180]
+                - generic [ref=e1183]: COMING SOON
+              - heading "📈 Code Coverage Booster Agent" [level=3] [ref=e1184]
+              - paragraph [ref=e1185]: Analyzes code to detect untested areas and suggests missing tests.
+            - list [ref=e1187]:
+              - listitem [ref=e1188]:
+                - img [ref=e1189]
+                - text: Coverage analysis
+              - listitem [ref=e1192]:
+                - img [ref=e1193]
+                - text: Test hint generation
+              - listitem [ref=e1196]:
+                - img [ref=e1197]
+                - text: Gap closure suggestions
+          - generic [ref=e1201]:
+            - generic [ref=e1202]:
+              - generic [ref=e1203]:
+                - img [ref=e1205]
+                - generic [ref=e1211]: READY
+              - heading "🎨 Visual Validation Agent" [level=3] [ref=e1212]
+              - paragraph [ref=e1213]: Performs AI-based comparison of UI layouts and detects unwanted visual drifts.
+            - list [ref=e1215]:
+              - listitem [ref=e1216]:
+                - img [ref=e1217]
+                - text: Visual diffing
+              - listitem [ref=e1220]:
+                - img [ref=e1221]
+                - text: Layout validation
+              - listitem [ref=e1224]:
+                - img [ref=e1225]
+                - text: Cross-device comparison
+          - generic [ref=e1229]:
+            - generic [ref=e1230]:
+              - generic [ref=e1231]:
+                - img [ref=e1233]
+                - generic [ref=e1237]: COMING SOON
+              - heading "🖼️ Visual Regression Analyzer Agent" [level=3] [ref=e1238]
+              - paragraph [ref=e1239]: Detects subtle visual changes in builds to prevent layout regressions.
+            - list [ref=e1241]:
+              - listitem [ref=e1242]:
+                - img [ref=e1243]
+                - text: Pixel-level detection
+              - listitem [ref=e1246]:
+                - img [ref=e1247]
+                - text: Baseline snapshots
+              - listitem [ref=e1250]:
+                - img [ref=e1251]
+                - text: Visual reporting
+          - generic [ref=e1255]:
+            - generic [ref=e1256]:
+              - generic [ref=e1257]:
+                - img [ref=e1259]
+                - generic [ref=e1262]: COMING SOON
+              - heading "📉 Test Impact Analyzer Agent" [level=3] [ref=e1263]
+              - paragraph [ref=e1264]: Determines which tests are most affected by specific commits or pull requests.
+            - list [ref=e1266]:
+              - listitem [ref=e1267]:
+                - img [ref=e1268]
+                - text: Impact mapping
+              - listitem [ref=e1271]:
+                - img [ref=e1272]
+                - text: Prioritized execution
+              - listitem [ref=e1275]:
+                - img [ref=e1276]
+                - text: Regression risk analysis
+          - generic [ref=e1280]:
+            - generic [ref=e1281]:
+              - generic [ref=e1282]:
+                - img [ref=e1284]
+                - generic [ref=e1286]: COMING SOON
+              - heading "💡 Test Case Optimizer Agent" [level=3] [ref=e1287]
+              - paragraph [ref=e1288]: Cleans up redundant or outdated test cases to keep the repository lean.
+            - list [ref=e1290]:
+              - listitem [ref=e1291]:
+                - img [ref=e1292]
+                - text: Suite optimization
+              - listitem [ref=e1295]:
+                - img [ref=e1296]
+                - text: Duplication detection
+              - listitem [ref=e1299]:
+                - img [ref=e1300]
+                - text: Execution improvement
+          - generic [ref=e1304]:
+            - generic [ref=e1305]:
+              - generic [ref=e1306]:
+                - img [ref=e1308]
+                - generic [ref=e1311]: COMING SOON
+              - heading "⚙️ Performance Intelligence Agent" [level=3] [ref=e1312]
+              - paragraph [ref=e1313]: Analyzes performance trends over time and provides predictive tuning recommendations.
+            - list [ref=e1315]:
+              - listitem [ref=e1316]:
+                - img [ref=e1317]
+                - text: Trend forecasting
+              - listitem [ref=e1320]:
+                - img [ref=e1321]
+                - text: Anomaly detection
+              - listitem [ref=e1324]:
+                - img [ref=e1325]
+                - text: Optimization insights
+      - generic [ref=e1329]:
+        - generic [ref=e1330]:
+          - generic [ref=e1331]: Complete Curriculum
+          - heading "Interactive Career Roadmap" [level=2] [ref=e1332]
+          - paragraph [ref=e1333]: Navigate through an intensive 100-day journey from QA professional to AI Agentic Testing Engineer. Master GenAI fundamentals and build production-ready AI testing tools in just 3 months.
+          - generic [ref=e1334]:
+            - generic [ref=e1335]:
+              - img [ref=e1336]
+              - generic [ref=e1339]: 100 Days Journey
+            - generic [ref=e1340]:
+              - img [ref=e1341]
+              - generic [ref=e1343]: 2 Progressive Phases
+        - generic [ref=e1344]:
+          - generic [ref=e1346]:
+            - img [ref=e1348]
+            - heading "Interactive Learning" [level=3] [ref=e1352]
+            - paragraph [ref=e1353]: Progress through learning modules, complete hands-on challenges, and see your skills develop in real-time with guided projects and progress tracking.
+          - generic [ref=e1355]:
+            - img [ref=e1357]
+            - heading "Progressive Path" [level=3] [ref=e1359]
+            - paragraph [ref=e1360]: Follow a carefully designed progression from GenAI foundations to advanced AI Agentic Testing with clear milestones and achievement badges.
+          - generic [ref=e1362]:
+            - img [ref=e1364]
+            - heading "Career Ready" [level=3] [ref=e1366]
+            - paragraph [ref=e1367]: Build a portfolio of AI Agentic Testing projects that make you job-ready for top-tier tech companies and AI-driven testing organizations.
+        - generic [ref=e1368]:
+          - generic [ref=e1369]:
+            - heading "Your Learning Journey" [level=3] [ref=e1370]
+            - paragraph [ref=e1371]: Track your progress through two intensive phases
+          - generic [ref=e1374]:
+            - generic:
+              - generic:
+                - img
+              - generic: Phase 1
+              - heading "GenAI Foundation" [level=4]
+              - paragraph: 1-2 months
+              - generic:
+                - img
+                - generic: $75K-$95K
+            - generic:
+              - generic:
+                - img
+              - generic: Phase 2
+              - heading "AI Tool Developer" [level=4]
+              - paragraph: 1-2 months
+              - generic:
+                - img
+                - generic: $95K-$130K
+        - generic [ref=e1375]:
+          - generic [ref=e1377]:
+            - generic [ref=e1379]: Phase 1
+            - generic [ref=e1380]:
+              - generic [ref=e1381]:
+                - generic [ref=e1382]: Beginner
+                - generic [ref=e1383]:
+                  - img [ref=e1384]
+                  - generic [ref=e1387]: 1-2 months
+              - heading "GenAI Foundation" [level=3] [ref=e1388]
+              - paragraph [ref=e1389]: Build your AI foundation with hands-on experience in LLMs, prompt engineering, and API integration
+            - generic [ref=e1390]:
+              - generic [ref=e1391]:
+                - heading "7 Core Modules" [level=4] [ref=e1392]:
+                  - img [ref=e1393]
+                  - text: 7 Core Modules
+                - generic [ref=e1395]:
+                  - generic [ref=e1396]:
+                    - img [ref=e1397]
+                    - generic [ref=e1400]: What is Generative AI? - Introduction to LLMs (OpenAI, Claude, Gemini, Mistral)
+                  - generic [ref=e1401]:
+                    - img [ref=e1402]
+                    - generic [ref=e1405]: LLM Internals - Understanding attention mechanisms, parameters, and tokens
+                  - generic [ref=e1406]:
+                    - img [ref=e1407]
+                    - generic [ref=e1410]: Prompt Engineering - Master frameworks and design patterns for consistent outputs
+                  - generic [ref=e1411]:
+                    - img [ref=e1412]
+                    - generic [ref=e1415]: API Integration - Using OpenAI/Gemini APIs with authentication and error handling
+                  - generic [ref=e1416]:
+                    - img [ref=e1417]
+                    - generic [ref=e1420]: QA Use Cases - Writing prompts for test case generation and bug reports
+                  - generic [ref=e1421]:
+                    - img [ref=e1422]
+                    - generic [ref=e1425]: AI Tools Overview - Explore LangChain, Perplexity, and LlamaIndex concepts
+                  - generic [ref=e1426]:
+                    - img [ref=e1427]
+                    - generic [ref=e1430]: Foundation Assessment - Certification badge + practical project
+              - generic [ref=e1431]:
+                - heading "Career Impact" [level=4] [ref=e1432]
+                - list [ref=e1433]:
+                  - listitem [ref=e1434]:
+                    - generic [ref=e1435]: •
+                    - text: Stand out by introducing AI-powered testing to your team
+                  - listitem [ref=e1436]:
+                    - generic [ref=e1437]: •
+                    - text: Position yourself ahead of 80% of QA professionals
+                  - listitem [ref=e1438]:
+                    - generic [ref=e1439]: •
+                    - text: Connect with AI Agentic Testing community leaders
+                - generic [ref=e1440]:
+                  - generic [ref=e1441]:
+                    - generic [ref=e1442]: "Salary Range:"
+                    - generic [ref=e1443]: $75K - $95K
+                  - generic [ref=e1444]:
+                    - text: "Target Roles:"
+                    - generic [ref=e1445]:
+                      - generic [ref=e1446]: AI-Aware QA Engineer
+                      - generic [ref=e1447]: Junior AI Testing Specialist
+                      - generic [ref=e1448]: QA Automation Engineer
+              - button "Start Foundation" [ref=e1449] [cursor=pointer]:
+                - text: Start Foundation
+                - img
+          - generic [ref=e1451]:
+            - generic [ref=e1453]: Phase 2
+            - generic [ref=e1454]:
+              - generic [ref=e1455]:
+                - generic [ref=e1456]: Intermediate
+                - generic [ref=e1457]:
+                  - img [ref=e1458]
+                  - generic [ref=e1461]: 1-2 months
+              - heading "AI Tester" [level=3] [ref=e1462]
+              - paragraph [ref=e1463]: Build autonomous testing agents, MCP servers, and production-ready AI tools for enterprise testing needs
+            - generic [ref=e1464]:
+              - generic [ref=e1465]:
+                - heading "13 Advanced Modules" [level=4] [ref=e1466]:
+                  - img [ref=e1467]
+                  - text: 13 Advanced Modules
+                - generic [ref=e1469]:
+                  - generic [ref=e1470]:
+                    - img [ref=e1471]
+                    - generic [ref=e1474]: Advanced API Integration - OpenAI, Azure OpenAI, Google Gemini with streaming
+                  - generic [ref=e1475]:
+                    - img [ref=e1476]
+                    - generic [ref=e1479]: Structured Prompt Flows - Build complex workflows with branching logic
+                  - generic [ref=e1480]:
+                    - img [ref=e1481]
+                    - generic [ref=e1484]: LangChain Mastery - Agents, tool calling, chains, and memory systems
+                  - generic [ref=e1485]:
+                    - img [ref=e1486]
+                    - generic [ref=e1489]: Model Fine-tuning - Customize pre-trained models for testing-specific tasks
+                  - generic [ref=e1490]:
+                    - img [ref=e1491]
+                    - generic [ref=e1494]: Autonomous Test Agents - Build self-directed agents for independent testing
+                  - generic [ref=e1495]:
+                    - img [ref=e1496]
+                    - generic [ref=e1499]: MCP Integration - Model Context Protocol for connecting AI with developer tools
+                  - generic [ref=e1500]:
+                    - img [ref=e1501]
+                    - generic [ref=e1504]: Browser Extensions - DOM scraping to auto-generate test cases
+                  - generic [ref=e1505]:
+                    - img [ref=e1506]
+                    - generic [ref=e1509]: AI Performance Testing - Benchmarking response times and cost optimization
+                  - generic [ref=e1510]:
+                    - img [ref=e1511]
+                    - generic [ref=e1514]: AI Visual Testing - Vision AI for detecting layout shifts and UI anomalies
+                  - generic [ref=e1515]:
+                    - img [ref=e1516]
+                    - generic [ref=e1519]: AI Tool Development - Building and scaling QA-specific AI services
+                  - generic [ref=e1520]:
+                    - img [ref=e1521]
+                    - generic [ref=e1524]: Tool Showcase - Deploy your AI testing tools to a public catalog
+                  - generic [ref=e1525]:
+                    - img [ref=e1526]
+                    - generic [ref=e1529]: Real-world Projects - Build 3-5 production-ready tools
+                  - generic [ref=e1530]:
+                    - img [ref=e1531]
+                    - generic [ref=e1534]: Capstone Project - Comprehensive AI testing solution
+              - generic [ref=e1535]:
+                - heading "Career Impact" [level=4] [ref=e1536]
+                - list [ref=e1537]:
+                  - listitem [ref=e1538]:
+                    - generic [ref=e1539]: •
+                    - text: Lead AI + Agentic Testing innovation and mentor teams
+                  - listitem [ref=e1540]:
+                    - generic [ref=e1541]: •
+                    - text: Qualify for senior positions building AI testing initiatives
+                  - listitem [ref=e1542]:
+                    - generic [ref=e1543]: •
+                    - text: Create proprietary AI agents and internal testing platforms
+                - generic [ref=e1544]:
+                  - generic [ref=e1545]:
+                    - generic [ref=e1546]: "Salary Range:"
+                    - generic [ref=e1547]: $95K - $130K
+                  - generic [ref=e1548]:
+                    - text: "Target Roles:"
+                    - generic [ref=e1549]:
+                      - generic [ref=e1550]: Senior AI Testing Engineer
+                      - generic [ref=e1551]: AI Testing Architect
+                      - generic [ref=e1552]: AI Testing Consultant
+              - button "View Advanced Track" [ref=e1553] [cursor=pointer]:
+                - text: View Advanced Track
+                - img
+        - generic [ref=e1554]:
+          - heading "Perfect For" [level=3] [ref=e1555]
+          - paragraph [ref=e1556]: Whether you're starting your automation journey or advancing your AI testing career
+          - generic [ref=e1557]:
+            - generic [ref=e1559]:
+              - img [ref=e1561]
+              - heading "Manual Testers" [level=4] [ref=e1566]
+              - paragraph [ref=e1567]: Looking to upskill and embrace automation with AI-powered testing tools and modern QA practices.
+            - generic [ref=e1569]:
+              - img [ref=e1571]
+              - heading "Automation Engineers" [level=4] [ref=e1573]
+              - paragraph [ref=e1574]: Ready to pivot into cutting-edge AI Agentic Testing, autonomous agents, and intelligent test validation.
+            - generic [ref=e1576]:
+              - img [ref=e1578]
+              - heading "QA Professionals" [level=4] [ref=e1581]
+              - paragraph [ref=e1582]: Seeking future-proof career advancement in AI and machine learning applied to quality assurance.
+        - generic [ref=e1583]:
+          - generic [ref=e1584]:
+            - generic [ref=e1585]: 20+
+            - generic [ref=e1586]: Hands-on Modules
+          - generic [ref=e1587]:
+            - generic [ref=e1588]: "100"
+            - generic [ref=e1589]: Days Journey
+          - generic [ref=e1590]:
+            - generic [ref=e1591]: 5+
+            - generic [ref=e1592]: Real-world Projects
+          - generic [ref=e1593]:
+            - generic [ref=e1594]: $35K+
+            - generic [ref=e1595]: Salary Increase
+      - generic [ref=e1598]:
+        - heading "Start Building Your Own AI Testing Agents Today" [level=2] [ref=e1599]
+        - paragraph [ref=e1600]: Access free tools, comprehensive courses, and learn to create your own AI agents and MCP servers. No costs, no limits.
+        - generic [ref=e1601]:
+          - button "Get Started Free" [ref=e1602] [cursor=pointer]:
+            - text: Get Started Free
+            - img
+          - button "Explore Courses" [ref=e1603] [cursor=pointer]
+        - paragraph [ref=e1604]: 100% Free Forever · Open Source · Community Driven
+    - contentinfo [ref=e1607]:
+      - generic [ref=e1608]:
+        - generic [ref=e1609]:
+          - generic [ref=e1610]:
+            - generic [ref=e1611]:
+              - generic [ref=e1613]: TB
+              - generic [ref=e1614]:
+                - generic [ref=e1615]: TestingBuddy AI
+                - generic [ref=e1616]: Powered by TheTestingAcademy
+            - paragraph [ref=e1617]: Free, open-source AI testing platform with comprehensive courses to build your own automation agents.
+          - generic [ref=e1618]:
+            - heading "Product" [level=3] [ref=e1619]
+            - list [ref=e1620]:
+              - listitem [ref=e1621]:
+                - link "Features" [ref=e1622] [cursor=pointer]:
+                  - /url: "#features"
+              - listitem [ref=e1623]:
+                - link "Documentation" [ref=e1624] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1625]:
+                - link "GitHub" [ref=e1626] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1627]:
+                - link "Community" [ref=e1628] [cursor=pointer]:
+                  - /url: "#"
+          - generic [ref=e1629]:
+            - heading "Learn" [level=3] [ref=e1630]
+            - list [ref=e1631]:
+              - listitem [ref=e1632]:
+                - link "Courses" [ref=e1633] [cursor=pointer]:
+                  - /url: "#courses"
+              - listitem [ref=e1634]:
+                - link "Tutorials" [ref=e1635] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1636]:
+                - link "Blog" [ref=e1637] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1638]:
+                - link "Contact" [ref=e1639] [cursor=pointer]:
+                  - /url: "#contact"
+          - generic [ref=e1640]:
+            - heading "Legal" [level=3] [ref=e1641]
+            - list [ref=e1642]:
+              - listitem [ref=e1643]:
+                - link "Privacy Policy" [ref=e1644] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1645]:
+                - link "Terms of Service" [ref=e1646] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1647]:
+                - link "Security" [ref=e1648] [cursor=pointer]:
+                  - /url: "#"
+              - listitem [ref=e1649]:
+                - link "Compliance" [ref=e1650] [cursor=pointer]:
+                  - /url: "#"
+        - paragraph [ref=e1652]: © 2026 TestingBuddy AI · Powered by TheTestingAcademy · All rights reserved.

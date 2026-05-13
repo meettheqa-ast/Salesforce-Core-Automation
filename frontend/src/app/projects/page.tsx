@@ -5,9 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import StatusDonut, { DONUT_COLORS } from "@/components/charts/StatusDonut";
+import CreateProjectModal from "@/components/projects/CreateProjectModal";
 import { api, type InvitationRow } from "@/lib/api";
-import GlassSelect from "@/components/ui/GlassSelect";
+import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import { useMe, membershipFor } from "@/lib/useMe";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 /** Minimal per-project stats fetched on the list page so each tile can
  *  show its own donut + counts without drilling in. Both fields default
@@ -30,8 +32,6 @@ export default function ProjectsPage() {
   const [otherProjects, setOtherProjects] = useState<Array<{ name: string; display_name: string; description: string; member_count: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", description: "", environment: "Dev", sandbox_url: "", username: "", password: "" });
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [requesting, setRequesting] = useState<string | null>(null);
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
@@ -127,18 +127,6 @@ export default function ProjectsPage() {
     }
   };
 
-  const handleCreate = async () => {
-    if (!form.name.trim()) { setError("Name is required"); return; }
-    setCreating(true); setError("");
-    try {
-      await api.projects.create(form);
-      setShowCreate(false);
-      setForm({ name: "", description: "", environment: "Dev", sandbox_url: "", username: "", password: "" });
-      loadProjects();
-    } catch (err: any) { setError(err.message); }
-    finally { setCreating(false); }
-  };
-
   const handleDelete = async (name: string) => {
     if (!confirm(`Delete project "${name}"?`)) return;
     await api.projects.delete(name).catch(() => {});
@@ -146,20 +134,21 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-4xl font-bold">
-            <span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">Projects</span>
-          </h1>
-          <p className="text-slate-400">Manage test projects, environments, and credentials.</p>
-        </div>
-        {canCreateProject && (
-          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)}
-            className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
-            + New Project
-          </motion.button>
-        )}
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <PageHeader
+          eyebrow="Delivery"
+          title="Projects"
+          description="Manage project scope, ownership, environments, and access."
+          actions={
+            canCreateProject ? (
+              <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowCreate(true)}
+                className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm">
+                + New Project
+              </motion.button>
+            ) : undefined
+          }
+        />
       </motion.div>
 
       {/* Pending invitations awaiting accept/decline */}
@@ -172,7 +161,7 @@ export default function ProjectsPage() {
             >
               <div className="text-xl">📨</div>
               <div className="flex-1 min-w-0 text-sm text-white">
-                You've been invited to <span className="font-semibold">{inv.project_slug}</span>
+                You&apos;ve been invited to <span className="font-semibold">{inv.project_slug}</span>
                 <span className="ml-2 text-[11px] text-slate-400">as {inv.role}</span>
               </div>
               <button
@@ -192,110 +181,21 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Create Modal */}
-      <AnimatePresence>
-        {showCreate && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowCreate(false)}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-strong p-6 w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
-              <h2 className="text-xl font-bold text-white mb-4">Create Project</h2>
-              {/* The autoComplete="new-password" + name="...-randomToken" pattern stops
-                  Chrome/Edge from autofilling the user's saved Google credentials into
-                  the Salesforce sandbox username/password fields. Plain `autoComplete="off"`
-                  is largely ignored by Chrome on credential-shaped inputs. */}
-              <form
-                onSubmit={(e) => { e.preventDefault(); handleCreate(); }}
-                autoComplete="off"
-                className="space-y-3"
-              >
-                <input
-                  name="project-name"
-                  autoComplete="off"
-                  placeholder="Project Name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
-                />
-                <input
-                  name="project-description"
-                  autoComplete="off"
-                  placeholder="Description (optional)"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
-                />
-                <GlassSelect
-                  className="w-full"
-                  value={form.environment}
-                  onChange={(v) => setForm({ ...form, environment: v })}
-                  placeholder="Environment"
-                  options={["Dev", "QA", "UAT", "Prod"].map((e) => ({ value: e, label: e }))}
-                />
-                <input
-                  name="sandbox-url"
-                  autoComplete="off"
-                  placeholder="Sandbox URL"
-                  value={form.sandbox_url}
-                  onChange={(e) => setForm({ ...form, sandbox_url: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
-                />
-                {/* Decoy fields hidden off-screen: Chrome ignores autoComplete="off"
-                    on credential-shaped inputs but WILL stop autofilling if it sees
-                    a "match" earlier in the form. These hidden inputs absorb the
-                    autofill instead of leaking it into the Salesforce fields below. */}
-                <input
-                  type="text"
-                  name="username"
-                  autoComplete="username"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
-                  readOnly
-                />
-                <input
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }}
-                  readOnly
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <input
-                    name="sf-sandbox-username"
-                    autoComplete="off"
-                    placeholder="Sandbox Username"
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
-                  />
-                  <input
-                    type="password"
-                    name="sf-sandbox-password"
-                    autoComplete="new-password"
-                    placeholder="Sandbox Password"
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500"
-                  />
-                </div>
-              </form>
-              {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
-              <div className="flex gap-3 mt-5">
-                <motion.button whileTap={{ scale: 0.95 }} onClick={handleCreate} disabled={creating}
-                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white font-semibold rounded-xl text-sm disabled:opacity-50">
-                  {creating ? "Creating..." : "Create Project"}
-                </motion.button>
-                <button onClick={() => setShowCreate(false)} className="px-4 py-2.5 glass text-slate-400 rounded-xl text-sm hover:text-white transition-colors">
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Create Modal -- lifted to the shared CreateProjectModal so the
+          same form is also reachable from the top-nav Quick create
+          menu, /admin/projects, /dashboard, and the stacked
+          "+ Create new project..." options inside the sprint and story
+          create modals. */}
+      <CreateProjectModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={() => {
+          loadProjects();
+          // Also poke the global sidebar + Cmd+K palette so the new
+          // project shows up everywhere without a hard reload.
+          notifyTreeRefresh({ kind: "project" });
+        }}
+      />
 
       {/* Project Grid */}
       {loading ? (
@@ -378,7 +278,7 @@ export default function ProjectsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageScaffold>
   );
 }
 

@@ -9,7 +9,7 @@ Routes:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -21,7 +21,6 @@ from ai_qa_portal.backend.services.db import (
     get_db,
 )
 
-
 router = APIRouter(
     prefix="/api/me/notifications",
     tags=["notifications"],
@@ -30,7 +29,7 @@ router = APIRouter(
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @router.get("")

@@ -1,0 +1,16 @@
+{
+  "name": "cursor-sdk-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node sidecar that exposes @cursor/sdk to the Python FastAPI backend over HTTP. Sibling lifecycle to RF-MCP and pw-mcp -- spawned by cursor_sdk_bridge.py at first request, killed on atexit.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.12"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

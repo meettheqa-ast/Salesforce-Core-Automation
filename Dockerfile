@@ -59,6 +59,38 @@ COPY ai_qa_portal/requirements.txt /app/_pip/ai_qa_portal/requirements.txt
 RUN python -m pip install --upgrade pip \
  && pip install -r /app/_pip/requirements.txt -r /app/_pip/ai_qa_portal/requirements.txt
 
+# --- Playwright browser binaries (Phase 0+ for the Playwright-MCP runtime) ---
+# The portal already ships chromium for Selenium, but Playwright manages
+# its OWN bundled browser binaries via ``python -m playwright install``.
+# We install chromium only (skipping firefox + webkit) to keep the image
+# size manageable; --with-deps installs any extra system libs Playwright
+# needs that aren't already present from the SeleniumLibrary block above.
+# If Playwright is disabled (PLAYWRIGHT_ENABLED=false) at runtime the
+# binaries are simply unused -- the install step adds ~150MB to the image
+# regardless, which is the cost of supporting both engines side-by-side.
+RUN python -m playwright install chromium --with-deps
+
+# --- Node 20 LTS for the Cursor SDK sidecar --------------------------------
+# @cursor/sdk is TypeScript-only; cursor_sdk_bridge.py spawns a small Node
+# server (cursor_sdk_sidecar/server.js) that talks to it. We install Node
+# from NodeSource to get a stable LTS instead of Debian's older default.
+# Image-size impact ~80 MB -- comparable to the chromium binary above.
+# Set CURSOR_USE_SDK=false at runtime to disable the sidecar entirely;
+# _call_cursor will transparently fall back to the legacy REST path.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get update && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/* \
+ && node --version && npm --version
+
+# Install the SDK sidecar's deps at build time so first-request latency is
+# fast (no lazy ``npm install`` on cold containers). Lockfile pins the SDK
+# version so deploys are reproducible.
+COPY cursor_sdk_sidecar/package.json /app/cursor_sdk_sidecar/package.json
+COPY cursor_sdk_sidecar/package-lock.json /app/cursor_sdk_sidecar/package-lock.json
+WORKDIR /app/cursor_sdk_sidecar
+RUN npm ci --omit=dev --no-audit --no-fund
+WORKDIR /app
+
 # --- App source ------------------------------------------------------------
 COPY . /app
 

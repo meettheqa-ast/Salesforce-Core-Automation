@@ -51,21 +51,25 @@ export default function StatusDonut({
   const cy = size / 2;
 
   // Slice ordering: keep the caller's order so colours line up with the
-  // legend the page renders alongside the donut.
-  let cumulative = 0;
-  const segments = slices
+  // legend the page renders alongside the donut. Computed via a pure
+  // reduce so the accumulator never escapes render scope -- React 19's
+  // compiler rules disallow ``let cumulative`` mutation inside
+  // ``.map()`` callbacks (it's the same hazard as setState-in-render).
+  type Segment = (typeof slices)[number] & { dashLength: number; offset: number };
+  const { segments } = slices
     .filter((s) => s.count > 0)
-    .map((s) => {
-      const fraction = total > 0 ? s.count / total : 0;
-      const dashLength = fraction * circumference;
-      const offset = -cumulative;
-      cumulative += dashLength;
-      return {
-        ...s,
-        dashLength,
-        offset,
-      };
-    });
+    .reduce<{ cumulative: number; segments: Segment[] }>(
+      (acc, s) => {
+        const fraction = total > 0 ? s.count / total : 0;
+        const dashLength = fraction * circumference;
+        const offset = -acc.cumulative;
+        return {
+          cumulative: acc.cumulative + dashLength,
+          segments: [...acc.segments, { ...s, dashLength, offset }],
+        };
+      },
+      { cumulative: 0, segments: [] },
+    );
 
   return (
     <svg

@@ -1,0 +1,221 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - region "Notifications (F8)":
+      - list
+    - region "Notifications alt+T"
+    - generic [ref=e4]:
+      - generic [ref=e308]:
+        - generic [ref=e310]:
+          - generic [ref=e312]: TB
+          - generic [ref=e313]:
+            - generic [ref=e314]: TestingBuddy AI
+            - generic [ref=e315]: Testing Platform
+        - generic [ref=e316]:
+          - generic [ref=e317]:
+            - generic [ref=e318]: Main
+            - list [ref=e320]:
+              - listitem [ref=e321]:
+                - link "Dashboard" [ref=e322] [cursor=pointer]:
+                  - /url: /dashboard
+                  - img [ref=e323]
+                  - generic [ref=e326]: Dashboard
+              - listitem [ref=e327]:
+                - link "Curriculum" [ref=e328] [cursor=pointer]:
+                  - /url: /dashboard/curriculum
+                  - img [ref=e329]
+                  - generic [ref=e331]: Curriculum
+              - listitem [ref=e332]:
+                - link "Settings" [ref=e333] [cursor=pointer]:
+                  - /url: /dashboard/settings
+                  - img [ref=e334]
+                  - generic [ref=e337]: Settings
+          - generic [ref=e339] [cursor=pointer]:
+            - generic [ref=e340]: 🎯 Planning & Strategy
+            - img [ref=e341]
+          - generic [ref=e344] [cursor=pointer]:
+            - generic [ref=e345]: ✏️ Test Design & Creation
+            - img [ref=e346]
+          - generic [ref=e348]:
+            - generic [ref=e349] [cursor=pointer]:
+              - generic [ref=e350]: 🤖 Automation & Framework
+              - img [ref=e351]
+            - list [ref=e395]:
+              - listitem [ref=e396]:
+                - button "🤖 Automation Framework Setup Agent" [ref=e397] [cursor=pointer]:
+                  - generic [ref=e398]: 🤖 Automation Framework Setup Agent
+              - listitem [ref=e399]:
+                - button "🎯 Selenium Locator Intelligence Agent" [ref=e400] [cursor=pointer]:
+                  - generic [ref=e401]: 🎯 Selenium Locator Intelligence Agent
+              - listitem [ref=e402]:
+                - button "🔄 Selenium to Playwright Converter" [active] [ref=e403] [cursor=pointer]:
+                  - generic [ref=e404]: 🔄 Selenium to Playwright Converter
+              - listitem [ref=e405]:
+                - button "📤 Postman to Automation Converter Agent" [ref=e406] [cursor=pointer]:
+                  - generic [ref=e407]: 📤 Postman to Automation Converter Agent
+              - listitem [ref=e408]:
+                - button "📄 API Code Generator (Swagger Assistant)" [ref=e409] [cursor=pointer]:
+                  - generic [ref=e410]: 📄 API Code Generator (Swagger Assistant)
+              - listitem [ref=e411]:
+                - button "✅ API Response Validator Agent" [ref=e412] [cursor=pointer]:
+                  - generic [ref=e413]: ✅ API Response Validator Agent
+              - listitem [ref=e414]:
+                - button "🔗 API Dependency Analyzer Agent" [ref=e415] [cursor=pointer]:
+                  - generic [ref=e416]: 🔗 API Dependency Analyzer Agent
+              - listitem [ref=e417]:
+                - button "🎤 Voice Command QA Agent" [ref=e418] [cursor=pointer]:
+                  - generic [ref=e419]: 🎤 Voice Command QA Agent
+          - generic [ref=e354] [cursor=pointer]:
+            - generic [ref=e355]: ⚡ Test Execution & Management
+            - img [ref=e356]
+          - generic [ref=e359] [cursor=pointer]:
+            - generic [ref=e360]: 📊 Reporting & Insights
+            - img [ref=e361]
+          - generic [ref=e364] [cursor=pointer]:
+            - generic [ref=e365]: 🔧 Optimization & Maintenance
+            - img [ref=e366]
+          - generic [ref=e369] [cursor=pointer]:
+            - generic [ref=e370]: 🧠 AI Intelligence & Prediction
+            - img [ref=e371]
+        - generic [ref=e374]:
+          - list [ref=e375]:
+            - listitem [ref=e376]:
+              - button "Chat History" [ref=e377] [cursor=pointer]:
+                - img [ref=e378]
+                - generic [ref=e380]: Chat History
+          - generic [ref=e381]:
+            - generic [ref=e383]: M
+            - generic [ref=e384]:
+              - paragraph [ref=e385]: Meet Sheth
+              - paragraph [ref=e386]: m.sheth@astounddigital.com
+          - button "Sign Out" [ref=e387] [cursor=pointer]:
+            - img [ref=e388]
+            - generic [ref=e391]: Sign Out
+        - button "Toggle Sidebar" [ref=e392]
+      - generic [ref=e93]:
+        - banner [ref=e94]:
+          - button "Toggle Sidebar" [ref=e95] [cursor=pointer]:
+            - img
+            - generic [ref=e96]: Toggle Sidebar
+        - main [ref=e97]:
+          - generic [ref=e420]:
+            - generic [ref=e422]:
+              - generic [ref=e423]:
+                - heading "Selenium ⇄ Playwright Converter" [level=1] [ref=e424]
+                - paragraph [ref=e425]: Convert your test automation scripts between Selenium and Playwright frameworks
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - img [ref=e428]
+                  - text: 0 day streak
+                - generic [ref=e430]: 0 total days
+            - generic [ref=e431]:
+              - button "Save Conversion" [disabled]:
+                - img
+                - text: Save Conversion
+              - button "Clear All" [disabled]:
+                - img
+                - text: Clear All
+            - generic [ref=e434]:
+              - generic [ref=e435]:
+                - generic [ref=e436]: Source Language
+                - combobox [disabled] [ref=e437]:
+                  - generic: Selenium Java
+                  - img [ref=e438]
+              - generic [ref=e440]:
+                - button [disabled]:
+                  - img
+                - img [ref=e441]
+              - generic [ref=e443]:
+                - generic [ref=e444]: Target Language
+                - combobox [disabled] [ref=e445]:
+                  - generic: Playwright Java
+                  - img [ref=e446]
+              - button "Convert Code" [disabled]
+            - generic [ref=e448]:
+              - generic [ref=e449]:
+                - generic [ref=e450]:
+                  - generic [ref=e451]:
+                    - heading "Code Templates" [level=3] [ref=e452]
+                    - paragraph [ref=e453]: Load example Selenium patterns to quickly test conversions
+                  - generic [ref=e455]:
+                    - tablist [ref=e456]:
+                      - tab "All" [selected] [ref=e457] [cursor=pointer]
+                      - tab "Authentication" [ref=e458] [cursor=pointer]:
+                        - img [ref=e459]
+                        - text: Authentication
+                      - tab "Forms" [ref=e462] [cursor=pointer]:
+                        - img [ref=e463]
+                        - text: Forms
+                      - tab "File Uploads" [ref=e468] [cursor=pointer]:
+                        - img [ref=e469]
+                        - text: File Uploads
+                      - tab "Navigation" [ref=e472] [cursor=pointer]:
+                        - img [ref=e473]
+                        - text: Navigation
+                      - tab "Interactions" [ref=e475] [cursor=pointer]:
+                        - img [ref=e476]
+                        - text: Interactions
+                    - tabpanel "All" [ref=e482]:
+                      - generic [ref=e485]:
+                        - generic [ref=e486]:
+                          - generic [ref=e487]:
+                            - img [ref=e488]
+                            - heading "Login Form (Java)" [level=4] [ref=e491]
+                          - paragraph [ref=e492]: Basic login with username and password fields
+                          - generic [ref=e493]: Java
+                        - button "Load" [ref=e494] [cursor=pointer]
+                      - generic [ref=e497]:
+                        - generic [ref=e498]:
+                          - generic [ref=e499]:
+                            - img [ref=e500]
+                            - heading "Form Submission (Java)" [level=4] [ref=e505]
+                          - paragraph [ref=e506]: Fill out and submit a multi-field form
+                          - generic [ref=e507]: Java
+                        - button "Load" [ref=e508] [cursor=pointer]
+                      - generic [ref=e511]:
+                        - generic [ref=e512]:
+                          - generic [ref=e513]:
+                            - img [ref=e514]
+                            - heading "File Upload (Java)" [level=4] [ref=e517]
+                          - paragraph [ref=e518]: Upload a file using input element
+                          - generic [ref=e519]: Java
+                        - button "Load" [ref=e520] [cursor=pointer]
+                      - generic [ref=e523]:
+                        - generic [ref=e524]:
+                          - generic [ref=e525]:
+                            - img [ref=e526]
+                            - heading "Page Navigation (Java)" [level=4] [ref=e528]
+                          - paragraph [ref=e529]: Navigate between pages, back, forward, and refresh
+                          - generic [ref=e530]: Java
+                        - button "Load" [ref=e531] [cursor=pointer]
+                      - generic [ref=e534]:
+                        - generic [ref=e535]:
+                          - generic [ref=e536]:
+                            - img [ref=e537]
+                            - heading "Hover and Click (Java)" [level=4] [ref=e540]
+                          - paragraph [ref=e541]: Mouse hover interactions and dropdown menus
+                          - generic [ref=e542]: Java
+                        - button "Load" [ref=e543] [cursor=pointer]
+                - generic [ref=e544]:
+                  - generic [ref=e545]:
+                    - heading "Source Code" [level=3] [ref=e548]
+                    - code [ref=e552]:
+                      - generic [ref=e553]:
+                        - textbox "Editor content" [ref=e554]
+                        - textbox [ref=e555]
+                        - generic [ref=e560]: "1"
+                  - generic [ref=e567]:
+                    - heading "Converted Code" [level=3] [ref=e570]
+                    - code [ref=e574]:
+                      - generic [ref=e575]:
+                        - textbox "Editor content" [ref=e576]
+                        - textbox [ref=e577]
+                        - generic [ref=e582]: "1"
+              - generic [ref=e590]:
+                - heading "Saved Conversions" [level=3] [ref=e592]
+                - generic [ref=e597]:
+                  - img [ref=e598]
+                  - paragraph [ref=e603]: No saved conversions yet
+                  - paragraph [ref=e604]: Save your first conversion to see it here
+  - generic [ref=e605]:
+    - alert
+    - alert

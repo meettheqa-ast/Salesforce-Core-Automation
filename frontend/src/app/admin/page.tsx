@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { useMe } from "@/lib/useMe";
+import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 const TILES = [
   { href: "/admin/users", title: "Users", desc: "Manage all users in the org. Promote, demote, deactivate.", icon: "👥", color: "purple" as const },
@@ -26,21 +27,20 @@ export default function AdminLandingPage() {
           </span>
         </h1>
         <p className="text-slate-400">
-          You don't have admin privileges on this portal. Contact an admin if you believe this is wrong.
+          You don&apos;t have admin privileges on this portal. Contact an admin if you believe this is wrong.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-        <h1 className="text-4xl font-bold">
-          <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-            Admin Console
-          </span>
-        </h1>
-        <p className="text-slate-400 mt-1">System-wide oversight: users, projects, audit log.</p>
+    <PageScaffold>
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
+        <PageHeader
+          eyebrow="Governance"
+          title="Admin Console"
+          description="System-wide oversight for users, projects, and compliance events."
+        />
       </motion.div>
 
       <div className="grid md:grid-cols-3 gap-5">
@@ -54,6 +54,6 @@ export default function AdminLandingPage() {
           </Link>
         ))}
       </div>
-    </div>
+    </PageScaffold>
   );
 }

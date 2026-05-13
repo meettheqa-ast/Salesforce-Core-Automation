@@ -1,0 +1,430 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - region "Notifications (F8)":
+      - list [ref=e607]:
+        - status [ref=e792]:
+          - generic [ref=e793]:
+            - generic [ref=e794]: Conversion successful
+            - generic [ref=e795]: Your code has been converted
+          - button [ref=e796] [cursor=pointer]:
+            - img [ref=e797]
+    - region "Notifications alt+T"
+    - generic [ref=e4]:
+      - generic [ref=e308]:
+        - generic [ref=e310]:
+          - generic [ref=e312]: TB
+          - generic [ref=e313]:
+            - generic [ref=e314]: TestingBuddy AI
+            - generic [ref=e315]: Testing Platform
+        - generic [ref=e316]:
+          - generic [ref=e317]:
+            - generic [ref=e318]: Main
+            - list [ref=e320]:
+              - listitem [ref=e321]:
+                - link "Dashboard" [ref=e322] [cursor=pointer]:
+                  - /url: /dashboard
+                  - img [ref=e323]
+                  - generic [ref=e326]: Dashboard
+              - listitem [ref=e327]:
+                - link "Curriculum" [ref=e328] [cursor=pointer]:
+                  - /url: /dashboard/curriculum
+                  - img [ref=e329]
+                  - generic [ref=e331]: Curriculum
+              - listitem [ref=e332]:
+                - link "Settings" [ref=e333] [cursor=pointer]:
+                  - /url: /dashboard/settings
+                  - img [ref=e334]
+                  - generic [ref=e337]: Settings
+          - generic [ref=e339] [cursor=pointer]:
+            - generic [ref=e340]: 🎯 Planning & Strategy
+            - img [ref=e341]
+          - generic [ref=e344] [cursor=pointer]:
+            - generic [ref=e345]: ✏️ Test Design & Creation
+            - img [ref=e346]
+          - generic [ref=e348]:
+            - generic [ref=e349] [cursor=pointer]:
+              - generic [ref=e350]: 🤖 Automation & Framework
+              - img [ref=e351]
+            - list [ref=e395]:
+              - listitem [ref=e396]:
+                - button "🤖 Automation Framework Setup Agent" [ref=e397] [cursor=pointer]:
+                  - generic [ref=e398]: 🤖 Automation Framework Setup Agent
+              - listitem [ref=e399]:
+                - button "🎯 Selenium Locator Intelligence Agent" [ref=e400] [cursor=pointer]:
+                  - generic [ref=e401]: 🎯 Selenium Locator Intelligence Agent
+              - listitem [ref=e402]:
+                - button "🔄 Selenium to Playwright Converter" [ref=e403] [cursor=pointer]:
+                  - generic [ref=e404]: 🔄 Selenium to Playwright Converter
+              - listitem [ref=e405]:
+                - button "📤 Postman to Automation Converter Agent" [ref=e406] [cursor=pointer]:
+                  - generic [ref=e407]: 📤 Postman to Automation Converter Agent
+              - listitem [ref=e408]:
+                - button "📄 API Code Generator (Swagger Assistant)" [ref=e409] [cursor=pointer]:
+                  - generic [ref=e410]: 📄 API Code Generator (Swagger Assistant)
+              - listitem [ref=e411]:
+                - button "✅ API Response Validator Agent" [ref=e412] [cursor=pointer]:
+                  - generic [ref=e413]: ✅ API Response Validator Agent
+              - listitem [ref=e414]:
+                - button "🔗 API Dependency Analyzer Agent" [ref=e415] [cursor=pointer]:
+                  - generic [ref=e416]: 🔗 API Dependency Analyzer Agent
+              - listitem [ref=e417]:
+                - button "🎤 Voice Command QA Agent" [ref=e418] [cursor=pointer]:
+                  - generic [ref=e419]: 🎤 Voice Command QA Agent
+          - generic [ref=e354] [cursor=pointer]:
+            - generic [ref=e355]: ⚡ Test Execution & Management
+            - img [ref=e356]
+          - generic [ref=e359] [cursor=pointer]:
+            - generic [ref=e360]: 📊 Reporting & Insights
+            - img [ref=e361]
+          - generic [ref=e364] [cursor=pointer]:
+            - generic [ref=e365]: 🔧 Optimization & Maintenance
+            - img [ref=e366]
+          - generic [ref=e369] [cursor=pointer]:
+            - generic [ref=e370]: 🧠 AI Intelligence & Prediction
+            - img [ref=e371]
+        - generic [ref=e374]:
+          - list [ref=e375]:
+            - listitem [ref=e376]:
+              - button "Chat History" [ref=e377] [cursor=pointer]:
+                - img [ref=e378]
+                - generic [ref=e380]: Chat History
+          - generic [ref=e381]:
+            - generic [ref=e383]: M
+            - generic [ref=e384]:
+              - paragraph [ref=e385]: Meet Sheth
+              - paragraph [ref=e386]: m.sheth@astounddigital.com
+          - button "Sign Out" [ref=e387] [cursor=pointer]:
+            - img [ref=e388]
+            - generic [ref=e391]: Sign Out
+        - button "Toggle Sidebar" [ref=e392]
+      - generic [ref=e93]:
+        - banner [ref=e94]:
+          - button "Toggle Sidebar" [ref=e95] [cursor=pointer]:
+            - img
+            - generic [ref=e96]: Toggle Sidebar
+        - main [ref=e97]:
+          - generic [ref=e420]:
+            - generic [ref=e422]:
+              - generic [ref=e423]:
+                - heading "Selenium ⇄ Playwright Converter" [level=1] [ref=e424]
+                - paragraph [ref=e425]: Convert your test automation scripts between Selenium and Playwright frameworks
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - img [ref=e428]
+                  - text: 0 day streak
+                - generic [ref=e430]: 0 total days
+            - generic [ref=e431]:
+              - button "Save Conversion" [ref=e801] [cursor=pointer]:
+                - img
+                - text: Save Conversion
+              - button "Clear All" [ref=e617] [cursor=pointer]:
+                - img
+                - text: Clear All
+            - generic [ref=e434]:
+              - generic [ref=e435]:
+                - generic [ref=e436]: Source Language
+                - combobox [ref=e437] [cursor=pointer]:
+                  - generic: Selenium Java
+                  - img [ref=e438]
+              - generic [ref=e440]:
+                - button [ref=e618] [cursor=pointer]:
+                  - img
+                - img [ref=e441]
+              - generic [ref=e443]:
+                - generic [ref=e444]: Target Language
+                - combobox [ref=e445] [cursor=pointer]:
+                  - generic: Playwright Java
+                  - img [ref=e446]
+              - button "Convert Code" [ref=e619] [cursor=pointer]
+            - generic [ref=e448]:
+              - generic [ref=e449]:
+                - generic [ref=e450]:
+                  - generic [ref=e451]:
+                    - heading "Code Templates" [level=3] [ref=e452]
+                    - paragraph [ref=e453]: Load example Selenium patterns to quickly test conversions
+                  - generic [ref=e455]:
+                    - tablist [ref=e456]:
+                      - tab "All" [selected] [ref=e457] [cursor=pointer]
+                      - tab "Authentication" [ref=e458] [cursor=pointer]:
+                        - img [ref=e459]
+                        - text: Authentication
+                      - tab "Forms" [ref=e462] [cursor=pointer]:
+                        - img [ref=e463]
+                        - text: Forms
+                      - tab "File Uploads" [ref=e468] [cursor=pointer]:
+                        - img [ref=e469]
+                        - text: File Uploads
+                      - tab "Navigation" [ref=e472] [cursor=pointer]:
+                        - img [ref=e473]
+                        - text: Navigation
+                      - tab "Interactions" [ref=e475] [cursor=pointer]:
+                        - img [ref=e476]
+                        - text: Interactions
+                    - tabpanel "All" [ref=e482]:
+                      - generic [ref=e485]:
+                        - generic [ref=e486]:
+                          - generic [ref=e487]:
+                            - img [ref=e488]
+                            - heading "Login Form (Java)" [level=4] [ref=e491]
+                          - paragraph [ref=e492]: Basic login with username and password fields
+                          - generic [ref=e493]: Java
+                        - button "Load" [ref=e494] [cursor=pointer]
+                      - generic [ref=e497]:
+                        - generic [ref=e498]:
+                          - generic [ref=e499]:
+                            - img [ref=e500]
+                            - heading "Form Submission (Java)" [level=4] [ref=e505]
+                          - paragraph [ref=e506]: Fill out and submit a multi-field form
+                          - generic [ref=e507]: Java
+                        - button "Load" [ref=e508] [cursor=pointer]
+                      - generic [ref=e511]:
+                        - generic [ref=e512]:
+                          - generic [ref=e513]:
+                            - img [ref=e514]
+                            - heading "File Upload (Java)" [level=4] [ref=e517]
+                          - paragraph [ref=e518]: Upload a file using input element
+                          - generic [ref=e519]: Java
+                        - button "Load" [ref=e520] [cursor=pointer]
+                      - generic [ref=e523]:
+                        - generic [ref=e524]:
+                          - generic [ref=e525]:
+                            - img [ref=e526]
+                            - heading "Page Navigation (Java)" [level=4] [ref=e528]
+                          - paragraph [ref=e529]: Navigate between pages, back, forward, and refresh
+                          - generic [ref=e530]: Java
+                        - button "Load" [ref=e531] [cursor=pointer]
+                      - generic [ref=e534]:
+                        - generic [ref=e535]:
+                          - generic [ref=e536]:
+                            - img [ref=e537]
+                            - heading "Hover and Click (Java)" [level=4] [ref=e540]
+                          - paragraph [ref=e541]: Mouse hover interactions and dropdown menus
+                          - generic [ref=e542]: Java
+                        - button "Load" [ref=e543] [cursor=pointer]
+                - generic [ref=e544]:
+                  - generic [ref=e545]:
+                    - generic [ref=e547]:
+                      - heading "Source Code" [level=3] [ref=e548]
+                      - button [ref=e623] [cursor=pointer]:
+                        - img
+                    - code [ref=e552]:
+                      - generic [ref=e553]:
+                        - textbox "Editor content" [ref=e554]
+                        - textbox [ref=e555]
+                        - generic [ref=e557]:
+                          - generic [ref=e625]: "1"
+                          - generic [ref=e628]: "2"
+                          - generic [ref=e631]: "3"
+                          - generic [ref=e634]: "4"
+                          - generic [ref=e637]: "5"
+                          - generic [ref=e638]:
+                            - generic [ref=e639] [cursor=pointer]: 
+                            - generic [ref=e640]: "6"
+                          - generic [ref=e641]:
+                            - generic [ref=e642] [cursor=pointer]: 
+                            - generic [ref=e643]: "7"
+                          - generic [ref=e646]: "8"
+                          - generic [ref=e649]: "9"
+                          - generic [ref=e653]: "10"
+                          - generic [ref=e655]: "11"
+                          - generic [ref=e660]: "12"
+                          - generic [ref=e664]: "13"
+                          - generic [ref=e666]: "14"
+                        - generic [ref=e564]:
+                          - generic [ref=e735]: import org.openqa.selenium.
+                          - generic [ref=e737]: By;
+                          - generic [ref=e739]: import org.openqa.selenium.
+                          - generic [ref=e741]: WebDriver;
+                          - generic [ref=e743]: import org.openqa.selenium.
+                          - generic [ref=e745]: WebElement;
+                          - generic [ref=e747]: import org.openqa.selenium.
+                          - generic [ref=e749]: chrome.ChromeDriver;
+                          - generic [ref=e752]: "public class LoginTest {"
+                          - generic [ref=e754]: public static void main
+                          - generic [ref=e756]: "(String[] args) {"
+                          - generic [ref=e758]: WebDriver driver =
+                          - generic [ref=e760]: new ChromeDriver();
+                          - generic [ref=e762]: driver.get
+                          - generic [ref=e803]: ("https://example.
+                          - generic [ref=e805]: com/login");
+                          - generic [ref=e770]: WebElement
+                          - generic [ref=e772]: username = driver.
+                          - generic [ref=e774]: findElement(By.id
+                          - generic [ref=e776]: ("username"));
+                          - generic [ref=e778]: username.sendKeys
+                          - generic [ref=e780]: ("testuser@example.
+                          - generic [ref=e782]: com");
+                          - generic [ref=e786]: WebElement
+                          - generic [ref=e788]: password = driver.
+                          - generic [ref=e790]: findElement(By.id
+                  - generic [ref=e567]:
+                    - generic [ref=e569]:
+                      - heading "Converted Code" [level=3] [ref=e570]
+                      - generic [ref=e806]:
+                        - button [ref=e807] [cursor=pointer]:
+                          - img
+                        - button [ref=e808] [cursor=pointer]:
+                          - img
+                    - code [ref=e574]:
+                      - generic [ref=e575]:
+                        - textbox "Editor content" [ref=e576]
+                        - textbox [ref=e577]
+                        - generic [ref=e579]:
+                          - generic [ref=e810]: "1"
+                          - generic [ref=e813]: "2"
+                          - generic [ref=e815]: "3"
+                          - generic [ref=e816]:
+                            - generic [ref=e817] [cursor=pointer]: 
+                            - generic [ref=e818]: "4"
+                          - generic [ref=e819]:
+                            - generic [ref=e820] [cursor=pointer]: 
+                            - generic [ref=e821]: "5"
+                          - generic [ref=e823]:
+                            - generic [ref=e824] [cursor=pointer]: 
+                            - generic [ref=e825]: "6"
+                          - generic [ref=e830]: "7"
+                          - generic [ref=e840]: "8"
+                          - generic [ref=e844]: "9"
+                          - generic [ref=e849]: "10"
+                          - generic [ref=e851]: "11"
+                        - generic [ref=e586]:
+                          - generic [ref=e946]: import com.microsoft.
+                          - generic [ref=e948]: playwright.*;
+                          - generic [ref=e950]: import java.nio.file.Paths;
+                          - generic [ref=e953]: "public class LoginTest {"
+                          - generic [ref=e955]: public static void main
+                          - generic [ref=e957]: "(String[] args) {"
+                          - generic [ref=e959]: try (Playwright
+                          - generic [ref=e961]: playwright =
+                          - generic [ref=e963]: Playwright.create
+                          - generic [ref=e965]: "()) {"
+                          - generic [ref=e967]: Browser
+                          - generic [ref=e969]: browser =
+                          - generic [ref=e971]: playwright.
+                          - generic [ref=e973]: chromium().
+                          - generic [ref=e975]: launch(new
+                          - generic [ref=e977]: BrowserType.
+                          - generic [ref=e979]: LaunchOptions
+                          - generic [ref=e981]: ().setHeadless
+                          - generic [ref=e983]: (false));
+                          - generic [ref=e985]: Page page =
+                          - generic [ref=e987]: browser.newPage
+                          - generic [ref=e989]: ();
+                          - generic [ref=e991]: page.navigate
+                          - generic [ref=e993]: ("https://
+                          - generic [ref=e995]: example.com/
+                          - generic [ref=e997]: login");
+                          - generic [ref=e1000]: page.locator
+                - generic [ref=e1002]:
+                  - button "Conversion Details" [expanded] [ref=e1004] [cursor=pointer]:
+                    - heading "Conversion Details" [level=3] [ref=e1005]
+                    - img [ref=e1006]
+                  - generic [ref=e1009]:
+                    - generic [ref=e1010]:
+                      - heading "Important Notes" [level=4] [ref=e1011]:
+                        - img [ref=e1012]
+                        - text: Important Notes
+                      - alert [ref=e1014]:
+                        - generic [ref=e1015]: Removed implicit waits - Playwright auto-waits for elements and navigation.
+                      - alert [ref=e1016]:
+                        - generic [ref=e1017]: Converted WebDriver setup to Playwright Browser and Page.
+                      - alert [ref=e1018]:
+                        - generic [ref=e1019]: "Replaced `sendKeys` with `fill` for input fields."
+                      - alert [ref=e1020]:
+                        - generic [ref=e1021]: "The comment about waiting for redirect is kept, but the Selenium implicit wait is removed as Playwright handles this automatically. If a specific element on the next page needs to be waited for, `page.waitForSelector()` would be used."
+                    - generic [ref=e1022]:
+                      - heading "Required Imports" [level=4] [ref=e1023]:
+                        - img [ref=e1024]
+                        - text: Required Imports
+                      - generic [ref=e1027]:
+                        - generic [ref=e1028]: com.microsoft.playwright.*
+                        - generic [ref=e1029]: java.nio.file.Paths
+                    - generic [ref=e1030]:
+                      - heading "Test Runner Recommendation" [level=4] [ref=e1031]:
+                        - img [ref=e1032]
+                        - text: Test Runner Recommendation
+                      - alert [ref=e1034]:
+                        - generic [ref=e1035]: Consider using JUnit 5 with Playwright Java for test organization
+                - generic [ref=e1037]:
+                  - generic [ref=e1038]:
+                    - button "Conversion Quality Score 94/100 Excellent" [expanded] [ref=e1039] [cursor=pointer]:
+                      - generic [ref=e1040]:
+                        - heading "Conversion Quality Score" [level=3] [ref=e1041]
+                        - generic [ref=e1042]: 94/100
+                        - generic [ref=e1043]: Excellent
+                      - img [ref=e1044]
+                    - paragraph [ref=e1046]: Analysis based on locators, wait strategies, and best practices
+                  - generic [ref=e1048]:
+                    - generic [ref=e1049]:
+                      - generic [ref=e1050]:
+                        - generic [ref=e1051]: Overall Quality
+                        - generic [ref=e1052]: 94%
+                      - progressbar [ref=e1053]
+                    - generic [ref=e1055]:
+                      - heading "Score Breakdown" [level=4] [ref=e1056]
+                      - generic [ref=e1057]:
+                        - generic [ref=e1058]:
+                          - generic [ref=e1059]: Locator Quality (40pts)
+                          - generic [ref=e1060]: 40/40
+                        - progressbar [ref=e1061]
+                      - generic [ref=e1063]:
+                        - generic [ref=e1064]:
+                          - generic [ref=e1065]: Wait Strategy (30pts)
+                          - generic [ref=e1066]: 30/30
+                        - progressbar [ref=e1067]
+                      - generic [ref=e1069]:
+                        - generic [ref=e1070]:
+                          - generic [ref=e1071]: Best Practices (20pts)
+                          - generic [ref=e1072]: 15/20
+                        - progressbar [ref=e1073]
+                      - generic [ref=e1075]:
+                        - generic [ref=e1076]:
+                          - generic [ref=e1077]: Code Structure (10pts)
+                          - generic [ref=e1078]: 9/10
+                        - progressbar [ref=e1079]
+                    - generic [ref=e1081]:
+                      - heading "Detected Issues" [level=4] [ref=e1082]
+                      - generic [ref=e1083]:
+                        - alert [ref=e1084]:
+                          - generic [ref=e1085]:
+                            - img [ref=e1086]
+                            - generic [ref=e1088]: "Good: Found 2 ID-based locator(s) - the most stable locator strategy."
+                        - alert [ref=e1089]:
+                          - generic [ref=e1090]:
+                            - img [ref=e1091]
+                            - generic [ref=e1093]: Found 1 explicit wait(s) - good for special cases.
+                        - alert [ref=e1094]:
+                          - generic [ref=e1095]:
+                            - img [ref=e1096]
+                            - generic [ref=e1098]: Missing error handling - add try-catch blocks for robust tests.
+                        - alert [ref=e1099]:
+                          - generic [ref=e1100]:
+                            - img [ref=e1101]
+                            - generic [ref=e1103]: Consider using descriptive variable names for better code readability.
+                        - alert [ref=e1104]:
+                          - generic [ref=e1105]:
+                            - img [ref=e1106]
+                            - generic [ref=e1108]: "Good: Code includes comments for clarity."
+                    - generic [ref=e1109]:
+                      - heading "Recommendations" [level=4] [ref=e1110]:
+                        - img [ref=e1111]
+                        - text: Recommendations
+                      - list [ref=e1114]:
+                        - listitem [ref=e1115]:
+                          - generic [ref=e1116]: •
+                          - generic [ref=e1117]: Excellent conversion! Code follows best practices.
+                        - listitem [ref=e1118]:
+                          - generic [ref=e1119]: •
+                          - generic [ref=e1120]: Consider using semantic locators like getByRole(), getByText(), or getByLabel() for better accessibility testing
+                        - listitem [ref=e1121]:
+                          - generic [ref=e1122]: •
+                          - generic [ref=e1123]: Wrap test logic in try-catch blocks for better error handling
+              - generic [ref=e590]:
+                - heading "Saved Conversions" [level=3] [ref=e592]
+                - generic [ref=e597]:
+                  - img [ref=e598]
+                  - paragraph [ref=e603]: No saved conversions yet
+                  - paragraph [ref=e604]: Save your first conversion to see it here
+  - generic [ref=e605]:
+    - alert
+    - alert

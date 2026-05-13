@@ -25,14 +25,13 @@ ever becomes hot.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import project_manager
-
 from ai_qa_portal.backend.config import settings
 from ai_qa_portal.backend.project_registry import slug_for_project_id
+
 from ..models.org import OrgType, SalesforceOrg
 from ..models.persona import Persona, PersonaVisibility
 from ..services.credential_service import CredentialService
@@ -62,7 +61,7 @@ def _save_personas(items: list[dict]) -> None:
     _store.write(_PERSONAS_KEY, {"items": items})
 
 
-def _find_org(orgs: list[dict], project_id: UUID, env_name: str) -> Optional[dict]:
+def _find_org(orgs: list[dict], project_id: UUID, env_name: str) -> dict | None:
     for o in orgs:
         if str(o.get("project_id")) == str(project_id) and o.get("name") == env_name:
             return o
@@ -74,7 +73,7 @@ def _find_persona(
     project_id: UUID,
     org_id: UUID,
     persona_name: str,
-) -> Optional[dict]:
+) -> dict | None:
     pid_s = str(project_id)
     oid_s = str(org_id)
     for p in personas:
@@ -87,7 +86,7 @@ def _find_persona(
     return None
 
 
-def _valid_org_type(env_name: str) -> Optional[OrgType]:
+def _valid_org_type(env_name: str) -> OrgType | None:
     """Map an environment name from config.json to the OrgType enum.
     Custom env names (anything not Dev/QA/UAT/Prod) are skipped -- the portal
     Org model doesn't accept them today."""
@@ -101,7 +100,7 @@ def sync_project_from_config(
     project_id: UUID,
     current_user: User,
     *,
-    slug: Optional[str] = None,
+    slug: str | None = None,
 ) -> dict:
     """Idempotent sync. Returns a small summary so callers can log if they
     want.
@@ -139,7 +138,7 @@ def sync_project_from_config(
     personas_added = 0
     orgs_changed = False
     personas_changed = False
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
 
     for env_name in env_names:
         org_type = _valid_org_type(env_name)
@@ -148,7 +147,7 @@ def sync_project_from_config(
 
         try:
             persona_names = project_manager.list_personas(project_slug, env_name)
-        except Exception as exc:  
+        except Exception as exc:
             logger.warning(
                 "legacy_creds_sync: list_personas(%s,%s) failed: %s",
                 project_slug, env_name, exc,
@@ -196,7 +195,7 @@ def sync_project_from_config(
         for pname in persona_names:
             try:
                 cfg = project_manager.read_project_config(project_slug, env_name, pname)
-            except Exception as exc:  
+            except Exception as exc:
                 logger.warning(
                     "legacy_creds_sync: read_project_config(%s,%s,%s) failed: %s",
                     project_slug, env_name, pname, exc,
@@ -214,7 +213,7 @@ def sync_project_from_config(
 
             try:
                 encrypted = cred_svc.encrypt(password_plain)
-            except Exception as exc:  
+            except Exception as exc:
                 logger.warning(
                     "legacy_creds_sync: encrypt failed for %s/%s/%s: %s",
                     project_slug, env_name, pname, exc,

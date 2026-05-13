@@ -1,0 +1,11 @@
+[   44931ms] [ERROR] TypeError: Failed to fetch
+    at https://testingbuddy.ai/assets/index-C6XQXA3O.js:611:3061
+    at W7 (https://testingbuddy.ai/assets/index-C6XQXA3O.js:611:9437)
+    at Re (https://testingbuddy.ai/assets/index-C6XQXA3O.js:611:9186)
+    at https://testingbuddy.ai/assets/index-C6XQXA3O.js:627:9452
+    at vY._useSession (https://testingbuddy.ai/assets/index-C6XQXA3O.js:627:7753)
+    at async vY._getUser (https://testingbuddy.ai/assets/index-C6XQXA3O.js:627:9237)
+    at async https://testingbuddy.ai/assets/index-C6XQXA3O.js:627:9098 @ https://testingbuddy.ai/assets/index-C6XQXA3O.js:610
+[   44935ms] [ERROR] Failed to load connections: {message: TypeError: Failed to fetch, details: TypeError: Failed to fetch
+    at https://testingb…tingbuddy.ai/assets/index-C6XQXA3O.js:1527:17666), hint: , code: } @ https://testingbuddy.ai/assets/index-C6XQXA3O.js:1526
+[  270661ms] [ERROR] 404 Error: User attempted to access non-existent route: /dashboard/agents/case-optimizer @ https://testingbuddy.ai/assets/index-C6XQXA3O.js:1526
