@@ -8,6 +8,7 @@ import re
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ai_qa_portal.backend.config import settings
@@ -25,6 +26,8 @@ from ai_qa_portal.backend.storage.json_file_backend import JsonFileBackend
 
 from ..models.test_case import TestCase, TestCaseStatus
 from ..models.user_story import UserStory, UserStoryCreate, UserStoryStatus, UserStoryUpdate
+
+_StoryBlocker = dict  # serialised over the wire
 
 _store = JsonFileBackend(settings.data_dir)
 _MENTION_RE = re.compile(r"@([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})")
@@ -305,7 +308,12 @@ async def generate_test_cases(
     story = _load_story_or_404(story_id, current_user)
     generator = TestCaseGenerator()
     slug = slug_for_project_id(story.project_id)
-    generated = await generator.generate(story, db=db, project_slug=slug)
+    generated, provenance = await generator.generate_with_provenance(
+        story,
+        db=db,
+        project_slug=slug,
+        user_id=str(current_user.id) if getattr(current_user, "id", None) else None,
+    )
     now = datetime.now(UTC)
     created: list[dict] = []
     for item in generated:
@@ -319,10 +327,18 @@ async def generate_test_cases(
             preconditions=item.preconditions,
             status=TestCaseStatus.draft,
             stale=False,
-            tags=list(item.tags or []),
+            # `suggested_tags` is the field on GeneratedTestCase; the
+            # previous `item.tags` read was a silent miss producing
+            # empty tag arrays. Fixed alongside the provenance wiring.
+            tags=list(item.suggested_tags or []),
             created_at=now,
             script_path=None,
             script_built_at=None,
+            prompt_version_id=provenance.template_version_id,
+            prompt_category=provenance.category,
+            model_name=provenance.model,
+            provider_name=provenance.provider,
+            qa_mode=provenance.qa_mode,
         )
         _store.save_test_case(tc.model_dump(mode="json"))
         created.append(tc.model_dump(mode="json"))
@@ -343,9 +359,52 @@ async def generate_test_cases(
         action="story_cases_generated",
         target_type="user_story",
         target_id=str(story.id),
-        metadata={"count": len(created)},
+        metadata={
+            "count": len(created),
+            "prompt_template_id": provenance.template_id,
+            "prompt_version_id": provenance.template_version_id,
+            "prompt_source_scope": provenance.source_scope,
+            "model": provenance.model,
+            "provider": provenance.provider,
+        },
     )
-    return {"user_story_id": str(story.id), "generated": created, "count": len(created)}
+    # One prompt_usage_audit row per generation request -- captures the
+    # exact (template_version, model, latency) tuple so an operator can
+    # answer "which prompt produced this batch?" without log spelunking.
+    try:
+        from ..services import prompt_registry
+        prompt_registry.record_usage(
+            db,
+            template_version_id=provenance.template_version_id,
+            category=provenance.category or "test_case_drafter",
+            user_id=str(current_user.id) if getattr(current_user, "id", None) else None,
+            project_id=str(story.project_id) if getattr(story, "project_id", None) else None,
+            model=provenance.model,
+            provider=provenance.provider,
+            qa_mode=provenance.qa_mode,
+            input_tokens=provenance.input_tokens,
+            output_tokens=provenance.output_tokens,
+            latency_ms=provenance.latency_ms,
+            target_type="user_story",
+            target_id=str(story.id),
+        )
+    except Exception:
+        # Audit must never break a successful generation.
+        pass
+    return {
+        "user_story_id": str(story.id),
+        "generated": created,
+        "count": len(created),
+        "prompt": {
+            "template_id": provenance.template_id,
+            "version_id": provenance.template_version_id,
+            "category": provenance.category,
+            "source_scope": provenance.source_scope,
+            "model": provenance.model,
+            "provider": provenance.provider,
+            "warnings": provenance.warnings,
+        },
+    }
 
 
 @router.post("/{story_id}/build-scripts")
@@ -412,3 +471,163 @@ def build_story_scripts(
         "built": built,
         "skipped": skipped,
     }
+
+
+# --- Delete lifecycle --------------------------------------------------
+#
+# Two-step semantics shared with /sprints and /test-cases:
+#
+#   first call:  story.status = archived (soft, recoverable)
+#   permanent:   row + indexes purged from JSON store; refused with
+#                409 + blocker list when any test case under the story
+#                is still in a live status (draft / approved)
+
+class _StoryBlockerModel(BaseModel):
+    id: str
+    label: str
+    reason: str
+
+
+class _StoryDeleteResult(BaseModel):
+    id: str
+    status: str
+    detail: str | None = None
+    blockers: list[_StoryBlockerModel] = []
+
+
+class _StoryBulkDeleteRequest(BaseModel):
+    ids: list[UUID]
+    permanent: bool = False
+
+
+def _story_hard_delete_blockers(story_id: UUID) -> list[_StoryBlockerModel]:
+    """A story is hard-deletable only when every test case under it is
+    in the ``rejected`` status (the test case soft-delete state). Live
+    cases (draft / approved) count as blockers and the caller should
+    reject them first."""
+    out: list[_StoryBlockerModel] = []
+    for tc_row in _store.get_test_cases_by_story(story_id):
+        if tc_row.get("status") == TestCaseStatus.rejected.value:
+            continue
+        out.append(
+            _StoryBlockerModel(
+                id=str(tc_row.get("id")),
+                label=str(tc_row.get("title") or "(untitled test case)"),
+                reason=f"test case status={tc_row.get('status')}",
+            )
+        )
+    return out
+
+
+def _soft_delete_story(story_id: UUID) -> None:
+    """Flip the story to ``archived``. Mirrors the existing versioner
+    behaviour (status flip is the canonical archive signal). We DO NOT
+    bump the version here -- archive is an end-of-lifecycle marker, not
+    a content edit."""
+    row = _store.get_user_story(story_id)
+    row["status"] = UserStoryStatus.archived.value
+    row["updated_at"] = datetime.now(UTC).isoformat()
+    _store.save_user_story(row)
+
+
+def _delete_story_one(
+    story_id: UUID,
+    user: User,
+    *,
+    permanent: bool,
+) -> _StoryDeleteResult:
+    try:
+        row = _store.get_user_story(story_id)
+    except KeyError:
+        return _StoryDeleteResult(id=str(story_id), status="skipped_not_found")
+    story = UserStory.model_validate(row)
+    if not _user_can_see_story(story, user):
+        return _StoryDeleteResult(id=str(story_id), status="skipped_not_found")
+
+    if not permanent:
+        _soft_delete_story(story_id)
+        return _StoryDeleteResult(
+            id=str(story_id),
+            status="soft_deleted",
+            detail="story archived",
+        )
+
+    if story.status != UserStoryStatus.archived:
+        return _StoryDeleteResult(
+            id=str(story_id),
+            status="skipped_invalid_state",
+            detail=f"story must be archived before permanent delete (current status={story.status.value})",
+        )
+    blockers = _story_hard_delete_blockers(story_id)
+    if blockers:
+        return _StoryDeleteResult(
+            id=str(story_id),
+            status="skipped_blocked",
+            detail="story has live test cases",
+            blockers=blockers,
+        )
+    _store.hard_delete_user_story(story_id)
+    return _StoryDeleteResult(id=str(story_id), status="hard_deleted")
+
+
+@router.delete("/{story_id}", status_code=200)
+def delete_user_story(
+    story_id: UUID,
+    permanent: bool = Query(False, description="When true, hard-deletes an already-archived story with no live test cases."),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Soft (archive) by default; ``permanent=true`` hard-deletes."""
+    result = _delete_story_one(story_id, current_user, permanent=permanent)
+    if result.status == "skipped_not_found":
+        raise HTTPException(404, "User story not found")
+    if result.status == "skipped_invalid_state":
+        raise HTTPException(409, result.detail or "Cannot permanently delete this story yet")
+    if result.status == "skipped_blocked":
+        raise HTTPException(
+            409,
+            {
+                "detail": result.detail or "Cannot permanently delete story with live test cases",
+                "blockers": [b.model_dump() for b in result.blockers],
+            },
+        )
+    log_action(
+        db,
+        user=current_user,
+        action="story_archived" if result.status == "soft_deleted" else "story_deleted",
+        target_type="user_story",
+        target_id=str(story_id),
+        metadata={"permanent": permanent},
+    )
+    if result.status == "soft_deleted":
+        return {"story_id": str(story_id), "status": UserStoryStatus.archived.value, "detail": result.detail}
+    return {"story_id": str(story_id), "status": "hard_deleted"}
+
+
+@router.post("/bulk-delete", status_code=200)
+def bulk_delete_user_stories(
+    body: _StoryBulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Soft- or hard-delete a list of story ids. Always returns 200
+    with per-id results so the frontend can show mixed outcomes."""
+    results = [
+        _delete_story_one(sid, current_user, permanent=body.permanent)
+        for sid in body.ids
+    ]
+    log_action(
+        db,
+        user=current_user,
+        action="stories_bulk_deleted",
+        target_type="user_story",
+        target_id=",".join(str(sid) for sid in body.ids[:20]),
+        metadata={
+            "permanent": body.permanent,
+            "requested": len(body.ids),
+            "soft": sum(1 for r in results if r.status == "soft_deleted"),
+            "hard": sum(1 for r in results if r.status == "hard_deleted"),
+            "blocked": sum(1 for r in results if r.status == "skipped_blocked"),
+        },
+    )
+    return {"results": [r.model_dump() for r in results]}

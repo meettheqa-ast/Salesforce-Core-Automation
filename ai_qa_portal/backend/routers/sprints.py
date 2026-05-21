@@ -161,16 +161,59 @@ def update_sprint(
     return Sprint.model_validate(row)
 
 
-@router.delete("/{sprint_id}", status_code=200)
-def delete_sprint(
-    sprint_id: UUID,
-    current_user: User = Depends(get_current_user),
-):
-    """Soft-delete: state -> cancelled, AND every story in this sprint
-    has its sprint_id cleared back to null (so the stories aren't
-    orphaned -- they just move back to the backlog)."""
-    sprint = _load_sprint_or_403(sprint_id, current_user)
-    # Gather stories before mutating, to avoid index churn during the loop.
+class _Blocker(BaseModel):
+    id: str
+    label: str
+    reason: str
+
+
+class _DeleteResult(BaseModel):
+    """Per-row result for both single + bulk delete endpoints.
+
+    ``status`` is one of:
+      - ``soft_deleted``  -- moved to cancelled (sprint) / archived
+                              (story) / rejected (test case)
+      - ``hard_deleted``  -- removed from the JSON store entirely
+      - ``skipped_blocked`` -- hard delete refused because of live
+                                children; ``blockers`` lists them
+      - ``skipped_forbidden`` -- caller cannot see this row (ownership)
+      - ``skipped_not_found``
+      - ``skipped_invalid_state`` -- hard delete attempted before soft
+    """
+
+    id: str
+    status: str
+    detail: str | None = None
+    blockers: list[_Blocker] = []
+
+
+class _BulkDeleteRequest(BaseModel):
+    ids: list[UUID]
+    permanent: bool = False
+
+
+def _sprint_hard_delete_blockers(sprint_id: UUID) -> list[_Blocker]:
+    """A sprint is hard-deletable only when every assigned story is in
+    the ``archived`` status (matches the soft-delete state of
+    stories). Live or backlog stories still pointing here count as
+    blockers and the caller should archive / unassign them first."""
+    out: list[_Blocker] = []
+    for srow in _store.get_user_stories_by_sprint(sprint_id):
+        if srow.get("status") == UserStoryStatus.archived.value:
+            continue
+        out.append(
+            _Blocker(
+                id=str(srow.get("id")),
+                label=str(srow.get("title") or "(untitled story)"),
+                reason=f"story status={srow.get('status')}",
+            )
+        )
+    return out
+
+
+def _soft_delete_sprint(sprint_id: UUID) -> int:
+    """Move sprint to cancelled and unlink every assigned story. Returns
+    the number of stories cleared."""
     story_rows = _store.get_user_stories_by_sprint(sprint_id)
     cleared = 0
     for srow in story_rows:
@@ -178,16 +221,104 @@ def delete_sprint(
         srow["updated_at"] = datetime.now(UTC).isoformat()
         _store.save_user_story(srow)
         cleared += 1
-
     row = _store.get_sprint(sprint_id)
     row["state"] = SprintState.cancelled.value
     row["updated_at"] = datetime.now(UTC).isoformat()
     _store.save_sprint(row)
-    return {
-        "sprint_id": str(sprint.id),
-        "state": SprintState.cancelled.value,
-        "stories_cleared": cleared,
-    }
+    return cleared
+
+
+def _delete_sprint_one(
+    sprint_id: UUID,
+    user: User,
+    *,
+    permanent: bool,
+) -> _DeleteResult:
+    """Single-row delete helper used by both the single-id and bulk
+    endpoints. Returns a structured result instead of raising so the
+    bulk endpoint can report mixed outcomes in one body."""
+    try:
+        row = _store.get_sprint(sprint_id)
+    except KeyError:
+        return _DeleteResult(id=str(sprint_id), status="skipped_not_found")
+    sprint = Sprint.model_validate(row)
+    if not _user_can_see_sprint(sprint, user):
+        # 404-style result: don't leak existence.
+        return _DeleteResult(id=str(sprint_id), status="skipped_not_found")
+
+    if not permanent:
+        cleared = _soft_delete_sprint(sprint_id)
+        return _DeleteResult(
+            id=str(sprint_id),
+            status="soft_deleted",
+            detail=f"sprint cancelled; cleared {cleared} story link(s)",
+        )
+
+    # Permanent path: require sprint already cancelled AND no live children.
+    if sprint.state != SprintState.cancelled:
+        return _DeleteResult(
+            id=str(sprint_id),
+            status="skipped_invalid_state",
+            detail=f"sprint must be cancelled before permanent delete (current state={sprint.state.value})",
+        )
+    blockers = _sprint_hard_delete_blockers(sprint_id)
+    if blockers:
+        return _DeleteResult(
+            id=str(sprint_id),
+            status="skipped_blocked",
+            detail="sprint has live stories",
+            blockers=blockers,
+        )
+    _store.hard_delete_sprint(sprint_id)
+    return _DeleteResult(id=str(sprint_id), status="hard_deleted")
+
+
+@router.delete("/{sprint_id}", status_code=200)
+def delete_sprint(
+    sprint_id: UUID,
+    permanent: bool = Query(False, description="When true, hard-deletes a sprint that is already cancelled and has no live stories."),
+    current_user: User = Depends(get_current_user),
+):
+    """Soft delete by default (state -> cancelled, stories unlinked).
+    Set ``permanent=true`` to hard-delete an already-cancelled sprint;
+    the call is refused with 409 + blockers when live stories remain
+    so the caller can fix them and retry."""
+    result = _delete_sprint_one(sprint_id, current_user, permanent=permanent)
+    if result.status == "skipped_not_found":
+        raise HTTPException(404, "Sprint not found")
+    if result.status == "skipped_invalid_state":
+        raise HTTPException(409, result.detail or "Cannot permanently delete this sprint yet")
+    if result.status == "skipped_blocked":
+        raise HTTPException(
+            409,
+            {
+                "detail": result.detail or "Cannot permanently delete sprint with live stories",
+                "blockers": [b.model_dump() for b in result.blockers],
+            },
+        )
+    if result.status == "soft_deleted":
+        return {
+            "sprint_id": str(sprint_id),
+            "state": SprintState.cancelled.value,
+            "detail": result.detail,
+        }
+    return {"sprint_id": str(sprint_id), "status": "hard_deleted"}
+
+
+@router.post("/bulk-delete", status_code=200)
+def bulk_delete_sprints(
+    body: _BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Soft- or hard-delete a list of sprint ids in one shot. Always
+    returns HTTP 200 with a per-id result so the frontend can show
+    mixed outcomes (some succeeded, some blocked) without parsing
+    error responses. Empty input is a no-op."""
+    results: list[_DeleteResult] = [
+        _delete_sprint_one(sid, current_user, permanent=body.permanent)
+        for sid in body.ids
+    ]
+    return {"results": [r.model_dump() for r in results]}
 
 
 # --- Story assignment --------------------------------------------------

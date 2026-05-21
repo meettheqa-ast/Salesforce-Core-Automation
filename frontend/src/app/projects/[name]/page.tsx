@@ -12,8 +12,9 @@ import CreateSprintModal from "@/components/sprints/CreateSprintModal";
 import CreateStoryModal from "@/components/user-stories/CreateStoryModal";
 import AddTestCaseModal from "@/components/test-cases/AddTestCaseModal";
 import VisualRegressionPanel from "@/components/projects/VisualRegressionPanel";
-import { api } from "@/lib/api";
+import { api, parseDeleteBlockersError } from "@/lib/api";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
+import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
 
 /** Filter state for the test-cases panel. Mirrors a `?filter=<id>` URL
  *  param so a click-through from the project list page lands here on
@@ -113,6 +114,12 @@ export default function ProjectDetailPage() {
   const [projectTCs, setProjectTCs] = useState<ProjectTestCases | null>(null);
   const [openStories, setOpenStories] = useState<Record<string, boolean>>({});
   const [scriptPreview, setScriptPreview] = useState<{ tcId: string; title: string; content: string } | null>(null);
+  // Per-row TC delete on the project-home panel. No bulk here -- the
+  // panel groups rows by story and the per-row affordance is enough
+  // for the rare "kill this one rogue case" workflow.
+  const [tcDeleteOpen, setTcDeleteOpen] = useState(false);
+  const [tcDeleteMode, setTcDeleteMode] = useState<ConfirmDeleteMode>("soft");
+  const [tcDeleteTarget, setTcDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   // Sprints summary for the project. Fetched once we resolve the
   // project slug -> portal UUID so /sprints?project_id=... works.
   const [sprintsForProject, setSprintsForProject] = useState<
@@ -825,6 +832,17 @@ export default function ProjectDetailPage() {
                 >
                   + New story
                 </button>
+                {/* + Import test cases -- opens the CSV/Excel wizard
+                    without a pre-set story (user picks during the
+                    wizard since the project home is story-agnostic).
+                    The wizard reads project_id from the URL query
+                    string and locks the project field. */}
+                <Link
+                  href={`/projects/${encodeURIComponent(name)}/imports${portalProjectId ? `?project_id=${encodeURIComponent(portalProjectId)}` : ""}`}
+                  className="px-3 py-1 rounded-lg glass text-slate-200 hover:text-white hover:bg-cyan-500/15 border border-cyan-500/20"
+                >
+                  + Import test cases
+                </Link>
                 <button
                   type="button"
                   disabled={!portalProjectId}
@@ -954,6 +972,22 @@ export default function ProjectDetailPage() {
                             ) : (
                               <span className="text-[10px] text-slate-500 italic">no script built</span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTcDeleteTarget({ id: tc.id, title: tc.title });
+                                setTcDeleteMode(tc.status === "rejected" ? "permanent" : "soft");
+                                setTcDeleteOpen(true);
+                              }}
+                              title={
+                                tc.status === "rejected"
+                                  ? "Permanently delete this test case"
+                                  : "Archive this test case (restorable from the story detail page)"
+                              }
+                              className="text-[10px] px-2 py-0.5 rounded border border-red-400/40 text-red-300 hover:bg-red-500/10"
+                            >
+                              {tc.status === "rejected" ? "Delete permanently" : "Archive"}
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1208,6 +1242,29 @@ export default function ProjectDetailPage() {
         open={showAddTestCase}
         onClose={() => setShowAddTestCase(false)}
         projectId={portalProjectId}
+      />
+      <ConfirmDeleteModal
+        open={tcDeleteOpen}
+        entityNoun="test case"
+        targetLabels={tcDeleteTarget ? [tcDeleteTarget.title || tcDeleteTarget.id] : []}
+        mode={tcDeleteMode}
+        onConfirm={async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+          if (!tcDeleteTarget) return { ok: false, message: "Nothing selected" };
+          const permanent = tcDeleteMode === "permanent";
+          try {
+            await api.testCases.delete(tcDeleteTarget.id, permanent);
+            flash("ok", permanent ? "Test case permanently deleted." : "Test case rejected.");
+            // Refresh the project rollup so the panel re-renders without
+            // the deleted row (or with the new rejected status).
+            api.projects.testCases(name).then(setProjectTCs).catch(() => {});
+            return { ok: true };
+          } catch (err: unknown) {
+            const parsed = parseDeleteBlockersError(err);
+            if (parsed) return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+            return { ok: false, message: err instanceof Error ? err.message : "Delete failed" };
+          }
+        }}
+        onClose={() => setTcDeleteOpen(false)}
       />
     </div>
   );

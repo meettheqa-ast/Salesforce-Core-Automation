@@ -14,6 +14,7 @@ export type PipelinePhase =
   // when the gate is enabled for the project.
   | "locator_check"
   | "fallback"
+  | "failed"
   | "done";
 
 export type PipelineStep = {
@@ -34,10 +35,18 @@ export type PhaseTiming = {
   elapsed_ms: number;
 };
 
+export type HealEvent = {
+  attempt?: number;
+  sobject?: string;
+  outcome?: string;
+  decisions?: Array<{ strategy?: string; target_field_label?: string }>;
+};
+
 interface StepwisePipelineProps {
   phase: PipelinePhase;
   steps: PipelineStep[];
   notes: string[];
+  healEvents?: HealEvent[];
   /** Closed phases with their measured durations, oldest first. */
   timings?: PhaseTiming[];
   /** Live elapsed time in the current phase (ms). UI ticks this on the
@@ -56,6 +65,7 @@ const PHASE_LABEL: Record<PipelinePhase, string> = {
   "build": "Building suite",
   "locator_check": "Verifying locators on live page",
   "fallback": "Falling back to Quick Generate",
+  "failed": "Failed",
   "done": "Done",
 };
 
@@ -71,6 +81,7 @@ export default function StepwisePipeline({
   phase,
   steps,
   notes,
+  healEvents = [],
   timings = [],
   currentPhaseElapsedMs,
   totalElapsedMs,
@@ -79,6 +90,7 @@ export default function StepwisePipeline({
 
   const showCurrentTimer =
     phase !== "idle" && phase !== "done" && currentPhaseElapsedMs !== undefined;
+  const isSlow = showCurrentTimer && (currentPhaseElapsedMs ?? 0) > 30000;
 
   return (
     <motion.div
@@ -99,13 +111,20 @@ export default function StepwisePipeline({
           <span
             className={
               "text-[11px] font-mono " +
-              (phase === "done" ? "text-emerald-300" : "text-cyan-300")
+              (phase === "done"
+                ? "text-emerald-300"
+                : phase === "failed"
+                  ? "text-red-300"
+                  : isSlow
+                    ? "text-amber-300"
+                    : "text-cyan-300")
             }
           >
             {PHASE_LABEL[phase]}
             {showCurrentTimer && (
               <span className="ml-1 text-slate-500">· {fmtMs(currentPhaseElapsedMs!)}</span>
             )}
+            {isSlow && <span className="ml-1 text-amber-300">· still running…</span>}
           </span>
         </div>
       </div>
@@ -163,6 +182,28 @@ export default function StepwisePipeline({
           {notes.map((n, i) => (
             <div key={i} className="text-[11px] text-amber-300/90">{n}</div>
           ))}
+        </div>
+      )}
+      {healEvents.length > 0 && (
+        <div className="border-t border-white/5 pt-2 mt-2 space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-amber-300/80 font-semibold">
+            Healing events ({healEvents.length})
+          </div>
+          <div className="max-h-36 overflow-y-auto space-y-1">
+            {healEvents.map((h, idx) => {
+              const decisionSummary = (h.decisions || [])
+                .map((d) => `${d.strategy || "?"}${d.target_field_label ? `:${d.target_field_label}` : ""}`)
+                .join(", ");
+              return (
+                <div key={idx} className="text-[11px] font-mono text-amber-100/90">
+                  <span className="text-amber-300">heal#{h.attempt ?? idx + 1}</span>
+                  <span className="mx-2 text-slate-500">{h.sobject || "Record"}</span>
+                  <span className="text-slate-300">{h.outcome || "in_progress"}</span>
+                  {decisionSummary && <span className="ml-2 text-slate-400">{decisionSummary}</span>}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </motion.div>

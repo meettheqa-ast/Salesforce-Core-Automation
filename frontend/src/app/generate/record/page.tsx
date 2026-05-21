@@ -37,6 +37,10 @@ type Action = {
 const POLL_INTERVAL_MS = 1000;
 
 export default function RecordPage() {
+  const [activeStepwiseJobId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage.getItem("gen.activeJobId") || null;
+  });
   const [creds, setCreds] = useState<WorkspaceCreds | null>(null);
   const [mode, setMode] = useState<Mode>("pre");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -178,6 +182,20 @@ export default function RecordPage() {
       </motion.div>
 
       <WorkspaceBar onChange={setCreds} />
+
+      {activeStepwiseJobId && (
+        <div className="mb-4 p-2.5 rounded-lg border border-cyan-400/20 bg-cyan-500/5 flex items-center justify-between gap-2">
+          <div className="text-[11px] text-cyan-200 font-mono">
+            Stepwise job still running: {activeStepwiseJobId}
+          </div>
+          <Link
+            href="/generate"
+            className="px-3 py-1.5 rounded-lg text-xs border border-cyan-400/30 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20"
+          >
+            Go to Generate
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-3 rounded-xl border border-red-400/30 bg-red-500/5 text-xs text-red-200">

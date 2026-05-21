@@ -452,16 +452,123 @@ fields.
 
 ### 9. Verify success after a create
 
+**Strongly prefer the PO-level wrapper** for the object you just created
+-- it consolidates toast wait + page-shape assertion + key-field checks
+into one call and gracefully handles the toast-already-consumed case
+that breaks naked `Wait Until Element Is Visible` chains:
+
+| Object created | Use this verification keyword |
+|---|---|
+| Lead | `SalesPO.Verify Lead Created Successfully` |
+| Account | `SalesPO.Verify Account Creation` |
+| Opportunity | `SalesPO.Verify Opportunity` |
+| Contact | `SalesPO.Verify Contact Created Successfully` (or `ContactPO.`) |
+| Campaign | `Verify Campaign Created Successfully` |
+
+These call the right per-object field checks internally (e.g.
+`Verify Account Creation` checks Account Name + Phone using the right
+canonical SF detail-page locators).
+
+**Anti-pattern -- do NOT do this** for the record's own primary name
+field right after a Create:
+
+```robot
+# WRONG -- "Account Name" / "Lead Name" / "Contact Name" / "Opportunity
+# Name" is the page TITLE on the detail page, not a record-field cell.
+# Verify Field Value On Detail Page can't find it via the canonical
+# data-target-selection-name selector and burns 10 s waiting before
+# returning a confusing "Could not locate field" error.
+Verify Field Value On Detail Page    Account Name    ${accountName}
+Verify Field Value On Detail Page    Lead Name       ${leadName}
+```
+
+```robot
+# RIGHT -- use the PO wrapper for the object's identity check.
+SalesPO.Verify Account Creation
+SalesPO.Verify Lead Created Successfully
+```
+
+Use `Verify Field Value On Detail Page` for **secondary** fields
+(Status, Source, Owner, Stage, custom picklists, etc.) -- those have
+real cells on the layout:
+
+```robot
+Verify Field Value On Detail Page    Lead Status    Sales Lead
+Verify Field Value On Detail Page    Lead Source    Web
+Verify Field Value On Detail Page    Stage          Qualification
+```
+
+Lower-level fallbacks (use only when no PO wrapper fits):
+
 ```robot
 Wait Until Element Is Visible    ${successToastMessageLocator}    timeout=10s
 Wait Until Element Is Not Visible    ${successToastMessageLocator}    timeout=15s
 ```
 
-Or the higher-level wrapper:
+Or the higher-level navigation-only wrapper:
 
 ```robot
 Verify Redirection to Record Details Page
 ```
+
+**Critical sequencing rule:** when you call a `SalesPO.Create A New X`
+keyword, do NOT plan a follow-up `Launch App` or `Select App Tab` to
+"navigate to Contacts" / "navigate to Opportunities". The PO opener
+keywords (`SalesPO.Open New Contact From Sales App`,
+`SalesPO.Open New Opportunity From Sales App`) already do that
+navigation in one step from any starting page.
+
+### 9b. Verifying records (presence / absence / converted) -- SOQL-first
+
+For "is the record there?", "is the record gone?", or "was the Lead
+converted?" the deterministic path is SOQL via
+`Resources/Common/SoqlVerify.robot`, NOT the UI list-view chain.
+The UI chain reloads the page, depends on per-org list-view labels,
+and `Search In List View` explicitly `Fail`s on zero matches -- which
+makes "verify absent" impossible to express. SOQL is one HTTP call,
+no waits, no spinners, no per-org labels.
+
+**Id capture is automatic.** `SalesPO.Save And Heal` calls
+`Capture Record Id From Current Url ${sobject}` after a successful
+save and sets a TEST-scoped `${<sobject>Id}` variable (e.g.
+`${leadId}`, `${accountId}`, `${opportunityId}`). You do NOT need to
+add a separate capture step after `SalesPO.Create A New X`.
+
+```robot
+# Exists -- prefer over Search In List View / Verify Table Cell Record:
+Verify Record Exists By SOQL    Lead       Id='${leadId}'
+Verify Record Exists By SOQL    Account    Name='${accountName}'
+
+# Absent -- the ONLY correct way to express "removed from the list":
+Verify Record Absent By SOQL    Lead    Id='${leadId}' AND IsConverted=FALSE
+
+# Lead convert -- one call asserts IsConverted=TRUE and populates
+# ${convertedAccountId}, ${convertedContactId}, ${convertedOpportunityId}:
+Verify Lead Was Converted             ${leadId}
+Verify Lead Absent From Active List   ${leadId}
+```
+
+**Cleanup** -- `Cleanup Captured Records` auto-discovers every
+captured Id on the test and deletes them via REST in the right order
+(children first, then Account):
+
+```robot
+*** Test Cases ***
+Convert And Verify Lead
+    [Setup]       Begin Web Test
+    [Teardown]    Run Keywords
+    ...    Cleanup Captured Records
+    ...    AND    End Web Test
+    SalesPO.Open New Lead From Sales App
+    SalesPO.Create A New Lead
+    SalesPO.Verify Lead Created Successfully
+    SalesPO.Convert Lead To Opportunity
+    Verify Lead Absent From Active List    ${leadId}
+```
+
+`Cleanup Captured Records` is idempotent -- it skips any unset /
+empty Id so it's always safe to call from `[Teardown]`, even when
+earlier steps failed before a record was created.
 
 ### 10. Open and verify a related list record
 
@@ -473,6 +580,12 @@ Verify Related Records Creation    Contacts    ${id}
 ```
 
 ### 11. Filter / search a list view
+
+Use this ONLY for navigation -- opening a saved list view to click
+into a record. For "is the record present / absent" assertions, use
+the SoqlVerify.* keywords from section 9b instead (the legacy chain
+`Change List View` -> `Search In List View` -> `Verify Table Cell
+Record` is unreliable for verification on Lightning).
 
 ```robot
 Change List View    My Leads

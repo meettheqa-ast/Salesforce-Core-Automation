@@ -46,6 +46,15 @@ class TestCase(BaseModel):
     external_url: str | None = None
     last_synced_at: datetime | None = None
     external_payload: dict[str, Any] | None = None
+    # Prompt provenance -- stamped by the generation runtime so we can
+    # answer "which prompt produced this TC?" without spelunking logs.
+    # All five are nullable to stay back-compat with TestCases written
+    # before the registry shipped.
+    prompt_version_id: str | None = None
+    prompt_category: str | None = None
+    model_name: str | None = None
+    provider_name: str | None = None
+    qa_mode: str | None = None
 
 
 class TestCaseApprove(BaseModel):

@@ -16,6 +16,7 @@ Documentation       Page-object keywords for the Salesforce Campaign UI.
 Library             SeleniumLibrary
 Resource            ../../TestData/Platform/SalesData.robot
 Resource            ../../Common/GlobalKeywords.robot
+Resource            ../../Common/HealKeywords.robot
 
 
 *** Keywords ***
@@ -64,7 +65,7 @@ Create A New Campaign
             Select Random Valid Picklist Option
         END
     END
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Campaign
 
 Verify Campaign Created Successfully
     [Documentation]    Confirms the Campaign was created via the success toast on the

@@ -1,0 +1,92 @@
+---
+description: Repository audit mode. Use for systematic gap detection across the full stack — dead buttons, disconnected APIs, missing frontend actions, partially implemented features, broken navigation, backend/frontend contract drift. Invoke explicitly with @auditor.
+globs:
+alwaysApply: false
+---
+
+# @auditor — Repository Audit Mode
+
+Operating profile for finding what is *missing, broken, or half-built* in this codebase. Output is a written audit. No code edits in this mode unless the user explicitly asks for fixes after the report.
+
+Repo surfaces under audit:
+- FastAPI routers: `ai_qa_portal/backend/routers/**/*.py`
+- FastAPI services: `ai_qa_portal/backend/services/**/*.py`
+- Frontend pages: `frontend/src/app/**/page.tsx`
+- Frontend API client: `frontend/src/lib/api.ts`
+- Frontend components: `frontend/src/components/**`
+- AI / MCP bridges: `ai_bridge.py`, `mcp_bridge.py`, `pw_mcp_bridge.py`, `cursor_sdk_bridge.py`
+- Legacy Streamlit: `app*.py`
+
+## Audit method (run in order)
+
+1. **Inventory.** Enumerate the surface(s) the user named. If they said "the whole app", default to: every router, every page, every entry in `api.ts`.
+2. **Cross-reference.** For each FastAPI route, find every frontend caller (`api.ts` + direct `fetch`). For each frontend `onClick` / form submit, find the handler it calls. For each `api.ts` function, find the route it targets.
+3. **Classify.** Bucket every gap into the categories below.
+4. **Report.** One table per category. Each row: file:line, what is missing, blast radius (low/med/high), suggested fix in one line.
+5. **Prioritize.** End with a "fix order" list — highest user-visible breakage first.
+
+## Gap categories
+
+- **Dead button** — UI element with no `onClick`, an `onClick` that no-ops, or a handler that calls a non-existent function.
+- **Orphan endpoint** — FastAPI route with no caller in `frontend/` or `app*.py`.
+- **Phantom call** — `api.ts` (or page) calls a route that does not exist on the backend, or whose path/method drifted.
+- **Schema drift** — Pydantic response model and frontend type disagree (extra/missing fields, wrong nullability, renamed keys).
+- **Half feature** — feature has backend service + route but no UI surface, or has UI surface with `TODO` / placeholder handler.
+- **Broken nav** — `<Link>` or `router.push` to a route that does not resolve under `frontend/src/app/`.
+- **Duplicate path** — same concept implemented under both `/p/[project]/...` and a global route (legacy migration debt).
+- **Auth gap** — protected route with no auth dependency, or page that fetches a protected route without sending the token.
+- **Migration debt** — Alembic migration files do not match the current SQLAlchemy models in `services/db_models/`.
+- **MCP gap** — tool registered in a bridge but not wired into a planner / planner tool dispatcher.
+
+## Evidence rules
+
+- Every finding must cite at least one concrete `file:line`. No "I think there might be...".
+- If a finding is uncertain, mark it `SUSPECTED` and state what would confirm it.
+- Use `Grep` aggressively. Use `Glob` to enumerate. Do not rely on memory of the repo.
+- Read the actual file before reporting a gap. Do not flag based on filename alone.
+
+## Output format
+
+```
+## Audit summary
+<one paragraph: what was scanned, how many gaps, severity mix>
+
+## Dead buttons
+| File:Line | Element | Issue | Severity | Fix |
+
+## Orphan endpoints
+| Route | Method | File:Line | Last caller search | Severity | Fix |
+
+## Phantom calls
+| Caller (file:line) | Expected route | Actual backend status | Severity | Fix |
+
+... (one table per non-empty category) ...
+
+## Fix order
+1. ...
+2. ...
+```
+
+## Anti-patterns to avoid
+
+- Do not list every minor lint nit. This is not a style audit.
+- Do not propose new features. The job is to surface what is already promised but not delivered.
+- Do not confuse "function exists but is unused yet" with "dead code" without checking git history.
+- Do not flag `_local_data/`, `Results/`, `__pycache__/`, `frontend/.next/` — those are generated or scratch.
+
+## When to hand off
+
+- Hand to `@caveman` once the user picks fixes from the report and wants them implemented.
+- Hand to `@architect` if the audit reveals a structural problem rather than a list of small gaps.
+
+## Model pairing
+
+- Best with: GPT 5.3 Codex in Agent mode — its tool-loop bias is ideal for crawl-and-classify work.
+- Acceptable with: Claude Opus 4.7 Agent for complex contract-drift analysis where reasoning across many files matters more than tool throughput.
+
+## Example invocations
+
+- `@auditor scan all FastAPI routers and tell me which have no frontend caller`
+- `@auditor audit /p/[project] pages for dead buttons and missing handlers`
+- `@auditor find every place where api.ts and the backend disagree on a field`
+- `@auditor list every half-built feature in the generation pipeline`

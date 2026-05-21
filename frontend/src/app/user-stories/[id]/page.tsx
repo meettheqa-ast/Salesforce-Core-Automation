@@ -4,10 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "@/lib/api";
+import { api, parseDeleteBlockersError, type BulkDeleteRowResult } from "@/lib/api";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import EditTestCasesModal, { type TestCaseDraft } from "@/components/test-cases/EditTestCasesModal";
 import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
+import SelectionToolbar, { type SelectionToolbarMode } from "@/components/lists/SelectionToolbar";
+import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
+import { useToast } from "@/components/ui/ToastProvider";
 
 type TestCaseRow = {
   id: string;
@@ -56,6 +59,23 @@ export default function UserStoryDetailPage() {
   const [buildBusy, setBuildBusy] = useState<Record<string, boolean>>({});
   const [statusBusy, setStatusBusy] = useState<Record<string, boolean>>({});
   const [selectedCases, setSelectedCases] = useState<string[]>([]);
+  // Delete-only selection -- separate from `selectedCases` (which is
+  // approved-only for the bulk script generation flow). The Delete
+  // checkbox is unrestricted so the user can pick any TC regardless
+  // of status to soft-reject / hard-purge in one shot.
+  const [deleteSelectedCases, setDeleteSelectedCases] = useState<string[]>([]);
+  /** When false (default), archived test cases are hidden from the
+   *  list AND from `counts.total`. The toggle next to "Test cases"
+   *  flips it on so users can Restore or Permanently delete from one
+   *  unified screen. We re-fetch when this changes because the
+   *  backend honours `?include_archived=` and we want the canonical
+   *  shape, not a client-side filter (which would drift from any
+   *  server-side ownership / RBAC filtering). */
+  const [showArchived, setShowArchived] = useState(false);
+  const [confirmTcOpen, setConfirmTcOpen] = useState(false);
+  const [confirmTcMode, setConfirmTcMode] = useState<ConfirmDeleteMode>("soft");
+  const [confirmTcTargets, setConfirmTcTargets] = useState<TestCaseRow[]>([]);
+  const toast = useToast();
   const [scriptOpen, setScriptOpen] = useState<Record<string, string>>({});
   const [scriptLoading, setScriptLoading] = useState<Record<string, boolean>>({});
   const [msg, setMsg] = useState("");
@@ -196,10 +216,10 @@ export default function UserStoryDetailPage() {
 
   const load = useCallback(() => {
     api.userStories.get(id).then(setStory).catch(() => setStory(null));
-    api.testCases.list(id).then(setTcs).catch(() => setTcs([]));
+    api.testCases.list(id, { includeArchived: showArchived }).then(setTcs).catch(() => setTcs([]));
     api.userStories.comments(id).then(setComments).catch(() => setComments([]));
     api.userStories.activity(id).then((r) => setActivity(r.items || [])).catch(() => setActivity([]));
-  }, [id]);
+  }, [id, showArchived]);
 
   useEffect(() => {
     load();
@@ -254,7 +274,7 @@ export default function UserStoryDetailPage() {
     setMsg("");
     try {
       const res = await api.userStories.generate(id);
-      const fresh = await api.testCases.list(id);
+      const fresh = await api.testCases.list(id, { includeArchived: showArchived });
       setTcs(fresh);
       setMsg(`Generated ${(res.generated || []).length} draft test case(s). Review and approve below.`);
     } catch (e: unknown) {
@@ -280,6 +300,24 @@ export default function UserStoryDetailPage() {
     }
   };
 
+  /** Restore a previously-archived test case. Backend flips
+   *  status: rejected -> draft and emits a tc_restored audit row. We
+   *  use a dedicated endpoint rather than a status patch so the
+   *  audit log clearly distinguishes "user changed status" from
+   *  "user pulled this out of the archive". */
+  const restoreCase = async (tcId: string) => {
+    setStatusBusy((s) => ({ ...s, [tcId]: true }));
+    setErr("");
+    try {
+      const restored = await api.testCases.restore(tcId);
+      setTcs((prev) => prev.map((t) => (t.id === tcId ? { ...t, ...restored } : t)));
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Restore failed");
+    } finally {
+      setStatusBusy((s) => ({ ...s, [tcId]: false }));
+    }
+  };
+
   const buildScripts = async () => {
     setBuildLoading(true);
     setErr("");
@@ -287,7 +325,7 @@ export default function UserStoryDetailPage() {
     setBuildSkipped([]);
     try {
       const res = await api.userStories.buildScripts(id);
-      const fresh = await api.testCases.list(id);
+      const fresh = await api.testCases.list(id, { includeArchived: showArchived });
       setTcs(fresh);
       // Capture each skipped case so the inline panel can surface
       // titles + reasons (rate-limit, parse error, ...) instead of just
@@ -310,6 +348,76 @@ export default function UserStoryDetailPage() {
     );
   };
 
+  // --- Delete-selection ---------------------------------------------
+  // Independent of `selectedCases` so a draft/rejected TC can be
+  // checked for delete even though the bulk-generation flow would
+  // reject it.
+  const toggleDeleteCase = (tcId: string) => {
+    setDeleteSelectedCases((prev) =>
+      prev.includes(tcId) ? prev.filter((x) => x !== tcId) : [...prev, tcId],
+    );
+  };
+
+  useEffect(() => {
+    setDeleteSelectedCases((prev) => prev.filter((tid) => tcs.some((t) => t.id === tid)));
+  }, [tcs]);
+
+  const deleteSelectedTargets = useMemo(
+    () => tcs.filter((t) => deleteSelectedCases.includes(t.id)),
+    [tcs, deleteSelectedCases],
+  );
+
+  // Mode flips to "permanent" when every selected TC is already
+  // rejected; "mixed" when some are rejected and some aren't.
+  const deleteToolbarMode: SelectionToolbarMode = useMemo(() => {
+    if (deleteSelectedTargets.length === 0) return "soft";
+    const allRejected = deleteSelectedTargets.every((t) => t.status === "rejected");
+    const noneRejected = deleteSelectedTargets.every((t) => t.status !== "rejected");
+    if (allRejected) return "permanent";
+    if (noneRejected) return "soft";
+    return "mixed";
+  }, [deleteSelectedTargets]);
+
+  const openDeleteTcs = (targets: TestCaseRow[], mode: ConfirmDeleteMode) => {
+    if (targets.length === 0) return;
+    setConfirmTcTargets(targets);
+    setConfirmTcMode(mode);
+    setConfirmTcOpen(true);
+  };
+
+  const handleConfirmTcDelete = async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+    const ids = confirmTcTargets.map((t) => t.id);
+    const permanent = confirmTcMode === "permanent";
+    try {
+      if (ids.length === 1) {
+        await api.testCases.delete(ids[0], permanent);
+      } else {
+        const res = await api.testCases.bulkDelete(ids, permanent);
+        const invalid = res.results.filter((r: BulkDeleteRowResult) => r.status === "skipped_invalid_state");
+        if (invalid.length > 0 && res.results.every((r) => r.status !== "soft_deleted" && r.status !== "hard_deleted")) {
+          return { ok: false, message: invalid[0].detail || "Test cases must be rejected before permanent delete." };
+        }
+      }
+      toast.success(
+        permanent
+          ? `${ids.length} test case(s) permanently deleted.`
+          : `${ids.length} test case(s) rejected.`,
+      );
+      setDeleteSelectedCases([]);
+      // The status patch flow already updates the list in place for
+      // single edits; for delete we refetch to pick up the JSON-store
+      // mutations cleanly (especially after permanent delete which
+      // removes rows entirely).
+      const fresh = await api.testCases.list(id, { includeArchived: showArchived }).catch(() => null);
+      if (fresh) setTcs(fresh as TestCaseRow[]);
+      return { ok: true };
+    } catch (err: unknown) {
+      const parsed = parseDeleteBlockersError(err);
+      if (parsed) return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+      return { ok: false, message: err instanceof Error ? err.message : "Delete failed" };
+    }
+  };
+
   const selectableIds = useMemo(
     () => tcs.filter((t) => t.status === "approved" && !t.stale).map((t) => t.id),
     [tcs],
@@ -330,7 +438,7 @@ export default function UserStoryDetailPage() {
     setErr("");
     try {
       await api.testCases.buildScript(tcId);
-      const fresh = await api.testCases.list(id);
+      const fresh = await api.testCases.list(id, { includeArchived: showArchived });
       setTcs(fresh);
       setMsg("Script generated.");
     } catch (e: unknown) {
@@ -363,7 +471,7 @@ export default function UserStoryDetailPage() {
         }
       }),
     );
-    const fresh = await api.testCases.list(id).catch(() => null);
+    const fresh = await api.testCases.list(id, { includeArchived: showArchived }).catch(() => null);
     if (fresh) setTcs(fresh);
     setBuildLoading(false);
     setSelectedCases([]);
@@ -645,6 +753,19 @@ export default function UserStoryDetailPage() {
             >
               + Add case manually
             </button>
+            {/* + Import test cases -- opens the CSV/Excel wizard
+                pre-targeted at this story. The wizard reads story_id
+                from the query string so the user only confirms the
+                mapping + duplicate strategy, not the destination. */}
+            {projectSlug && (
+              <Link
+                href={`/projects/${encodeURIComponent(projectSlug)}/imports?story_id=${encodeURIComponent(id)}&project_id=${encodeURIComponent(story.project_id)}${story.sprint_id ? `&sprint_id=${encodeURIComponent(story.sprint_id)}` : ""}`}
+                className="px-4 py-2 rounded-xl glass text-sm text-slate-200 hover:text-white border border-cyan-500/30"
+                title="Bulk-import test cases from a CSV or Excel file into this story"
+              >
+                + Import test cases
+              </Link>
+            )}
             {tcs.length > 0 && (
               <button
                 type="button"
@@ -949,9 +1070,25 @@ export default function UserStoryDetailPage() {
         )}
       </AnimatePresence>
 
-      <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-3">
-        Test cases ({counts.total})
-      </h2>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider">
+          Test cases ({counts.total})
+        </h2>
+        {/* "Show archived" toggles the backend filter via
+            ?include_archived=true. When off, archived TCs do not appear
+            in this list or in counts.total. Flipping the toggle
+            re-fetches via the load() effect (showArchived is in its
+            dependency array). */}
+        <label className="inline-flex items-center gap-2 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="accent-amber-500"
+          />
+          Show archived
+        </label>
+      </div>
       {counts.total > 0 && (
         <div className="mb-3 flex items-center gap-2">
           <label className="inline-flex items-center gap-2 text-xs text-slate-300">
@@ -969,6 +1106,35 @@ export default function UserStoryDetailPage() {
         </div>
       )}
 
+      <ConfirmDeleteModal
+        open={confirmTcOpen}
+        entityNoun="test case"
+        targetLabels={confirmTcTargets.map((t) => t.title || t.id)}
+        mode={confirmTcMode}
+        onConfirm={handleConfirmTcDelete}
+        onClose={() => setConfirmTcOpen(false)}
+      />
+
+      {tcs.length > 0 && (
+        <SelectionToolbar
+          count={deleteSelectedCases.length}
+          entityNoun="test case"
+          mode={deleteToolbarMode}
+          softLabel="Archive"
+          onSoftDelete={
+            deleteToolbarMode === "soft" || deleteToolbarMode === "mixed"
+              ? () => openDeleteTcs(deleteSelectedTargets.filter((t) => t.status !== "rejected"), "soft")
+              : undefined
+          }
+          onHardDelete={
+            deleteToolbarMode === "permanent" || deleteToolbarMode === "mixed"
+              ? () => openDeleteTcs(deleteSelectedTargets.filter((t) => t.status === "rejected"), "permanent")
+              : undefined
+          }
+          onClear={() => setDeleteSelectedCases([])}
+        />
+      )}
+
       {tcs.length === 0 ? (
         <div className="glass p-6 text-sm text-slate-400 rounded-xl">
           No test cases yet. Click <span className="text-purple-300">Generate test cases</span> to create drafts from the
@@ -979,11 +1145,15 @@ export default function UserStoryDetailPage() {
           {tcs.map((t) => {
             const busy = !!statusBusy[t.id];
             const scriptShown = scriptOpen[t.id] !== undefined;
+            // Archived (status=rejected) rows render dimmed so they
+            // visually recede behind active work. Only shown when
+            // "Show archived" is on; otherwise the backend filter
+            // excludes them entirely.
             const borderClass =
               t.status === "approved"
                 ? "border-emerald-500/40"
                 : t.status === "rejected"
-                  ? "border-red-500/30 opacity-60"
+                  ? "border-amber-500/30 opacity-60"
                   : "border-white/10";
             return (
               <motion.div
@@ -993,20 +1163,40 @@ export default function UserStoryDetailPage() {
               >
                 <div className="flex flex-wrap items-start justify-between gap-3 mb-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <input
-                        type="checkbox"
-                        checked={selectedCases.includes(t.id)}
-                        onChange={() => toggleSelectedCase(t.id)}
-                        disabled={t.status !== "approved" || t.stale}
-                        className="accent-cyan-500"
-                        title={
-                          t.status !== "approved" || t.stale
-                            ? "Only approved, non-stale cases are selectable"
-                            : "Select for bulk script generation"
-                        }
-                      />
-                      <span className="text-[10px] text-slate-500">bulk</span>
+                    <div className="flex items-center gap-3 mb-1">
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedCases.includes(t.id)}
+                          onChange={() => toggleSelectedCase(t.id)}
+                          disabled={t.status !== "approved" || t.stale}
+                          className="accent-cyan-500"
+                          title={
+                            t.status !== "approved" || t.stale
+                              ? "Only approved, non-stale cases are selectable"
+                              : "Select for bulk script generation"
+                          }
+                        />
+                        <span className="text-[10px] text-slate-500">bulk</span>
+                      </label>
+                      {/* Archive selection -- independent of the bulk-
+                          generation selection because any TC (draft /
+                          approved / archived) is a valid archive target.
+                          Archived rows can be permanently deleted via
+                          the same checkbox + bulk toolbar once the
+                          "Show archived" toggle is on. */}
+                      <label className="inline-flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={deleteSelectedCases.includes(t.id)}
+                          onChange={() => toggleDeleteCase(t.id)}
+                          className="accent-amber-500"
+                          title="Select for archive / bulk archive"
+                        />
+                        <span className="text-[10px] text-slate-500">
+                          {t.status === "rejected" ? "purge" : "archive"}
+                        </span>
+                      </label>
                     </div>
                     <Link
                       href={`/test-cases/${encodeURIComponent(t.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
@@ -1020,11 +1210,11 @@ export default function UserStoryDetailPage() {
                           t.status === "approved"
                             ? "bg-emerald-600/25 text-emerald-200"
                             : t.status === "rejected"
-                              ? "bg-red-600/25 text-red-200"
+                              ? "bg-amber-600/25 text-amber-200"
                               : "bg-slate-700/50 text-slate-300"
                         }`}
                       >
-                        {t.status}
+                        {t.status === "rejected" ? "archived" : t.status}
                       </span>
                       {t.stale && (
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-600/25 text-amber-200">
@@ -1050,7 +1240,7 @@ export default function UserStoryDetailPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {t.status !== "approved" && (
+                    {t.status !== "approved" && t.status !== "rejected" && (
                       <button
                         type="button"
                         disabled={busy}
@@ -1060,17 +1250,7 @@ export default function UserStoryDetailPage() {
                         Approve
                       </button>
                     )}
-                    {t.status !== "rejected" && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setCaseStatus(t.id, "rejected")}
-                        className="px-2.5 py-1 text-xs rounded border border-red-400/40 text-red-300 disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                    )}
-                    {t.status !== "draft" && (
+                    {t.status === "approved" && (
                       <button
                         type="button"
                         disabled={busy}
@@ -1079,6 +1259,51 @@ export default function UserStoryDetailPage() {
                         className="px-2.5 py-1 text-xs rounded glass text-slate-300 disabled:opacity-50"
                       >
                         Re-draft
+                      </button>
+                    )}
+                    {/* Archived (status=rejected) rows surface a Restore
+                        button so the user can recover an accidental
+                        Archive without leaving the page. The Archive
+                        button itself is hidden on already-archived rows. */}
+                    {t.status === "rejected" && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => restoreCase(t.id)}
+                        title="Restore this test case (back to draft)"
+                        className="px-2.5 py-1 text-xs rounded bg-amber-600/40 text-amber-100 disabled:opacity-50"
+                      >
+                        Restore
+                      </button>
+                    )}
+                    {/* Single destructive verb: Archive. Replaces the
+                        former Reject + Delete pair that did the same
+                        thing. Permanent purge has moved to the
+                        Archived view's bulk toolbar so it's no longer
+                        one click away on every row. */}
+                    {t.status !== "rejected" && (
+                      <button
+                        type="button"
+                        onClick={() => openDeleteTcs([t], "soft")}
+                        title="Archive this test case (restorable from the Show archived view)"
+                        className="px-2.5 py-1 text-xs rounded border border-red-400/40 text-red-300 hover:bg-red-500/10"
+                      >
+                        Archive
+                      </button>
+                    )}
+                    {/* Permanent delete is available on archived rows
+                        only, when the user has opted into the archived
+                        view. Admin / project-lead gate is enforced on
+                        the backend (the button is shown to everyone;
+                        unauthorized clicks see a clean 403). */}
+                    {t.status === "rejected" && (
+                      <button
+                        type="button"
+                        onClick={() => openDeleteTcs([t], "permanent")}
+                        title="Permanently delete this test case (JSON + script + history); cannot be undone"
+                        className="px-2.5 py-1 text-xs rounded border border-red-500/60 bg-red-700/20 text-red-200 hover:bg-red-700/40"
+                      >
+                        Delete permanently
                       </button>
                     )}
                     {t.script_path && (

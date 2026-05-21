@@ -20,8 +20,11 @@ import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
 import CreateSprintModal from "@/components/sprints/CreateSprintModal";
-import { api } from "@/lib/api";
+import SelectionToolbar, { type SelectionToolbarMode } from "@/components/lists/SelectionToolbar";
+import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
+import { api, parseDeleteBlockersError, type BulkDeleteRowResult } from "@/lib/api";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
+import { useToast } from "@/components/ui/ToastProvider";
 import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 type SprintRow = {
@@ -72,6 +75,15 @@ export default function SprintsPage() {
   const [bulkState, setBulkState] = useState<SprintRow["state"]>("active");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState("");
+  // Delete-modal state. Lives at page level so per-row trash buttons
+  // and the bulk toolbar share one confirmation surface.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmMode, setConfirmMode] = useState<ConfirmDeleteMode>("soft");
+  // Targets the modal will operate on: explicit list, not derived from
+  // `selectedSprintIds`, so a per-row click doesn't accidentally take
+  // the bulk selection along with it.
+  const [confirmTargets, setConfirmTargets] = useState<SprintRow[]>([]);
+  const toast = useToast();
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => setProjects([]));
@@ -155,6 +167,82 @@ export default function SprintsPage() {
     else setSelectedSprintIds(sprints.map((s) => s.id));
   };
 
+  // Derive the lifecycle mode for the SelectionToolbar from the
+  // currently-selected sprint states. "cancelled" rows are
+  // soft-deleted already, so they advance to permanent-delete on the
+  // next click. Any other state is still in the soft-delete column.
+  const selectedSprints = useMemo(
+    () => sprints.filter((s) => selectedSprintIds.includes(s.id)),
+    [sprints, selectedSprintIds],
+  );
+  const toolbarMode: SelectionToolbarMode = useMemo(() => {
+    if (selectedSprints.length === 0) return "soft";
+    const allCancelled = selectedSprints.every((s) => s.state === "cancelled");
+    const noneCancelled = selectedSprints.every((s) => s.state !== "cancelled");
+    if (allCancelled) return "permanent";
+    if (noneCancelled) return "soft";
+    return "mixed";
+  }, [selectedSprints]);
+
+  const openDeleteModal = (targets: SprintRow[], mode: ConfirmDeleteMode) => {
+    if (targets.length === 0) return;
+    setConfirmTargets(targets);
+    setConfirmMode(mode);
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+    const ids = confirmTargets.map((t) => t.id);
+    const permanent = confirmMode === "permanent";
+    try {
+      if (ids.length === 1) {
+        await api.sprints.delete(ids[0], permanent);
+      } else {
+        const res = await api.sprints.bulkDelete(ids, permanent);
+        // Aggregate blockers across rows for the modal. The bulk
+        // endpoint always returns 200 so we have to read the
+        // per-row status to know if anything was refused.
+        const blocked = res.results.filter((r: BulkDeleteRowResult) => r.status === "skipped_blocked");
+        const invalid = res.results.filter((r: BulkDeleteRowResult) => r.status === "skipped_invalid_state");
+        if (blocked.length > 0) {
+          const agg: DeleteBlocker[] = blocked.flatMap((r) =>
+            (r.blockers || []).map((b) => ({ id: b.id, label: b.label, reason: b.reason })),
+          );
+          return {
+            ok: false,
+            blockers: agg,
+            message: `${blocked.length} sprint(s) still have live stories.`,
+          };
+        }
+        if (invalid.length > 0) {
+          return {
+            ok: false,
+            message: invalid[0].detail || "Some sprints aren't ready for permanent delete.",
+          };
+        }
+      }
+      toast.success(
+        permanent
+          ? `${ids.length} sprint(s) permanently deleted.`
+          : `${ids.length} sprint(s) cancelled.`,
+      );
+      setSelectedSprintIds([]);
+      reload();
+      notifyTreeRefresh({ kind: "sprint", projectId: projectId || undefined });
+      return { ok: true };
+    } catch (err: unknown) {
+      // Single-id 409 path: parse blockers from the apiFetch error.
+      const parsed = parseDeleteBlockersError(err);
+      if (parsed) {
+        return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+      }
+      return {
+        ok: false,
+        message: err instanceof Error ? err.message : "Delete failed",
+      };
+    }
+  };
+
   const applyBulkState = async () => {
     if (selectedSprintIds.length === 0) return;
     setBulkBusy(true);
@@ -214,32 +302,50 @@ export default function SprintsPage() {
         </div>
       </div>
       {projectId && sprints.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <label className="inline-flex items-center gap-2 text-xs text-slate-300">
-            <input type="checkbox" checked={allSelected} onChange={toggleAllSprints} className="accent-cyan-500" />
-            Select all ({sprints.length})
-          </label>
-          <GlassSelect
-            className="min-w-[13rem]"
-            value={bulkState}
-            onChange={(v) => setBulkState(v as SprintRow["state"])}
-            options={[
-              { value: "active", label: "Active" },
-              { value: "planned", label: "Planned" },
-              { value: "completed", label: "Completed" },
-              { value: "cancelled", label: "Cancelled" },
-            ]}
+        <>
+          <SelectionToolbar
+            count={selectedSprintIds.length}
+            entityNoun="sprint"
+            mode={toolbarMode}
+            onSoftDelete={
+              toolbarMode === "soft" || toolbarMode === "mixed"
+                ? () => openDeleteModal(selectedSprints.filter((s) => s.state !== "cancelled"), "soft")
+                : undefined
+            }
+            onHardDelete={
+              toolbarMode === "permanent" || toolbarMode === "mixed"
+                ? () => openDeleteModal(selectedSprints.filter((s) => s.state === "cancelled"), "permanent")
+                : undefined
+            }
+            onClear={() => setSelectedSprintIds([])}
           />
-          <button
-            type="button"
-            disabled={bulkBusy || selectedSprintIds.length === 0}
-            onClick={applyBulkState}
-            className="px-3 py-1.5 rounded-lg bg-cyan-600/35 text-cyan-100 text-xs disabled:opacity-40"
-          >
-            Update selected state
-          </button>
-          {bulkMsg && <span className="text-xs text-slate-400">{bulkMsg}</span>}
-        </div>
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-xs text-slate-300">
+              <input type="checkbox" checked={allSelected} onChange={toggleAllSprints} className="accent-cyan-500" />
+              Select all ({sprints.length})
+            </label>
+            <GlassSelect
+              className="min-w-[13rem]"
+              value={bulkState}
+              onChange={(v) => setBulkState(v as SprintRow["state"])}
+              options={[
+                { value: "active", label: "Active" },
+                { value: "planned", label: "Planned" },
+                { value: "completed", label: "Completed" },
+                { value: "cancelled", label: "Cancelled" },
+              ]}
+            />
+            <button
+              type="button"
+              disabled={bulkBusy || selectedSprintIds.length === 0}
+              onClick={applyBulkState}
+              className="px-3 py-1.5 rounded-lg bg-cyan-600/35 text-cyan-100 text-xs disabled:opacity-40"
+            >
+              Update selected state
+            </button>
+            {bulkMsg && <span className="text-xs text-slate-400">{bulkMsg}</span>}
+          </div>
+        </>
       )}
 
       <CreateSprintModal
@@ -258,6 +364,15 @@ export default function SprintsPage() {
       )}
 
       {projectId && loading && <p className="text-sm text-slate-500">Loading sprints…</p>}
+
+      <ConfirmDeleteModal
+        open={confirmOpen}
+        entityNoun="sprint"
+        targetLabels={confirmTargets.map((t) => t.name || t.id)}
+        mode={confirmMode}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
 
       {projectId && !loading && (
         <div className="space-y-8">
@@ -287,9 +402,35 @@ export default function SprintsPage() {
                             )}
                           </Link>
                         </label>
-                        <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${STATE_PILL[sprint.state]}`}>
-                          {sprint.state}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${STATE_PILL[sprint.state]}`}>
+                            {sprint.state}
+                          </span>
+                          {/* Per-row delete. The mode flips to "permanent"
+                              once a sprint is already cancelled so the
+                              second click finishes the lifecycle. */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openDeleteModal(
+                                [sprint],
+                                sprint.state === "cancelled" ? "permanent" : "soft",
+                              );
+                            }}
+                            title={sprint.state === "cancelled" ? "Permanently delete this sprint" : "Cancel this sprint"}
+                            className="p-1 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-300"
+                            aria-label="Delete sprint"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6l-2 14H7L5 6"></path>
+                              <path d="M10 11v6M14 11v6"></path>
+                              <path d="M9 6V4h6v2"></path>
+                            </svg>
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-3">
                         <span>

@@ -10,6 +10,7 @@ import StoryExecutionPanel from "@/components/execution/StoryExecutionPanel";
 import WorkspaceBar, { type WorkspaceCreds } from "@/components/layout/WorkspaceBar";
 import Segmented from "@/components/ui/Segmented";
 import StepwisePipeline, {
+  type HealEvent,
   type PhaseTiming,
   type PipelinePhase,
   type PipelineStep,
@@ -151,6 +152,7 @@ export default function GeneratePage() {
   const [phase, setPhase] = useState<PipelinePhase>("idle");
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
+  const [healEvents, setHealEvents] = useState<HealEvent[]>([]);
   // Closed phases with their measured wall-clock duration. Populated each
   // time the backend transitions phases (its `phase` event carries the
   // elapsed_ms_phase the *previous* phase took -- so on transition N+1 we
@@ -173,6 +175,12 @@ export default function GeneratePage() {
 
   const [runRequest, setRunRequest] = useState<RunRequest | null>(null);
   const sourceRef = useRef<{ close: () => void } | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<"idle" | "queued" | "running" | "succeeded" | "failed" | "cancelled">("idle");
+  const [recoverableJobId, setRecoverableJobId] = useState<string | null>(null);
+  const [liveLogOpen, setLiveLogOpen] = useState(false);
+  const lastSeqRef = useRef(0);
+  const reconnectAttemptsRef = useRef(0);
 
   // Tick the live "current phase" timer at 4 Hz while a phase is open and
   // we're not yet done. Cheap, and avoids the worst "is this hung?" UX.
@@ -221,10 +229,17 @@ export default function GeneratePage() {
     setRobotCode("");
     setTestPath("");
     setRunRequest(null);
+    setCurrentJobId(null);
+    setJobStatus("idle");
+    setRecoverableJobId(null);
+    setLiveLogOpen(false);
+    lastSeqRef.current = 0;
+    reconnectAttemptsRef.current = 0;
     setGenComplete(false);
     setPhase("idle");
     setSteps([]);
     setNotes([]);
+    setHealEvents([]);
     setPhaseTimings([]);
     setPhaseStartedAt(null);
     setStreamStartedAt(null);
@@ -300,165 +315,246 @@ export default function GeneratePage() {
     setPhase("done");
   };
 
+  const applyStepwiseEvent = (event: string, raw: any) => {
+    const obj = raw || {};
+    if (typeof obj.seq === "number") lastSeqRef.current = obj.seq;
+    if (event === "phase") {
+      const next = (obj.name as PipelinePhase) || "executing";
+      const current = phaseRef.current;
+      if (current !== "idle") {
+        const prevElapsed = typeof obj.elapsed_ms_phase === "number" ? obj.elapsed_ms_phase : 0;
+        setPhaseTimings((prev) => [...prev, { phase: current, elapsed_ms: prevElapsed }]);
+      }
+      const now = performance.now();
+      phaseRef.current = next;
+      phaseStartedAtRef.current = now;
+      setPhase(next);
+      setPhaseStartedAt(now);
+      setStreamStartedAt((prev) => prev ?? now);
+      setTickMs(now);
+      if (next === "failed") setJobStatus("failed");
+      return;
+    }
+    if (event === "note") {
+      setNotes((prev) => [...prev, String(obj.message || "")]);
+      return;
+    }
+    if (event === "step") {
+      setSteps((prev) => [...prev, obj as PipelineStep]);
+      return;
+    }
+    if (event === "heal") {
+      setHealEvents((prev) => [...prev, obj as HealEvent]);
+      return;
+    }
+    if (event === "result") {
+      setRobotCode(obj.robot_code || "");
+      setTestPath(obj.test_path || "");
+      if (Array.isArray(obj.lint_errors) && obj.lint_errors.length) {
+        setNotes((prev) => [...prev, ...obj.lint_errors]);
+      }
+      if (typeof obj.validation_ok === "boolean") setValidationOk(obj.validation_ok);
+      if (Array.isArray(obj.validation_errors)) setValidationErrors(obj.validation_errors as ValidationErr[]);
+      if (Array.isArray(obj.validation_attempts)) setValidationAttempts(obj.validation_attempts as ValidationAttempt[]);
+      if (Array.isArray(obj.provider_switches)) setProviderSwitches(obj.provider_switches as ProviderSwitch[]);
+      if ("locator_validation_ok" in obj) {
+        const v = obj.locator_validation_ok;
+        setLocatorOk(typeof v === "boolean" ? v : null);
+        setLocatorCount((obj.locator_validation_count as number) ?? 0);
+        setLocatorFailed((obj.locator_validation_failed as number) ?? 0);
+        setLocatorShadow(Boolean(obj.locator_validation_shadow));
+      }
+      const current = phaseRef.current;
+      const startedAt = phaseStartedAtRef.current;
+      const doneAt = performance.now();
+      if (current !== "idle" && current !== "done" && startedAt !== null) {
+        setPhaseTimings((prev) => [...prev, { phase: current, elapsed_ms: doneAt - startedAt }]);
+      }
+      phaseRef.current = "done";
+      setPhase("done");
+      setTickMs(doneAt);
+      setJobStatus("succeeded");
+      return;
+    }
+    if (event === "error") {
+      setError(String(obj.message || "Generation failed"));
+      setJobStatus("failed");
+    }
+  };
+
   const runStepwiseStream = async (rawPrompt: string) => {
     const payload = {
       prompt: buildPrompt(rawPrompt),
       sandbox_url: creds?.sandboxUrl ?? "",
       username: creds?.username ?? "",
       password: creds?.password ?? "",
-      // See runQuickGenerate -- same fix applies to the Stepwise planner.
       default_app: creds?.defaultApp ?? "",
       generation_mode: "mcp_stepwise",
       test_name: testName.trim() || undefined,
       headless,
     };
-    // Pre-warm the auth token cache so we can attach the bearer header below.
-    // The query-string `?token=` fallback in stepwiseStreamUrl() is a belt-and-
-    // braces backup; the header path is the canonical one for POST + fetch.
     await prepareAuth();
-    const url = api.generate.stepwiseStreamUrl();
-    // Read the cached token directly so we can put it in the header. We can't
-    // import the cache from lib/api (private), so we re-fetch via /api/auth/jwt;
-    // the response is cached server-side with no-store but client-side this
-    // hits the in-memory cache `prepareAuth` just warmed.
-    const tokenResp = await fetch("/api/auth/jwt", { credentials: "include", cache: "no-store" });
-    const bearer = tokenResp.ok ? (await tokenResp.text()).trim() : "";
+    const created = await api.generate.jobs.create(payload);
+    const jobId = created.job_id;
+    setCurrentJobId(jobId);
+    setJobStatus("queued");
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("gen.activeJobId", jobId);
+    }
     return new Promise<void>((resolve, reject) => {
-      let resolved = false;
-      const finish = (err?: unknown) => {
-        if (resolved) return;
-        resolved = true;
-        if (err) reject(err);
-        else resolve();
-      };
-      // Use fetch to POST body and read SSE manually (EventSource is GET-only).
-      const ctrl = new AbortController();
-      sourceRef.current = { close: () => ctrl.abort() };
-      fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
-        },
-        body: JSON.stringify(payload),
-        signal: ctrl.signal,
-      }).then(async (resp) => {
-        if (!resp.ok || !resp.body) {
-          const text = await resp.text().catch(() => "");
-          throw new Error(`Stream ${resp.status}: ${text || resp.statusText}`);
-        }
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        const handle = (event: string, data: string) => {
+      let finished = false;
+      let lastError: Error | null = null;
+      const open = (fromSeq: number) => {
+        const es = new EventSource(api.generate.jobs.eventsUrl(jobId, fromSeq));
+        sourceRef.current = { close: () => es.close() };
+        es.onmessage = () => {};
+        es.addEventListener("phase", (e) => {
           try {
-            const obj = data ? JSON.parse(data) : {};
-            if (event === "phase") {
-              const next = (obj.name as PipelinePhase) || "executing";
-              const current = phaseRef.current;
-              // Backend tells us how long the *previous* phase took via
-              // elapsed_ms_phase. Stamp it into our running tape, then open
-              // the new phase. Reading from phaseRef (not setPhase's updater
-              // arg) keeps the timing append outside any state-updater fn,
-              // which avoids React 18 strict-mode's double-invocation
-              // duplicating every pill.
-              if (current !== "idle") {
-                const prevElapsed =
-                  typeof obj.elapsed_ms_phase === "number"
-                    ? obj.elapsed_ms_phase
-                    : 0;
-                setPhaseTimings((prev) => [
-                  ...prev,
-                  { phase: current, elapsed_ms: prevElapsed },
-                ]);
-              }
-              const now = performance.now();
-              phaseRef.current = next;
-              phaseStartedAtRef.current = now;
-              setPhase(next);
-              setPhaseStartedAt(now);
-              setStreamStartedAt((prev) => prev ?? now);
-              setTickMs(now);
+            const payload = JSON.parse((e as MessageEvent).data || "{}");
+            applyStepwiseEvent("phase", payload);
+            if (payload.name === "executing" || payload.name === "planning" || payload.name === "session") {
+              setJobStatus("running");
             }
-            else if (event === "note") setNotes((prev) => [...prev, String(obj.message || data)]);
-            else if (event === "step") setSteps((prev) => [...prev, obj as PipelineStep]);
-            else if (event === "result") {
-              setRobotCode(obj.robot_code || "");
-              setTestPath(obj.test_path || "");
-              if (Array.isArray(obj.lint_errors) && obj.lint_errors.length) {
-                setNotes((prev) => [...prev, ...obj.lint_errors]);
-              }
-              if (typeof obj.validation_ok === "boolean") {
-                setValidationOk(obj.validation_ok);
-              }
-              if (Array.isArray(obj.validation_errors)) {
-                setValidationErrors(obj.validation_errors as ValidationErr[]);
-              }
-              if (Array.isArray(obj.validation_attempts)) {
-                setValidationAttempts(obj.validation_attempts as ValidationAttempt[]);
-              }
-              if (Array.isArray(obj.provider_switches)) {
-                setProviderSwitches(obj.provider_switches as ProviderSwitch[]);
-              }
-              // Phase 1: locator validation result fields. Same shape as
-              // Quick Generate response.
-              if ("locator_validation_ok" in obj) {
-                const v = obj.locator_validation_ok;
-                setLocatorOk(typeof v === "boolean" ? v : null);
-                setLocatorCount((obj.locator_validation_count as number) ?? 0);
-                setLocatorFailed((obj.locator_validation_failed as number) ?? 0);
-                setLocatorShadow(Boolean(obj.locator_validation_shadow));
-              }
-              // Result frame doesn't carry a phase change, but we want to
-              // close out whatever phase was open so its duration shows up
-              // in the timing tape.
-              const current = phaseRef.current;
-              const startedAt = phaseStartedAtRef.current;
-              const doneAt = performance.now();
-              if (current !== "idle" && current !== "done" && startedAt !== null) {
-                setPhaseTimings((prev) => [
-                  ...prev,
-                  { phase: current, elapsed_ms: doneAt - startedAt },
-                ]);
-              }
-              phaseRef.current = "done";
-              setPhase("done");
-              // Snapshot the final tick so totalElapsedMs in JSX stays
-              // pure (no performance.now() during render) -- React 19's
-              // ``react-hooks/purity`` rule flags it otherwise.
-              setTickMs(doneAt);
-            } else if (event === "error") {
-              setError(String(obj.message || "Generation failed"));
-            }
-          } catch {
-            // ignore parse errors per-event
+          } catch {}
+        });
+        es.addEventListener("note", (e) => {
+          try { applyStepwiseEvent("note", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+        });
+        es.addEventListener("step", (e) => {
+          try { applyStepwiseEvent("step", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+        });
+        es.addEventListener("heal", (e) => {
+          try { applyStepwiseEvent("heal", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+        });
+        es.addEventListener("result", (e) => {
+          if (finished) return;
+          try { applyStepwiseEvent("result", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+          finished = true;
+          es.close();
+          resolve();
+        });
+        es.addEventListener("error", (e) => {
+          let msg = "Generation failed";
+          try {
+            const payload = JSON.parse((e as MessageEvent).data || "{}");
+            msg = String(payload.message || msg);
+            applyStepwiseEvent("error", payload);
+          } catch {}
+          // EventSource also triggers generic onerror on disconnect; terminal
+          // error payloads are handled here first and complete the promise.
+          if (!finished) {
+            finished = true;
+            es.close();
+            reject(new Error(msg));
           }
+        });
+        es.onerror = async () => {
+          if (finished) return;
+          es.close();
+          reconnectAttemptsRef.current += 1;
+          if (reconnectAttemptsRef.current <= 3) {
+            const delay = 1000 * reconnectAttemptsRef.current;
+            window.setTimeout(() => open(lastSeqRef.current), delay);
+            return;
+          }
+          try {
+            const snap = await api.generate.jobs.status(jobId);
+            if (snap.status === "succeeded") {
+              const maybeResult = [...(snap.events || [])].reverse().find((ev) => ev.event === "result");
+              if (maybeResult) applyStepwiseEvent("result", maybeResult.payload);
+              finished = true;
+              resolve();
+              return;
+            }
+            if (snap.status === "cancelled") {
+              finished = true;
+              reject(new Error("Generation cancelled"));
+              return;
+            }
+            if (snap.status === "failed") {
+              const maybeError = [...(snap.events || [])].reverse().find((ev) => ev.event === "error");
+              const msg = maybeError?.payload?.message || snap.error_message || "Generation failed";
+              finished = true;
+              reject(new Error(msg));
+              return;
+            }
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error("Stepwise stream disconnected");
+          }
+          finished = true;
+          reject(lastError || new Error("Stepwise stream disconnected"));
         };
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let nl;
-          while ((nl = buffer.indexOf("\n\n")) !== -1) {
-            const frame = buffer.slice(0, nl);
-            buffer = buffer.slice(nl + 2);
-            const lines = frame.split("\n");
-            let event = "message";
-            const dataLines: string[] = [];
-            for (const line of lines) {
-              if (line.startsWith("event:")) event = line.slice(6).trim();
-              else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-            }
-            if (dataLines.length) handle(event, dataLines.join("\n"));
-          }
-        }
-        finish();
-      }).catch((err) => {
-        if ((err as { name?: string }).name === "AbortError") finish();
-        else finish(err);
-      });
+      };
+      open(0);
     });
   };
+
+  const attachToExistingJob = useCallback(async (jobId: string) => {
+    setCurrentJobId(jobId);
+    setJobStatus("running");
+    setLoading(true);
+    setError("");
+    setRecoverableJobId(null);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("gen.activeJobId", jobId);
+    }
+    const snap = await api.generate.jobs.status(jobId);
+    for (const ev of snap.events || []) {
+      applyStepwiseEvent(ev.event, { ...(ev.payload || {}), seq: ev.seq, ts: ev.ts });
+    }
+    lastSeqRef.current = snap.event_seq || 0;
+    const es = new EventSource(api.generate.jobs.eventsUrl(jobId, lastSeqRef.current));
+    sourceRef.current = { close: () => es.close() };
+    es.addEventListener("phase", (e) => {
+      try { applyStepwiseEvent("phase", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+    });
+    es.addEventListener("note", (e) => {
+      try { applyStepwiseEvent("note", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+    });
+    es.addEventListener("step", (e) => {
+      try { applyStepwiseEvent("step", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+    });
+    es.addEventListener("heal", (e) => {
+      try { applyStepwiseEvent("heal", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+    });
+    es.addEventListener("result", (e) => {
+      try { applyStepwiseEvent("result", JSON.parse((e as MessageEvent).data || "{}")); } catch {}
+      es.close();
+      setLoading(false);
+      setGenComplete(true);
+      setJobStatus("succeeded");
+    });
+    es.addEventListener("error", (e) => {
+      try {
+        const payload = JSON.parse((e as MessageEvent).data || "{}");
+        applyStepwiseEvent("error", payload);
+      } catch {}
+      es.close();
+      setLoading(false);
+      setJobStatus("failed");
+    });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.generate.jobs.inFlight()
+      .then((res) => {
+        if (cancelled) return;
+        const fromApi = res.job?.id || null;
+        const fromSession =
+          typeof window !== "undefined" ? window.sessionStorage.getItem("gen.activeJobId") : null;
+        setRecoverableJobId(fromApi || fromSession || null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const fromSession =
+          typeof window !== "undefined" ? window.sessionStorage.getItem("gen.activeJobId") : null;
+        setRecoverableJobId(fromSession || null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleGenerate = useCallback(async (rawPrompt: string) => {
     if (!rawPrompt.trim()) {
@@ -525,6 +621,23 @@ export default function GeneratePage() {
     resetGenerationState();
   };
 
+  const handleCancelStepwise = async () => {
+    if (!currentJobId) return;
+    try {
+      await api.generate.jobs.cancel(currentJobId);
+      setNotes((prev) => [...prev, "Cancellation requested. Finishing current step..."]);
+      setJobStatus("cancelled");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not cancel generation");
+    }
+  };
+
+  const handleFallbackToQuick = async () => {
+    if (!prompt.trim()) return;
+    setGenMode("quick");
+    await handleGenerate(prompt);
+  };
+
   const generatedFile = testPath ? testPath.split(/[/\\]/).pop() : "";
 
   return (
@@ -549,6 +662,21 @@ export default function GeneratePage() {
       </motion.div>
 
       <WorkspaceBar onChange={setCreds} />
+
+      {recoverableJobId && !loading && (
+        <div className="mb-4 p-3 rounded-xl border border-amber-400/30 bg-amber-500/5 flex items-center justify-between gap-3">
+          <div className="text-xs text-amber-200">
+            A Stepwise generation job is still running in the background.
+          </div>
+          <button
+            type="button"
+            onClick={() => attachToExistingJob(recoverableJobId)}
+            className="px-3 py-1.5 rounded-lg text-xs bg-amber-500/20 border border-amber-400/30 text-amber-100 hover:bg-amber-500/30"
+          >
+            Reattach stream
+          </button>
+        </div>
+      )}
 
       {/* Mode toggles */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 mb-4">
@@ -592,6 +720,21 @@ export default function GeneratePage() {
           </span>
         </div>
       </div>
+
+      {currentJobId && (jobStatus === "queued" || jobStatus === "running") && (
+        <div className="mb-4 p-2.5 rounded-lg border border-cyan-400/20 bg-cyan-500/5 flex items-center justify-between gap-3">
+          <div className="text-[11px] text-cyan-200 font-mono">
+            Job in progress · {currentJobId}
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelStepwise}
+            className="px-3 py-1.5 rounded-lg text-xs border border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Common scenarios + Test name + Auto data.
 
@@ -681,6 +824,7 @@ export default function GeneratePage() {
         phase={phase}
         steps={steps}
         notes={notes}
+        healEvents={healEvents}
         timings={phaseTimings}
         currentPhaseElapsedMs={
           phaseStartedAt !== null && phase !== "done" && phase !== "idle"
@@ -693,6 +837,35 @@ export default function GeneratePage() {
             : undefined
         }
       />
+
+      {steps.length > 0 && (
+        <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03]">
+          <button
+            type="button"
+            onClick={() => setLiveLogOpen((v) => !v)}
+            className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:text-white"
+          >
+            {liveLogOpen ? "▾" : "▸"} Live keyword log ({steps.length})
+          </button>
+          {liveLogOpen && (
+            <div className="max-h-44 overflow-auto border-t border-white/10 px-3 py-2 space-y-1">
+              {steps.map((s, idx) => (
+                <div key={`${idx}-${s.keyword}`} className="text-[11px] font-mono text-slate-300">
+                  <span className={s.status === "pass" ? "text-emerald-300" : "text-red-300"}>
+                    {s.status.toUpperCase()}
+                  </span>
+                  <span className="mx-2 text-slate-500">{s.index}/{s.total}</span>
+                  <span>{s.keyword}</span>
+                  {typeof s.elapsed_ms === "number" && (
+                    <span className="ml-2 text-slate-500">{Math.round(s.elapsed_ms)}ms</span>
+                  )}
+                  {s.error && <span className="ml-2 text-red-300">{s.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Status strip */}
       <AnimatePresence>
@@ -722,6 +895,17 @@ export default function GeneratePage() {
             {error && (
               <div className="text-xs text-red-300">
                 {error}
+              </div>
+            )}
+            {phase === "failed" && !loading && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleFallbackToQuick}
+                  className="px-3 py-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 text-amber-200 text-xs hover:bg-amber-500/20"
+                >
+                  Try Quick Generate Instead
+                </button>
               </div>
             )}
           </motion.div>

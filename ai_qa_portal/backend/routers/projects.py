@@ -296,6 +296,10 @@ class _ProjectTestCasesResponse(BaseModel):
 @router.get("/{project_name}/test-cases", response_model=_ProjectTestCasesResponse)
 def list_project_test_cases(
     project_name: str,
+    include_archived: bool = Query(
+        False,
+        description="When false (default) archived (status=rejected) test cases are excluded from the rollup.",
+    ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -322,6 +326,14 @@ def list_project_test_cases(
             tc_rows.append(row)
 
     test_cases = [TestCase.model_validate(r) for r in tc_rows]
+    # Archived rows are hidden from the project rollup by default --
+    # they should only surface when the user explicitly opts in via the
+    # story-detail "Show archived" toggle (or a future top-level Trash
+    # view). The lifecycle plan keeps `rejected` as the underlying
+    # storage value to avoid a model migration.
+    if not include_archived:
+        from ..models.test_case import TestCaseStatus
+        test_cases = [tc for tc in test_cases if tc.status != TestCaseStatus.rejected]
 
     # Resolve story metadata so the UI can render "<Story title> v1" headers
     # without N round-trips. Every test case carries user_story_id, so a

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { api } from "@/lib/api";
@@ -149,6 +150,42 @@ export default function SettingsPage() {
               {catalogStatus}
             </p>
           )}
+        </AnimatedCard>
+
+        {/* AI Prompts -- editable system / project / user prompt
+            templates. The list page renders categories grouped by
+            source-scope so admins know which org default is live and
+            users see their personal overrides. */}
+        <AnimatedCard glow="purple" delay={0.3}>
+          <h3 className="text-sm font-bold text-white mb-4">AI Prompt Settings</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Edit the system prompts that drive test-case generation,
+            script building, healing, and stepwise planning. Changes
+            apply per-user (your edits don&apos;t affect anyone else).
+          </p>
+          <Link
+            href="/settings/prompts"
+            className="block w-full text-center py-2.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-xl font-semibold text-sm hover:bg-purple-500/30 transition-all"
+          >
+            Manage prompts
+          </Link>
+        </AnimatedCard>
+
+        {/* Org integrations -- linked from settings since the nav
+            doesn't surface it. Admin-only screen. */}
+        <AnimatedCard glow="cyan" delay={0.4}>
+          <h3 className="text-sm font-bold text-white mb-4">Org Integrations</h3>
+          <p className="text-xs text-slate-400 mb-4">
+            Configure org-wide Jira and GitHub connections (admin only).
+            Per-project integrations live under each project&apos;s
+            Integrations tab.
+          </p>
+          <Link
+            href="/settings/integrations"
+            className="block w-full text-center py-2.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 rounded-xl font-semibold text-sm hover:bg-cyan-500/30 transition-all"
+          >
+            Open integrations
+          </Link>
         </AnimatedCard>
 
         {/* SF DX Status -- hidden along with the SF DX nav tab. Re-enable when ready.

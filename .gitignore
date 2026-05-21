@@ -7,6 +7,11 @@ ai_qa_portal/.env
 ai_qa_portal/data/
 ai_qa_portal/outputs/
 
+# RF-MCP runtime scratch artefacts (per-session screenshots, html dumps,
+# response payloads). Captured by the live MCP runtime when stepwise
+# generation runs; useful locally for debugging but never committed.
+.robotmcp_artifacts/
+
 # Local docker compose volume mount -- contains runtime SQLite (users.db),
 # personas/orgs/user-stories JSON, generated test data. Never commit.
 _local_data/

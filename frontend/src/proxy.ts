@@ -32,10 +32,24 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Two unauthenticated cases we treat identically:
+  //   1. No session at all (cookie missing / expired).
+  //   2. Session exists but the jwt callback in auth.ts gave up on
+  //      refreshing the Google ID token and set ``error = "RefreshTokenError"``
+  //      (revoked access, invalid_grant, legacy session without a refresh
+  //      token). Without this branch the page renders normally and only
+  //      breaks on the first API call -- which is exactly the "log me out
+  //      randomly" UX we are fixing. Bouncing here makes the failure mode
+  //      a clean redirect.
   const isLoggedIn = !!req.auth;
-  if (!isLoggedIn) {
+  const refreshFailed =
+    (req.auth as { error?: string } | null | undefined)?.error === "RefreshTokenError";
+  if (!isLoggedIn || refreshFailed) {
     const url = new URL("/login", req.nextUrl.origin);
     url.searchParams.set("from", pathname);
+    if (refreshFailed) {
+      url.searchParams.set("reason", "expired");
+    }
     return NextResponse.redirect(url);
   }
 

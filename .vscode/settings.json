@@ -9,6 +9,11 @@
   "python.linting.mypyEnabled": false,
   "python.linting.lintOnSave": true,
 
+  "//-pylint-extension": "The standalone 'ms-python.pylint' extension runs its OWN language server with settings under the 'pylint.*' namespace -- the legacy 'python.linting.pylintEnabled' flag above does NOT control it. Because pylint isn't installed in the venv (we migrated to ruff + basedpyright), that server fails to spawn pylint, crashes, auto-restarts, and produces the 'Pylint server crashed N times' toast. Explicitly disabling it here stops the LSP from booting at all. If a contributor wants to re-enable pylint, install it (`py -3 -m pip install pylint`) and flip pylint.enabled to true.",
+  "pylint.enabled": false,
+  "pylint.lintOnChange": false,
+  "pylint.importStrategy": "fromEnvironment",
+
   "//-python-analysis": "basedpyright (via ms-python.python) handles type-aware diagnostics. Mode 'basic' is the right default for a codebase that doesn't have full type coverage yet; bump to 'strict' once the migration is complete.",
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.diagnosticMode": "openFilesOnly",

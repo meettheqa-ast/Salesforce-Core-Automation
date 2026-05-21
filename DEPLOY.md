@@ -140,6 +140,22 @@ flyctl secrets set \
   GEMINI_API_KEY=... \
   LLM_FAILOVER_ORDER=cursor,gemini,openai,anthropic,groq
 
+# Stepwise reliability knobs (recommended production baseline):
+# MCP_PLAN_TIMEOUT_S=90
+# MCP_INIT_TIMEOUT_S=180
+# MCP_STEP_TIMEOUT_S=60
+# MCP_BUILD_TIMEOUT_S=60
+# LLM_REQUEST_TIMEOUT_S=60
+# Keep 0 in normal UX (automatic fallback available). Set 1 only while
+# diagnosing failures so users see explicit MCP errors.
+# MCP_STEPWISE_NO_FALLBACK=0
+# Form-healing runtime caps:
+# HEAL_MAX_ATTEMPTS_PER_SAVE=3
+# HEAL_MAX_PER_TEST=6
+# HEAL_MAX_LLM_CALLS=1
+# HEAL_TIMEOUT_S=60
+# HEAL_PATTERN_LOCALE=en
+
 # Deploy.
 flyctl deploy
 
@@ -187,13 +203,22 @@ requires a valid Google ID token. Sign-in is restricted to a single Google
 Workspace domain (default `astounddigital.com`).
 
 **Auth model in one paragraph.** The frontend (NextAuth on Vercel) runs the
-Google OAuth flow and stashes the **raw Google ID token** in the session. The
-client fetches that token from `/api/auth/jwt` and forwards it to the backend
-as `Authorization: Bearer <token>`. The backend verifies the token directly
-against [Google's JWKS](https://www.googleapis.com/oauth2/v3/certs), checks the
-audience (`GOOGLE_CLIENT_ID`), the issuer (`accounts.google.com`), the email
-domain, and the `hd` (hosted-domain) claim. **No shared secret between Vercel
-and the FastAPI backend** -- the trust anchor is Google itself.
+Google OAuth flow and stashes the **raw Google ID token + a Google
+refresh_token** in the encrypted NextAuth session cookie. The client fetches
+the (silently-refreshed) ID token from `/api/auth/jwt` and forwards it to the
+backend as `Authorization: Bearer <token>`. The backend verifies the token
+directly against [Google's JWKS](https://www.googleapis.com/oauth2/v3/certs),
+checks the audience (`GOOGLE_CLIENT_ID`), the issuer (`accounts.google.com`),
+the email domain, and the `hd` (hosted-domain) claim. **No shared secret
+between Vercel and the FastAPI backend** -- the trust anchor is Google itself.
+
+**Silent refresh.** Google ID tokens live ~1 hour; NextAuth's `jwt` callback
+in [`frontend/src/auth.ts`](frontend/src/auth.ts) trades the stored
+`refresh_token` for a fresh `id_token` whenever the current one is within 60s
+of expiry. The user only logs out when they click sign-out, when they revoke
+access from their Google account, or when the NextAuth session cookie's outer
+30-day window elapses. Laptop lock / sleep / overnight idle no longer log
+users out.
 
 ### 4a. Google Cloud Console (one-time, ~3 min)
 
@@ -209,6 +234,11 @@ and the FastAPI backend** -- the trust anchor is Google itself.
      - `https://sf-core-automation-umber.vercel.app/api/auth/callback/google` (prod)
      - Plus any preview / custom domains you want to support.
 4. **Create** -> copy the **Client ID** and **Client secret**.
+
+> Web-application OAuth clients return a `refresh_token` automatically when
+> the auth request sets `access_type=offline` and `prompt=consent` (the
+> frontend does both -- see `frontend/src/auth.ts`). No extra Cloud Console
+> setting is required.
 
 ### 4b. Backend env vars
 
@@ -269,10 +299,21 @@ Flip both to `false` once 4a-4c are complete.
 - **The first user to log in** becomes admin only if their email is listed in
   `INITIAL_ADMINS`. Otherwise they are a regular user (Phase 1 = sees only
   their own data).
-- **Google ID tokens last 1 hour.** When one expires, `/api/auth/jwt` returns
-  401, the frontend's `apiFetch` clears its cache and refetches; if NextAuth's
-  session is still alive it issues a fresh ID token transparently. If the
-  whole session has expired, the user is bounced to `/login`.
+- **Google ID tokens last ~1 hour, but the user does NOT log out every hour.**
+  NextAuth's `jwt` callback transparently refreshes the ID token against
+  Google's `/token` endpoint using the stored `refresh_token` (captured at
+  initial sign-in because the OAuth request uses `access_type=offline` +
+  `prompt=consent`). `/api/auth/jwt` only returns 401 when refresh itself
+  fails -- typically because the user revoked access at
+  https://myaccount.google.com/permissions, or the 30-day NextAuth session
+  cookie window has elapsed. In either case the frontend lands cleanly on
+  `/login?reason=expired`.
+- **One-time consent for existing users.** Users who signed in BEFORE the
+  refresh-token rollout do not have a stored `refresh_token` (the original
+  OAuth request did not ask for offline access). They will be bounced to
+  `/login` exactly once after deploy and will see Google's consent screen on
+  re-sign-in to grant offline access. New users see the consent screen once
+  on first sign-in and never again.
 - **SSE endpoints** (`/api/runs/execute/stream`, `/api/generate/mcp-stepwise/stream`)
   accept the token via `?token=...` query param because EventSource cannot send
   custom headers. Same for `/api/runs/.../file/...` and `/.../bundle.zip` --
@@ -321,6 +362,162 @@ proxy_read_timeout 1h;
 ```
 
 ---
+
+## 6.5. Test case CSV / Excel import
+
+The import wizard lets users bulk-load test cases from a spreadsheet
+without going through the AI generation pipeline.
+
+### Routes
+
+- `POST /api/imports/test-cases/parse`   (multipart upload, returns preview + suggested mapping)
+- `POST /api/imports/test-cases/commit`  (persists rows under target story)
+- `GET  /api/imports?project_slug=...`   (history list)
+- `GET  /api/imports/{batch_id}`         (single batch + failed-rows detail)
+- `POST /api/imports/{batch_id}/rollback` (hard-deletes every TC the batch created; lead+ only)
+
+### Env knobs
+
+```bash
+# Hard caps applied in ai_qa_portal/backend/services/import_parser.py.
+# Reduce to tighten resource use on lean tiers; bump on dedicated hosts.
+IMPORT_MAX_ROWS=10000          # /parse cap
+IMPORT_MAX_FILE_BYTES=33554432 # 32 MB
+IMPORT_MAX_CELL_BYTES=65536    # per-cell truncation threshold
+
+# /commit cap. Lower than the parse cap because the JSON-store writes
+# happen per row; very large batches should be split client-side.
+IMPORT_COMMIT_MAX_ROWS=1000
+IMPORT_COMMIT_CHUNK=100        # chunk size for the per-row write loop
+```
+
+### Storage
+
+- The uploaded file is persisted to `{data_dir}/imports/{batch_id}{ext}`
+  between `/parse` and `/commit`. It is deleted on successful commit.
+- The `import_batches` SQL table (alembic revision `0006_import_batches`)
+  retains the batch row indefinitely, including `failed_rows_json` so
+  partial-imports remain auditable.
+- Each created TestCase is tagged with
+  `external_source = "csv_import:<batch_id>"` so the rollback endpoint
+  can find every row a given batch produced.
+
+### Future-readiness (Jira / Zephyr / Xray / TestRail / Azure DevOps)
+
+The same `ImportBatch` table + `external_id` / `external_source` /
+`external_payload` columns on `TestCase` are reused by future external
+syncs. To wire a new source, add a parser module that returns the same
+`ParsedFile` shape (`columns + rows`), register a new `source_kind`
+value, and reuse the mapping + dedupe + commit pipeline unchanged.
+
+### Smoke
+
+```
+curl -F "project_slug=demo" -F "file=@tests.csv" \
+     https://<fly-app>.fly.dev/api/imports/test-cases/parse
+```
+
+Then post the returned `batch_id` + a confirmed mapping to `/commit`.
+
+## 6.6. AI Prompt Management
+
+Test-case generation, script building, healing, and stepwise planning
+all consult a SQL-backed prompt registry instead of inline string
+constants. Users can edit the prompts that drive their own generations
+without affecting anyone else.
+
+### Routes
+
+- `GET    /api/prompts/categories`              -- categories + placeholder allow-lists
+- `GET    /api/prompts`                          -- list templates (system seeds + clones)
+- `GET    /api/prompts/{id}`                     -- template + versions + active overrides
+- `GET    /api/prompts/{id}/versions/{n}`        -- single version body
+- `POST   /api/prompts`                          -- create a user / project / org clone
+- `POST   /api/prompts/{id}/versions`            -- append immutable version (save)
+- `POST   /api/prompts/{id}/activate`            -- pin a version as active for a scope
+- `POST   /api/prompts/{id}/reset`               -- drop a scope's override (fall back)
+- `POST   /api/prompts/{id}/preview`             -- render against mock context (no LLM)
+- `POST   /api/prompts/{id}/dry-run`             -- full LLM round-trip + parse, not persisted
+- `DELETE /api/prompts/{id}` (`?permanent=true` admin) -- soft / hard delete
+- `GET    /api/prompts/audit`                    -- prompt_usage_audit feed
+
+### Resolution chain
+
+```
+user override → project override → org override → system seed (baked .md)
+```
+
+Sparse rows -- a missing override is "no row found" and the resolver
+falls through. The system seed is whichever `is_system=true` template
+for the category has the OLDEST `created_at` (deterministic across
+reboots; admins flip the org default by activating a different
+template at `scope='org'`).
+
+### Env knobs
+
+```bash
+# Master switch. When OFF, ai_qa_portal.backend.prompts.assembler
+# returns the legacy inline tail bodies. When ON, every call site
+# (test_case_generator, test_case_script_builder, recording_translator,
+# etc.) routes through the registry resolver. Default OFF -- flip to
+# 1/true/yes/on to enable.
+PROMPT_REGISTRY_ENABLED=1
+
+# Hard cap on prompt body bytes. Editor + /versions endpoint refuse
+# saves above this. Default 200 KB.
+PROMPT_MAX_BODY_BYTES=204800
+```
+
+### Schema
+
+Alembic revision `0007_prompt_management` creates five tables:
+
+- `prompt_templates`    -- one row per named template (system + clones)
+- `prompt_versions`     -- immutable history; every save = new row
+- `prompt_overrides`    -- sparse (scope, scope_id, category) → version pointer
+- `prompt_usage_audit`  -- one row per LLM generation with model + tokens + latency
+- `prompt_meta`         -- single-row `cache_epoch` for resolver invalidation
+
+### Seeds
+
+Seed bodies live as `.md` files under `ai_qa_portal/backend/services/prompt_seeds/`.
+On every boot the seeder hashes each file; new files become a system
+template + version 1, changed files append a new system version
+(release-upgrade transparent). User overrides are never touched.
+
+Shipped seeds (Phase 1):
+
+- `test_case_drafter.md` -- legacy JSON drafter (OOTB default)
+- `test_case_drafter_structured_sf.md` -- Salesforce Structured QA (markdown table)
+- `test_case_drafter_zephyr_enterprise.md` -- Enterprise Zephyr QA (markdown table)
+- `script_builder.md` / `quick_robot.md` / `stepwise_planner.md` / `healer.md`
+- `recording_translator.md`
+
+### Security
+
+- Jinja2 SandboxedEnvironment blocks `__class__` walks, `os`,
+  `subprocess`, and attribute access on disallowed types.
+- Server-side body cap (`PROMPT_MAX_BODY_BYTES`, default 200 KB).
+- Placeholder allow-list per category; undeclared `{{ var }}` rejected
+  at save with a clear 400 message.
+- Mutations on `scope='user'` require `current_user.id == scope_id`.
+- Mutations on `scope='project'` require `ProjectRole.lead`.
+- Mutations on `scope='org'` and any system template require `is_admin`.
+- Every create / version / activate / reset / delete logs to the
+  shared `audit_log` via `services.audit.log_action`.
+
+### Smoke
+
+```bash
+# List system seeds
+curl -H "Authorization: Bearer $TOKEN" https://<fly-app>.fly.dev/api/prompts
+
+# Preview the default drafter against a mock story (no LLM call)
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"context":{"story":{"title":"Login","description":"User signs in"},"qa_mode":"salesforce"}}' \
+  https://<fly-app>.fly.dev/api/prompts/<template_id>/preview
+```
 
 ## 7. Smoke checklist after a fresh deploy
 

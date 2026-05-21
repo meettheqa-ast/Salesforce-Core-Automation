@@ -1,0 +1,65 @@
+---
+description: Compressed implementation mode. Use for fast repo-wide edits, repetitive fixes, batch refactors, and high-throughput coding loops where verbose narration wastes tokens. Invoke explicitly with @caveman.
+globs:
+alwaysApply: false
+---
+
+# @caveman — Compressed Engineering Mode
+
+Operating profile for high-throughput implementation work on this Salesforce QA Automation platform (FastAPI backend, Next.js frontend, MCP bridges, Robot Framework runner).
+
+Goal: maximum signal per token. Reasoning quality stays full; only narration is stripped.
+
+## Response shape
+
+- No preamble. No "Great question", "Let me", "I'll now", "I have completed".
+- No recap of what the user asked.
+- No celebratory close. No "Let me know if...".
+- Lead with the action or the diff.
+- Bullets > prose. Code > bullets.
+- Explanations only when the user cannot infer intent from the diff.
+- One short closing line listing what was changed and what was deliberately skipped.
+
+## Engineering rules
+
+- Read before editing. Always confirm the file shape before a `StrReplace`.
+- Batch independent tool calls in one turn. Sequential only when there is a real dependency.
+- Edit the existing file. Do not create parallel new files unless the task requires it.
+- Match the surrounding style (imports, error handling, logging, naming) of the file you touch.
+- No new dependencies without saying so in the closing line.
+- No invented APIs. If a symbol's signature is unknown, grep first.
+- After substantive edits, run lints on the touched files. Fix new lints; leave pre-existing ones unless they block the change.
+- Preserve behavior on refactors. Call out any intentional behavior change in one line.
+
+## Repo-wide edit discipline
+
+- Use `Grep` (ripgrep) for symbol-wide changes. Never sample-and-guess for renames.
+- For renames across the repo, list every hit, then apply with `replace_all` in each file.
+- Touch backend (`ai_qa_portal/backend/`) and frontend (`frontend/src/`) in the same turn when an API contract changes.
+- API contract changes: update the FastAPI route, the Pydantic model, and `frontend/src/lib/api.ts` together.
+
+## Anti-patterns (do not do)
+
+- Do not narrate file reads ("Now reading X to understand Y").
+- Do not re-explain code you just wrote.
+- Do not propose three options when one is clearly correct.
+- Do not add comments that restate the line below them.
+- Do not write speculative scaffolding ("we might want to also..."). Ship what was asked.
+- Do not insert TODO comments unless the user asked for staged work.
+
+## When to drop out of @caveman
+
+Switch to `@architect` if the task reveals a real design choice (storage model, auth boundary, async topology) instead of a pure implementation.
+Switch to `@debug` if a fix attempt fails twice and the failure mode is unclear.
+
+## Model pairing
+
+- Best with: GPT 5.3 Codex (Agent mode) for tool-heavy execution loops.
+- Acceptable with: Claude Opus 4.7 (Agent mode) when the change spans many files and benefits from stronger holistic reasoning.
+
+## Example invocations
+
+- `@caveman rename get_project_id to resolve_project_id across backend + frontend`
+- `@caveman wire the new /generation/jobs/{id}/cancel endpoint into StepwisePipeline.tsx`
+- `@caveman delete dead Streamlit pages still imported from app.py`
+- `@caveman add retry-with-jitter to mcp_bridge.py request loop, keep public API stable`

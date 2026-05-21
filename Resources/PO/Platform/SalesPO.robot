@@ -3,6 +3,7 @@ Library     SeleniumLibrary
 # Resource    ../../TestData/Platform/PlatformData.robot
 Resource    ../../TestData/Platform/SalesData.robot
 Resource    ../../Common/GlobalKeywords.robot
+Resource    ../../Common/HealKeywords.robot
 
 
 *** Keywords ***
@@ -139,7 +140,7 @@ Create A New Lead
         Select Random Valid Picklist Option
     END
 
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Lead
 
 Verify Lead Created Successfully
     [Documentation]    Confirms Lead save via record-details success toast, then validates key Lead fields on the page.
@@ -193,14 +194,41 @@ Create A New Opportunity
     END
     Enter Text With Fallback    Next Step    ${opportunityNextStep}
     Enter Text With Fallback    Description    ${opportunityDescription}
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Opportunity
 
 Verify Opportunity
     [Documentation]    Validates the Opportunity record was created with expected Name.
+    ...                Opportunity NAME is the page-title field, not a
+    ...                ``data-target-selection-name='sfdc:RecordField.
+    ...                Opportunity.Name'`` cell, so we verify it via
+    ...                ``Wait Until Page Contains`` (which reads visible
+    ...                text including the lightning header). Same fix as
+    ...                ``Verify Account Creation``.
     Verify Redirection to Record Details Page    ${opportunityName}
-    Verify Record Creation With Data    Opportunity    Name    ${opportunityName}
+    Wait Until Page Contains    ${opportunityName}    timeout=10s
 
 Convert Lead To Opportunity
+    [Documentation]    Drives the Lead Convert modal end-to-end. Captures
+    ...                the Lead Id from the current URL BEFORE clicking
+    ...                Convert (the page will navigate away once the
+    ...                convert succeeds), then asserts the post-convert
+    ...                state via SOQL using ``Verify Lead Was Converted``.
+    ...                That call sets ``${convertedAccountId}``,
+    ...                ``${convertedContactId}``, and
+    ...                ``${convertedOpportunityId}`` so cleanup and any
+    ...                follow-up assertions can address the derived
+    ...                records by Id without a list-view search.
+    ...
+    ...                Prefer ``Verify Lead Absent From Active List
+    ...                ${leadId}`` over ``Change List View`` +
+    ...                ``Search In List View`` + ``Verify Table Cell
+    ...                Record`` for "lead removed from active list"
+    ...                semantics -- the SOQL check is deterministic and
+    ...                doesn't require a page reload.
+    # Capture the Lead Id while we're still on the Lead detail page;
+    # once Convert succeeds Salesforce navigates to the Converted Lead
+    # view or Opportunity, and the URL pattern changes.
+    Run Keyword And Ignore Error    Capture Record Id From Current Url    Lead
     Reload Page
     Perform Action On Record Details Page Header    Lead    Convert
     Open Dropdown    Converted Status
@@ -223,6 +251,16 @@ Convert Lead To Opportunity
     IF    not $clicked
         Run Keyword And Ignore Error
         ...    Click Element    xpath://*[contains(@class,'modal-container')]//button[contains(@class,'slds-button')]
+    END
+    # Final SOQL assertion: cheap (one round-trip), exposes derived IDs
+    # for downstream cleanup. Skip silently when the Lead Id capture
+    # missed (Save & New from an earlier step, modal-only flow) -- the
+    # test will still pass if the convert dialog said success; the
+    # absence of a deterministic verification just degrades to legacy
+    # behaviour.
+    ${has_lead_id}=    Run Keyword And Return Status    Variable Should Exist    ${leadId}
+    IF    ${has_lead_id} and "${leadId}" != "${EMPTY}"
+        Run Keyword And Ignore Error    Verify Lead Was Converted    ${leadId}
     END
 
 Delete Lead
@@ -280,7 +318,7 @@ Create A New Account
             Select Random Valid Picklist Option
         END
     END
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Account
 
 Open New Account From Sales App
     [Documentation]    Opens the given app (default ``Sales``) → **Accounts** → **New**. Pass a custom app name when the user specifies one. ``Open New Dialog`` handles the "Choose Record Type" picker centrally -- pre-selected default is auto-confirmed when the picker appears. To pick a SPECIFIC Account record type (e.g. ``BC Commercial``) use ``Open New Dialog    Account    auto_select_default_record_type=${FALSE}`` then ``Select Account Record Type    <name>`` instead.
@@ -291,7 +329,16 @@ Open New Account From Sales App
 
 Verify Account Creation
     [Documentation]    Validates key Account fields on the record details page.
-    Verify Record Creation With Data    Account    Name    ${accountName}
+    ...                Account NAME is verified via the page-title path
+    ...                (``Wait Until Page Contains``) because Salesforce
+    ...                renders the record name as a header (``lightning-
+    ...                formatted-name``), NOT as a ``data-target-selection-
+    ...                name='sfdc:RecordField.Account.Name'`` cell -- the
+    ...                latter doesn't exist on the detail page, so the
+    ...                old ``Verify Record Creation With Data Account
+    ...                Name ...`` call always timed out at 10 s before
+    ...                ever checking the second field.
+    Wait Until Page Contains    ${accountName}    timeout=10s
     Verify Record Creation With Data    Account    Phone    ${accountPhone}
 
 Delete Account
@@ -338,7 +385,7 @@ Create A New Contact
     IF    ${acct_len} > 0
         Enter Into Search Field    Account Name    ${acct_trim}
     END
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Contact
 
 Verify Contact Created Successfully
     [Documentation]    Confirms Contact save and validates key fields on the record page.

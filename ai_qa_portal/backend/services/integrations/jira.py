@@ -185,21 +185,51 @@ class JiraProvider:
         )
 
     def list_sprints_for_board(self, board_id: int | str) -> list[dict[str, Any]]:
-        return list(
-            self._paginate(
-                f"/rest/agile/1.0/board/{board_id}/sprint",
-                items_key="values",
+        """Return every sprint on a board. Kanban / Service Management
+        boards have no sprints and Atlassian returns ``400 Bad Request``
+        with body ``The board does not support sprints`` for those. We
+        treat that 400 as "no sprints" and return ``[]`` rather than
+        letting it abort the whole sync -- callers like
+        :meth:`list_sprints_for_project` iterate over many boards and
+        one Kanban board in the mix shouldn't kill the run."""
+        try:
+            return list(
+                self._paginate(
+                    f"/rest/agile/1.0/board/{board_id}/sprint",
+                    items_key="values",
+                )
             )
-        )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 400:
+                logger.info(
+                    "Board %s does not support sprints (Kanban / SM / WM); skipping.",
+                    board_id,
+                )
+                return []
+            raise
 
     def list_sprints_for_project(self, project_key: str) -> list[dict[str, Any]]:
-        """Convenience: flatten all sprints across every board the project
-        is on, deduplicated by sprint id."""
+        """Convenience: flatten all sprints across every Scrum board the
+        project is on, deduplicated by sprint id.
+
+        Boards whose ``type`` is not ``scrum`` (e.g. Kanban, Service
+        Management queues, Jira Work Management business projects) have
+        no sprints, so we skip them up-front rather than firing a doomed
+        ``/sprint`` request. :meth:`list_sprints_for_board` still has a
+        defensive 400 catch for the edge case where a board reports
+        ``type=scrum`` but Atlassian still rejects ``/sprint``."""
         seen: set[str] = set()
         out: list[dict[str, Any]] = []
         for board in self.list_boards_for_project(project_key):
             board_id = board.get("id")
+            board_type = str(board.get("type") or "").strip().lower()
             if board_id is None:
+                continue
+            if board_type and board_type != "scrum":
+                logger.info(
+                    "Skipping non-Scrum board %s (type=%s) for project %s.",
+                    board_id, board_type, project_key,
+                )
                 continue
             for sprint in self.list_sprints_for_board(board_id):
                 sid = str(sprint.get("id"))
@@ -210,6 +240,29 @@ class JiraProvider:
 
     # ---- issues -------------------------------------------------------
 
+    # Fields requested by the sync layer when the caller does not pass
+    # an explicit list. The new ``/rest/api/3/search/jql`` endpoint does
+    # NOT honour ``fields=['*all']`` -- it returns a 400 -- so we need
+    # an explicit allow-list. This set is the minimum
+    # :mod:`ai_qa_portal.backend.services.jira_sync` reads from each
+    # issue; customfield_10020 is the standard Sprint custom field, and
+    # ``_extract_sprint_jira_id`` already handles tenants that use a
+    # different ``customfield_*`` id by scanning every custom field.
+    _DEFAULT_ISSUE_FIELDS: tuple[str, ...] = (
+        "summary",
+        "description",
+        "status",
+        "issuetype",
+        "assignee",
+        "reporter",
+        "priority",
+        "labels",
+        "created",
+        "updated",
+        "parent",
+        "customfield_10020",
+    )
+
     def search_issues(
         self,
         jql: str,
@@ -218,24 +271,133 @@ class JiraProvider:
         expand: list[str] | None = None,
         page_size: int = 100,
     ) -> Iterator[dict[str, Any]]:
-        """Yield every issue matching ``jql``. ``fields=['*all']`` returns
-        the full body (custom fields included); pass a narrow list when
-        you only need summary/status for a list view."""
-        params: dict[str, Any] = {
-            "jql": jql,
-            "fields": ",".join(fields or ["*all"]),
-            "maxResults": page_size,
-        }
-        if expand:
-            params["expand"] = ",".join(expand)
-        # The new ``/search/jql`` endpoint paginates with a cursor; the
-        # legacy ``/search`` still uses startAt and is what most tenants
-        # support without opting into the new API. We use the legacy
-        # endpoint for broad compatibility.
+        """Yield every issue matching ``jql``.
+
+        Atlassian sunset the legacy ``/rest/api/3/search`` (both GET and
+        POST) on 1 May 2025 and replaced it with
+        ``/rest/api/3/search/jql``, which uses **cursor pagination**
+        (``nextPageToken``) instead of ``startAt``/``total``. We hit the
+        new endpoint first; on 404/405 (Data Center / self-hosted
+        tenants that still expose only the legacy path) we fall back to
+        the old endpoint with its original startAt/POST-on-410 chain.
+
+        ``fields=['*all']`` is only forwarded to the legacy fallback --
+        the new endpoint requires an explicit list, so we use
+        :data:`_DEFAULT_ISSUE_FIELDS` when the caller did not supply one.
+        """
+        fields_list = list(fields) if fields else list(self._DEFAULT_ISSUE_FIELDS)
+        fields_csv = ",".join(fields_list)
+        expand_list = list(expand) if expand else []
+        expand_csv = ",".join(expand_list)
+
+        # Track how many issues we have already yielded from the cursor
+        # endpoint so we don't double-emit via the legacy fallback if the
+        # new endpoint dies mid-stream. The only legitimate fallback
+        # trigger is "endpoint does not exist on this tenant", which
+        # surfaces on the very first request (yielded == 0). A 404/405
+        # AFTER we've already streamed data is a real error and we
+        # propagate it.
+        yielded = 0
+        try:
+            for issue in self._search_issues_via_jql_cursor(
+                jql=jql,
+                fields_csv=fields_csv,
+                expand_csv=expand_csv,
+                page_size=page_size,
+            ):
+                yielded += 1
+                yield issue
+            return
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (404, 405) or yielded > 0:
+                raise
+            logger.info(
+                "Jira /search/jql returned %d on first call; falling back to legacy /search",
+                exc.response.status_code,
+            )
+
+        yield from self._search_issues_via_legacy(
+            jql=jql,
+            fields_list=fields_list,
+            fields_csv=fields_csv,
+            expand_list=expand_list,
+            expand_csv=expand_csv,
+            page_size=page_size,
+        )
+
+    def _search_issues_via_jql_cursor(
+        self,
+        *,
+        jql: str,
+        fields_csv: str,
+        expand_csv: str,
+        page_size: int,
+    ) -> Iterator[dict[str, Any]]:
+        """Cursor-paginated search against the new ``/rest/api/3/search/jql``."""
+        next_token: str | None = None
+        while True:
+            params: dict[str, Any] = {
+                "jql": jql,
+                "fields": fields_csv,
+                "maxResults": page_size,
+            }
+            if expand_csv:
+                params["expand"] = expand_csv
+            if next_token:
+                params["nextPageToken"] = next_token
+            payload = self._get_json("/rest/api/3/search/jql", params=params)
+            issues = payload.get("issues", [])
+            if not issues:
+                return
+            for issue in issues:
+                yield issue
+            if payload.get("isLast"):
+                return
+            next_token = payload.get("nextPageToken")
+            if not next_token:
+                return
+
+    def _search_issues_via_legacy(
+        self,
+        *,
+        jql: str,
+        fields_list: list[str],
+        fields_csv: str,
+        expand_list: list[str],
+        expand_csv: str,
+        page_size: int,
+    ) -> Iterator[dict[str, Any]]:
+        """Legacy ``startAt``/``maxResults`` path against ``/rest/api/3/search``,
+        with the original GET-then-POST-on-410 fallback for older tenants
+        that rejected GET. Kept for self-hosted Data Center installs that
+        haven't shipped the cursor endpoint."""
         start = 0
         while True:
-            params["startAt"] = start
-            payload = self._get_json("/rest/api/3/search", params=params)
+            params: dict[str, Any] = {
+                "jql": jql,
+                "fields": fields_csv,
+                "maxResults": page_size,
+                "startAt": start,
+            }
+            if expand_csv:
+                params["expand"] = expand_csv
+            try:
+                payload = self._get_json("/rest/api/3/search", params=params)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 410:
+                    raise
+                logger.info(
+                    "Jira GET /search returned 410; retrying via POST /search"
+                )
+                body: dict[str, Any] = {
+                    "jql": jql,
+                    "fields": fields_list,
+                    "maxResults": page_size,
+                    "startAt": start,
+                }
+                if expand_list:
+                    body["expand"] = expand_list
+                payload = self._request("POST", "/rest/api/3/search", json=body).json()
             issues = payload.get("issues", [])
             if not issues:
                 return

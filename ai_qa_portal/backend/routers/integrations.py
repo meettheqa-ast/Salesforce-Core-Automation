@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ai_qa_portal.backend.config import settings
@@ -33,6 +34,7 @@ from ai_qa_portal.backend.services.db_models.github import (
     GitHubScope,
 )
 from ai_qa_portal.backend.services.db_models.jira import (
+    JiraComment,
     JiraConnection,
     JiraIssue,
     JiraProject,
@@ -168,7 +170,10 @@ def get_jira_project_connection(
     project = _get_jira_connection(db, scope=JiraScope.project.value, slug=slug)
     if project:
         return _jira_view(project)
-    return _jira_view(_get_jira_connection(db, scope=JiraScope.org.value))
+    # Intentionally do not fall back to org-scoped credentials here.
+    # The project integrations form should only prefill when a project-level
+    # connection is explicitly saved for this slug.
+    return None
 
 
 @router.put("/projects/{slug}/integrations/jira/connection")
@@ -285,16 +290,29 @@ def jira_sync_now(
         email=conn.email,
         api_token=_cred.decrypt(conn.encrypted_token),
     )
-    with provider:
-        stats = sync_project(
-            db,
-            connection=conn,
-            jira_project_key=jira_project_key,
-            provider=provider,
-            include_comments=include_comments,
-            portal_project_slug=slug,
-            index_for_rag=True,
-        )
+    try:
+        with provider:
+            stats = sync_project(
+                db,
+                connection=conn,
+                jira_project_key=jira_project_key,
+                provider=provider,
+                include_comments=include_comments,
+                portal_project_slug=slug,
+                index_for_rag=True,
+            )
+    except Exception as exc:  # noqa: BLE001 - surface external API failures clearly
+        # Include connection_id + jira_project_key in the detail so we can
+        # debug from the UI banner alone (the previous shape only showed
+        # the underlying httpx error, with no hint of which connection /
+        # project the failure belonged to).
+        raise HTTPException(
+            502,
+            (
+                f"Jira sync failed for project={jira_project_key!r} "
+                f"connection_id={conn.id}: {exc}"
+            ),
+        ) from exc
     return stats.to_dict()
 
 
@@ -337,6 +355,130 @@ def jira_synced_issues(
         q = q.filter(JiraIssue.sprint_jira_id == sprint_jira_id)
     rows = q.order_by(JiraIssue.jira_updated_at.desc().nullslast()).offset(offset).limit(limit).all()
     return [r.to_dict() for r in rows]
+
+
+# --- Jira mirror row deletes ------------------------------------------
+#
+# Two-step lifecycle does NOT apply here -- synced rows are a local
+# mirror of Atlassian, so "delete" means "remove from the mirror". The
+# next /sync re-pulls anything the user removed (and updates anything
+# they kept). The button on the frontend is labelled "Remove from
+# mirror" so users don't think it's a destructive Jira-side delete.
+#
+# Scope: row's ``connection_id`` MUST match the active connection for
+# the slug, so a project lead can't delete another tenant's rows even
+# if they craft the request manually.
+
+class _JiraRowDeleteBody(BaseModel):
+    ids: list[str]
+
+
+@router.delete("/projects/{slug}/integrations/jira/sprints/{jira_sprint_row_id}", status_code=200)
+def jira_delete_synced_sprint(
+    slug: str,
+    jira_sprint_row_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_project_access(slug, current_user, db, ProjectRole.lead)
+    conn = _active_jira_connection(db, slug)
+    if conn is None:
+        raise HTTPException(404, "No Jira connection configured")
+    row = (
+        db.query(JiraSprint)
+        .filter(JiraSprint.id == jira_sprint_row_id, JiraSprint.connection_id == conn.id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(404, "Jira sprint not found for this connection")
+    db.delete(row)
+    db.commit()
+    return {"id": jira_sprint_row_id, "status": "deleted"}
+
+
+@router.post("/projects/{slug}/integrations/jira/sprints/bulk-delete", status_code=200)
+def jira_bulk_delete_synced_sprints(
+    slug: str,
+    body: _JiraRowDeleteBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_project_access(slug, current_user, db, ProjectRole.lead)
+    conn = _active_jira_connection(db, slug)
+    if conn is None:
+        raise HTTPException(404, "No Jira connection configured")
+    if not body.ids:
+        return {"deleted": 0, "skipped": 0}
+    # Constrain to this connection so a malformed request can't reach
+    # another tenant's mirrored rows.
+    rows = (
+        db.query(JiraSprint)
+        .filter(JiraSprint.connection_id == conn.id, JiraSprint.id.in_(body.ids))
+        .all()
+    )
+    deleted_ids = [r.id for r in rows]
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    skipped = [i for i in body.ids if i not in set(deleted_ids)]
+    return {"deleted": len(deleted_ids), "deleted_ids": deleted_ids, "skipped": skipped}
+
+
+@router.delete("/projects/{slug}/integrations/jira/issues/{jira_issue_row_id}", status_code=200)
+def jira_delete_synced_issue(
+    slug: str,
+    jira_issue_row_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_project_access(slug, current_user, db, ProjectRole.lead)
+    conn = _active_jira_connection(db, slug)
+    if conn is None:
+        raise HTTPException(404, "No Jira connection configured")
+    row = (
+        db.query(JiraIssue)
+        .filter(JiraIssue.id == jira_issue_row_id, JiraIssue.connection_id == conn.id)
+        .one_or_none()
+    )
+    if row is None:
+        raise HTTPException(404, "Jira issue not found for this connection")
+    # jira_comments has no FK to jira_issues -- clean them explicitly so
+    # the next sync starts from a known-empty state for this issue.
+    db.query(JiraComment).filter(JiraComment.issue_jira_id == row.jira_id).delete(synchronize_session=False)
+    db.delete(row)
+    db.commit()
+    return {"id": jira_issue_row_id, "status": "deleted"}
+
+
+@router.post("/projects/{slug}/integrations/jira/issues/bulk-delete", status_code=200)
+def jira_bulk_delete_synced_issues(
+    slug: str,
+    body: _JiraRowDeleteBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_project_access(slug, current_user, db, ProjectRole.lead)
+    conn = _active_jira_connection(db, slug)
+    if conn is None:
+        raise HTTPException(404, "No Jira connection configured")
+    if not body.ids:
+        return {"deleted": 0, "skipped": 0}
+    rows = (
+        db.query(JiraIssue)
+        .filter(JiraIssue.connection_id == conn.id, JiraIssue.id.in_(body.ids))
+        .all()
+    )
+    deleted_ids = [r.id for r in rows]
+    issue_jira_ids = [r.jira_id for r in rows]
+    if issue_jira_ids:
+        db.query(JiraComment).filter(
+            JiraComment.issue_jira_id.in_(issue_jira_ids),
+        ).delete(synchronize_session=False)
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    skipped = [i for i in body.ids if i not in set(deleted_ids)]
+    return {"deleted": len(deleted_ids), "deleted_ids": deleted_ids, "skipped": skipped}
 
 
 @router.post("/projects/{slug}/integrations/jira/import")

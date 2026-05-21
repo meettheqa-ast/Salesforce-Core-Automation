@@ -204,6 +204,96 @@ class JsonFileBackend(StorageBackend):
                 out.append(row)
         return out
 
+    # --- Hard-delete primitives --------------------------------------
+    #
+    # Soft delete (sprint -> cancelled, story -> archived, test case ->
+    # rejected) mutates state in place via ``save_*``. These methods
+    # remove the entity AND clean every index entry that referenced it,
+    # so the JSON store stays consistent. They are idempotent: deleting
+    # an already-removed entity is a no-op.
+    #
+    # Callers are responsible for the lifecycle gate (refusing to hard
+    # delete a record that is not in its soft-deleted state, or that
+    # still has live children). This layer just executes the storage
+    # mutation cleanly.
+
+    def _delete_file(self, key: str) -> bool:
+        p = self._path(key)
+        if not p.exists():
+            return False
+        try:
+            p.unlink()
+            return True
+        except OSError:
+            return False
+
+    def _drop_from_index(self, idx_key: str, target_id: str) -> None:
+        idx = self.read(idx_key)
+        ids = [x for x in idx.get("ids", []) if x != target_id]
+        # If nothing remains, persist an empty list rather than deleting
+        # the index file -- keeps the shape stable for callers that
+        # always read with `.get("ids", [])`.
+        self.write(idx_key, {"ids": ids})
+
+    def hard_delete_sprint(self, sprint_id: UUID) -> bool:
+        """Remove the sprint row and drop it from
+        ``sprints_by_project:<pid>``. Does NOT touch stories that point
+        at this sprint -- the caller (router) is expected to clear
+        ``sprint_id`` on those rows BEFORE calling this, the same way
+        the existing soft delete does it. We do clean the
+        ``user_stories_by_sprint:<sid>`` reverse index here so a stale
+        lookup doesn't return ghosts."""
+        sid = str(sprint_id)
+        existing = self.read(f"sprint:{sid}")
+        if not existing:
+            return False
+        pid = str(existing.get("project_id") or "")
+        if pid:
+            self._drop_from_index(f"sprints_by_project:{pid}", sid)
+        # Reverse index file; harmless if absent.
+        self._delete_file(f"user_stories_by_sprint:{sid}")
+        return self._delete_file(f"sprint:{sid}")
+
+    def hard_delete_user_story(self, story_id: UUID) -> bool:
+        """Remove the user story row and drop it from every index that
+        referenced it (per-project, per-sprint). Does NOT cascade to
+        test cases -- the caller verifies the story has no non-rejected
+        test cases before invoking this."""
+        sid = str(story_id)
+        existing = self.read(f"user_story:{sid}")
+        if not existing:
+            return False
+        pid = str(existing.get("project_id") or "")
+        sprint_id = existing.get("sprint_id")
+        if pid:
+            self._drop_from_index(f"user_stories_by_project:{pid}", sid)
+        if sprint_id:
+            self._drop_from_index(f"user_stories_by_sprint:{sprint_id}", sid)
+        return self._delete_file(f"user_story:{sid}")
+
+    def hard_delete_test_case(self, test_case_id: UUID) -> bool:
+        """Remove the test case row and drop it from every index that
+        referenced it (per-story, per-project, per-tag). On-disk Robot
+        scripts owned by this TC are NOT removed by this method -- the
+        router handles that so the storage layer doesn't need to know
+        about the filesystem layout under settings.saved_projects_dir."""
+        tid = str(test_case_id)
+        existing = self.read(f"test_case:{tid}")
+        if not existing:
+            return False
+        story_id = str(existing.get("user_story_id") or "")
+        pid = str(existing.get("project_id") or "")
+        tags = list(existing.get("tags") or [])
+        if story_id:
+            self._drop_from_index(f"test_cases_by_story:{story_id}", tid)
+        if pid:
+            self._drop_from_index(f"test_case_ids_project:{pid}", tid)
+            for tag_name in tags:
+                if not tag_name:
+                    continue
+                self._drop_from_index(f"test_case_ids_project_tag:{pid}:{tag_name}", tid)
+        return self._delete_file(f"test_case:{tid}")
+
     def seed_static_tags(self, project_id: UUID) -> None:
         from uuid import NAMESPACE_URL, uuid5
 

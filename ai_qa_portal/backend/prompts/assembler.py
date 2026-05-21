@@ -17,6 +17,7 @@ diverge.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -129,7 +130,12 @@ Output rules:
 - `keyword` is ONLY the name (e.g. `"GlobalKeywords.Login To Sandbox"`).
   Never include arguments inside the `keyword` string.
 - `args` is a separate array of plain string values (or `${var}`
-  references). Don't use named-args syntax like `field=value`.
+  references).
+- Named arguments use the EXACT shape `name=value` (e.g.
+  `"status=Sales Lead"`). The arg name MUST match a parameter in the
+  keyword's signature exactly. NEVER wrap the parameter name in
+  `${...}` -- `"${status}=Sales Lead"` is wrong; `"status=Sales Lead"`
+  is right.
 - Prefer qualified names (`GlobalKeywords.Launch App`,
   `SalesPO.Create A New Lead`) so the MCP runtime resolves them
   unambiguously.
@@ -141,18 +147,130 @@ Workflow rules:
 2. Use the recipes for every Salesforce operation.
 3. End with verification keywords when the prompt mentions success.
 
-Example:
+## CRITICAL: keyword side effects you MUST respect
+
+The RF-MCP runtime executes ONE step at a time. After each step the
+browser state changes -- a keyword that opens a modal leaves the modal
+open; a PO `Create A New X` keyword saves the form, closes the modal,
+AND redirects to the new record's detail page. Planning the wrong
+follow-up step wastes minutes of browser time on a guaranteed failure.
+
+**The following PO keywords are "self-saving":** they fill the form,
+click Save, handle missing-required-field auto-heal, AND redirect to
+the new record's detail page. After they return, the modal is GONE and
+the success toast has already been consumed.
+
+| Self-saving keyword | What it leaves you on |
+|---|---|
+| `SalesPO.Create A New Lead` | Lead detail page |
+| `SalesPO.Create A New Account` | Account detail page |
+| `SalesPO.Create A New Opportunity` | Opportunity detail page |
+| `SalesPO.Create A New Contact` | Contact detail page |
+| `ContactPO.Create A New Contact` | Contact detail page |
+| `Create A New Campaign` | Campaign detail page |
+
+**After a self-saving keyword, you MUST NOT plan:**
+- `GlobalKeywords.Verify Redirection to Record Details Page` -- redirection
+  already happened; this keyword waits 60 s for an event that already fired.
+- `GlobalKeywords.Get Success Toast Message Related Record Creation ID` --
+  the toast was consumed inside the PO keyword; this returns nothing.
+- A second `Open Dropdown` / `Select Dropdown Option` for a field that
+  was supposed to be set during the create -- the modal is gone.
+
+**Do this instead:**
+- For field assertions: `GlobalKeywords.Verify Field Value On Detail Page    <Label>    <Expected>`.
+- For "verify the record was created": `SalesPO.Verify <Object> Created Successfully`.
+- For related records (Contacts on the Account, etc.): use
+  `GlobalKeywords.Open Related Record Dropdown    <RelatedListLabel>    New`
+  to open a NEW related-record modal, THEN call the right
+  `Create A New X` keyword.
+
+## CRITICAL: pass field values as named args, not extra steps
+
+When the prompt names specific values (Lead Source, Status, Address,
+Account Name on a Contact, etc.), pass them as **named args** to the
+`Create A New X` keyword. Do NOT plan separate `Open Dropdown` /
+`Select Dropdown Option` steps after the create -- the modal is gone
+by then.
+
+Example: prompt says *"Create a Lead with Lead Source = Web, Status =
+Sales Lead, address in California"*
+
+CORRECT:
 ```
 [
   {"keyword": "GlobalKeywords.Login To Sandbox",
    "args": ["${globalSandboxTestUrl}", "${sandboxUserNameInput}", "${sandboxPasswordInput}"]},
-  {"keyword": "GlobalKeywords.Launch App", "args": ["Sales"]},
-  {"keyword": "GlobalKeywords.Select App Tab", "args": ["Leads"]},
-  {"keyword": "GlobalKeywords.Open New Dialog", "args": ["Lead"]},
-  {"keyword": "SalesPO.Create A New Lead", "args": []},
+  {"keyword": "SalesPO.Open New Lead From Sales App", "args": []},
+  {"keyword": "SalesPO.Create A New Lead",
+   "args": ["source=Web", "status=Sales Lead", "address=18 King Street, San Francisco, California"]},
   {"keyword": "SalesPO.Verify Lead Created Successfully", "args": []}
 ]
 ```
+
+WRONG (modal closes after Create, the next 3 steps time out):
+```
+[
+  {"keyword": "GlobalKeywords.Login To Sandbox", "args": [...]},
+  {"keyword": "SalesPO.Open New Lead From Sales App", "args": []},
+  {"keyword": "SalesPO.Create A New Lead", "args": []},
+  {"keyword": "GlobalKeywords.Open Dropdown", "args": ["Lead Source"]},
+  {"keyword": "GlobalKeywords.Select Dropdown Option", "args": ["Lead Source", "Web"]},
+  {"keyword": "GlobalKeywords.Verify Redirection to Record Details Page", "args": []}
+]
+```
+
+## CRITICAL: multi-record flows (Account + Contact + Opportunity)
+
+When the prompt says *"create an Account, then a Contact under that
+Account, then an Opportunity linked to that Account"*, the right shape
+is:
+
+```
+[
+  {"keyword": "GlobalKeywords.Login To Sandbox",
+   "args": ["${globalSandboxTestUrl}", "${sandboxUserNameInput}", "${sandboxPasswordInput}"]},
+  {"keyword": "SalesPO.Open New Account From Sales App", "args": []},
+  {"keyword": "SalesPO.Create A New Account", "args": ["account_name=${accountName}"]},
+  {"keyword": "SalesPO.Verify Account Creation", "args": []},
+  {"keyword": "SalesPO.Open New Contact From Sales App", "args": []},
+  {"keyword": "SalesPO.Create A New Contact",
+   "args": ["account_name=${accountName}"]},
+  {"keyword": "SalesPO.Verify Contact Created Successfully", "args": []},
+  {"keyword": "SalesPO.Open New Opportunity From Sales App", "args": []},
+  {"keyword": "SalesPO.Create A New Opportunity",
+   "args": ["account_name=${accountName}"]},
+  {"keyword": "SalesPO.Verify Opportunity", "args": []}
+]
+```
+
+Notes:
+- `${accountName}` is a Faker default declared in `SalesData.robot`,
+  unique per suite import. Reusing the same variable across the three
+  Create steps is what links Contact / Opportunity back to the Account.
+- **Verification keywords are the PO `Verify <Object> Created Successfully`
+  family.** Do NOT use `GlobalKeywords.Verify Field Value On Detail Page
+  Account Name ${accountName}` -- the record's primary name is the page
+  title, not a record-field cell, and that keyword will fail with
+  "Could not locate ... output cell" after a 10 s timeout.
+- The PO openers (`Open New Contact From Sales App`,
+  `Open New Opportunity From Sales App`) navigate from ANY starting page
+  -- you do NOT need to insert `Launch App` / `Select App Tab` between
+  them, even if the previous step left you on a different record's
+  detail page.
+- Do NOT plan `Verify Redirection to Record Details Page` after each
+  Create -- the redirect already happened inside the PO Create keyword.
+
+## What you'll see on retry
+
+The validator runs against your plan BEFORE the runtime executes
+anything. If it rejects your plan, you'll get a fix-prompt with:
+- The exact keyword name we don't recognise + 3 closest matches.
+- Required-arg violations + the keyword's signature.
+- Sequence-linter findings with one-line fix hints.
+
+Pick a suggestion, fix the order, resubmit the FULL array. Don't push
+back, don't comment, don't return a diff.
 """
 
 _TAIL_HEALER = """\
@@ -257,18 +375,91 @@ def _read_legacy_system_prompt() -> str:
 # --- Public API -----------------------------------------------------------
 
 
+# --- Role <-> registry category mapping -----------------------------------
+#
+# When the prompt registry is enabled we resolve via the SQL-backed
+# template tree (system seeds + sparse user/project/org overrides). Each
+# legacy ``Role`` maps to one registry category. The category names are
+# stable across the project (frontend Settings list, audit logs, etc.).
+_ROLE_TO_CATEGORY: dict[Role, str] = {
+    "drafter": "test_case_drafter",
+    "builder": "script_builder",
+    "quick": "quick_robot",
+    "stepwise": "stepwise_planner",
+    "healer": "healer",
+}
+
+
+def _registry_enabled() -> bool:
+    """Feature flag. ``PROMPT_REGISTRY_ENABLED`` is OFF by default until
+    Phase 2 wires call sites + audit; flip via env to opt in early."""
+    import os  # local import keeps assembler import-cheap
+    return os.environ.get("PROMPT_REGISTRY_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class AssembledPrompt:
+    """Returned by ``build_system_prompt_resolved`` for callers that
+    want provenance (Phase 2 stamps these onto every TestCase + audit
+    row). The legacy ``build_system_prompt`` returns the same text but
+    discards the metadata so existing call sites don't need to change."""
+
+    text: str
+    template_id: str | None
+    version_id: str | None
+    category: str | None
+    output_format: str | None
+    source_scope: str | None
+
+
+def _compose_with_playbook(category: str, body: str, output_format: str) -> str:
+    """Prepend the Salesforce/Robot playbook for templates that produce
+    Robot-shaped output (``json_array`` keyword plans, ``robot_script``
+    files). Templates with ``markdown_table`` output (the Salesforce
+    Structured + Enterprise Zephyr drafters) emit standalone manual /
+    Zephyr-importable test cases -- the playbook is irrelevant noise
+    for them, so we ship the body verbatim.
+
+    Templates outside the Robot family entirely (future categories
+    like ``defect_analysis``) also skip the playbook.
+    """
+    robot_categories = {
+        "test_case_drafter", "script_builder", "quick_robot",
+        "stepwise_planner", "healer", "recording_translator",
+    }
+    if category not in robot_categories:
+        return body
+    if (output_format or "").lower() == "markdown_table":
+        # Standalone drafter -- ship the user-edited body unchanged.
+        return body
+    playbook = _read_playbook()
+    if not playbook:
+        return body
+    return f"{playbook}\n\n{body.rstrip()}\n"
+
+
 def build_system_prompt(role: Role, *, include_legacy_quick_guidance: bool = True) -> str:
     """Compose the system prompt for a given LLM entry point role.
 
-    The playbook plus a role-specific tail is the baseline. For the
-    "quick" role, we ALSO append the legacy `system_prompt.txt` content
-    -- it has months of tuning around picklists, app-name fuzzy matching,
-    Account record types, etc. that we don't want to lose. Other roles
-    don't get the legacy prompt (it's shaped for prompt-driven generation,
-    not test-case translation or stepwise planning).
+    Legacy path (default): playbook + role-specific tail + (for ``quick``
+    only) the legacy ``system_prompt.txt`` body.
+
+    Registry path (when ``PROMPT_REGISTRY_ENABLED=true``): resolve via
+    ``prompt_resolver`` to honour user / project / org overrides.
+    Resolver failures (no system seed, DB unavailable) fall back to the
+    legacy path so the generation pipeline never crashes on a registry
+    issue.
     """
     if role not in _TAILS:
         raise ValueError(f"Unknown role: {role!r}. Valid: {sorted(_TAILS)}")
+
+    if _registry_enabled():
+        try:
+            return build_system_prompt_resolved(role).text
+        except Exception as exc:  # noqa: BLE001
+            # Never let the registry block generation. We log + fall
+            # through to the legacy assembler.
+            logger.warning("registry resolve failed for role=%s: %s", role, exc)
 
     parts: list[str] = [_read_playbook(), _TAILS[role].rstrip()]
     if role == "quick" and include_legacy_quick_guidance:
@@ -277,6 +468,60 @@ def build_system_prompt(role: Role, *, include_legacy_quick_guidance: bool = Tru
             parts.append("---\n\n## Additional guidance (legacy system_prompt.txt)\n\n" + legacy.strip())
 
     return "\n\n".join(p for p in parts if p).strip() + "\n"
+
+
+def build_system_prompt_resolved(
+    role: Role,
+    *,
+    user_id: str | None = None,
+    project_id: str | None = None,
+    org_id: str | None = None,
+) -> AssembledPrompt:
+    """Registry-aware variant that returns provenance + text. Phase 2
+    call sites use this so they can stamp the resolved version id on
+    persisted artefacts + audit rows.
+
+    Always returns an ``AssembledPrompt``. Resolver miss falls back to
+    the legacy text (template_id / version_id / category will be None
+    in that case)."""
+    from ai_qa_portal.backend.services.db import SessionLocal  # lazy
+    from ai_qa_portal.backend.services import prompt_resolver  # lazy
+
+    if role not in _TAILS:
+        raise ValueError(f"Unknown role: {role!r}. Valid: {sorted(_TAILS)}")
+
+    category = _ROLE_TO_CATEGORY.get(role)
+    if category is None:
+        text = build_system_prompt(role)
+        return AssembledPrompt(text=text, template_id=None, version_id=None,
+                               category=None, output_format=None, source_scope=None)
+
+    db = SessionLocal()
+    try:
+        resolved = prompt_resolver.resolve(
+            db, category=category,
+            user_id=user_id, project_id=project_id, org_id=org_id,
+        )
+    finally:
+        db.close()
+
+    if resolved is None:
+        # No system seed -- fall back to inline tails so nothing breaks.
+        text = build_system_prompt(role)
+        return AssembledPrompt(text=text, template_id=None, version_id=None,
+                               category=category, output_format=None, source_scope=None)
+
+    composed = _compose_with_playbook(
+        resolved.category, resolved.body, resolved.output_format,
+    )
+    return AssembledPrompt(
+        text=composed if composed.endswith("\n") else composed + "\n",
+        template_id=resolved.template_id,
+        version_id=resolved.version_id,
+        category=resolved.category,
+        output_format=resolved.output_format,
+        source_scope=resolved.source_scope,
+    )
 
 
 def render_persona_context(default_app: str | None = None) -> str:

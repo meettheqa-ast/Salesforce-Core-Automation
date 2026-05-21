@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-05-07T08:17:47.060942+00:00",
+  "generated_at": "2026-05-18T06:41:16.481278+00:00",
   "project_root_hint": "Salesforce Automation",
   "scanned_paths": [
     "Resources/PO",
     "Resources/Common"
   ],
-  "keyword_count": 185,
+  "keyword_count": 195,
   "keywords": [
     {
       "keyword_name": "Purchase Parts Within Stock",
@@ -566,9 +566,9 @@
         "${title}=${contactTitle}",
         "${account_name}=${contactAccountName}"
       ],
-      "documentation": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors. Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.",
+      "documentation": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Save And Heal to run runtime healing with a legacy fallback path. Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.",
       "documentation_source": "author",
-      "natural_language_summary": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors. Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.",
+      "natural_language_summary": "Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Save And Heal to run runtime healing with a legacy fallback path. Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.",
       "inferred_description": null,
       "tags": [
         "interaction",
@@ -722,9 +722,9 @@
     {
       "keyword_name": "Verify Opportunity",
       "arguments": [],
-      "documentation": "Validates the Opportunity record was created with expected Name.",
+      "documentation": "Validates the Opportunity record was created with expected Name. Opportunity NAME is the page-title field, not a ``data-target-selection-name='sfdc:RecordField. Opportunity.Name'`` cell, so we verify it via ``Wait Until Page Contains`` (which reads visible text including the lightning header). Same fix as ``Verify Account Creation``.",
       "documentation_source": "author",
-      "natural_language_summary": "Validates the Opportunity record was created with expected Name.",
+      "natural_language_summary": "Validates the Opportunity record was created with expected Name. Opportunity NAME is the page-title field, not a ``data-target-selection-name='sfdc:RecordField. Opportunity.Name'`` cell, so we verify it via ``Wait Until Page Contains`` (which reads visible text including the lightning header). Same fix as ``Verify Account Creation``.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -732,10 +732,10 @@
     {
       "keyword_name": "Convert Lead To Opportunity",
       "arguments": [],
-      "documentation": null,
-      "documentation_source": "inferred_only",
-      "natural_language_summary": "Converts or transforms Lead To Opportunity.",
-      "inferred_description": "Converts or transforms Lead To Opportunity.",
+      "documentation": "Drives the Lead Convert modal end-to-end. Captures the Lead Id from the current URL BEFORE clicking Convert (the page will navigate away once the convert succeeds), then asserts the post-convert state via SOQL using ``Verify Lead Was Converted``. That call sets ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` so cleanup and any follow-up assertions can address the derived records by Id without a list-view search. Prefer ``Verify Lead Absent From Active List ${leadId}`` over ``Change List View`` + ``Search In List View`` + ``Verify Table Cell Record`` for \"lead removed from active list\" semantics -- the SOQL check is deterministic and doesn't require a page reload.",
+      "documentation_source": "author",
+      "natural_language_summary": "Drives the Lead Convert modal end-to-end. Captures the Lead Id from the current URL BEFORE clicking Convert (the page will navigate away once the convert succeeds), then asserts the post-convert state via SOQL using ``Verify Lead Was Converted``. That call sets ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` so cleanup and any follow-up assertions can address the derived records by Id without a list-view search. Prefer ``Verify Lead Absent From Active List ${leadId}`` over ``Change List View`` + ``Search In List View`` + ``Verify Table Cell Record`` for \"lead removed from active list\" semantics -- the SOQL check is deterministic and doesn't require a page reload.",
+      "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
     },
@@ -810,9 +810,9 @@
     {
       "keyword_name": "Verify Account Creation",
       "arguments": [],
-      "documentation": "Validates key Account fields on the record details page.",
+      "documentation": "Validates key Account fields on the record details page. Account NAME is verified via the page-title path (``Wait Until Page Contains``) because Salesforce renders the record name as a header (``lightning- formatted-name``), NOT as a ``data-target-selection- name='sfdc:RecordField.Account.Name'`` cell -- the latter doesn't exist on the detail page, so the old ``Verify Record Creation With Data Account Name ...`` call always timed out at 10 s before ever checking the second field.",
       "documentation_source": "author",
-      "natural_language_summary": "Validates key Account fields on the record details page.",
+      "natural_language_summary": "Validates key Account fields on the record details page. Account NAME is verified via the page-title path (``Wait Until Page Contains``) because Salesforce renders the record name as a header (``lightning- formatted-name``), NOT as a ``data-target-selection- name='sfdc:RecordField.Account.Name'`` cell -- the latter doesn't exist on the detail page, so the old ``Verify Record Creation With Data Account Name ...`` call always timed out at 10 s before ever checking the second field.",
       "inferred_description": null,
       "tags": [],
       "source_file": "Resources/PO/Platform/SalesPO.robot"
@@ -1775,9 +1775,9 @@
     {
       "keyword_name": "Get Success Toast Message Related Record Creation ID",
       "arguments": [],
-      "documentation": "This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.",
+      "documentation": "Fetches the record ID from the success toast that Salesforce shows after a record is created. IMPORTANT timing semantics: Salesforce auto- dismisses the success toast in ~3-5 seconds. When this keyword runs AFTER another step that already consumed the toast (e.g. when called from ``Verify Lead Created Successfully`` right after ``Create A New Lead`` which already clicked Save), the toast is already gone. The previous 120 s timeout was a paranoid setting that turned every missed-toast race into a 60-120 s test-stalling wait (RF-MCP's per-keyword ceiling sometimes truncated it to 60 s, but either way the test was burned). New behaviour: 8 s wait, then GRACEFULLY return if the toast wasn't seen. Downstream verifications (``Page Should Contain``, ``Verify Field Value On Detail Page``) still validate the record was actually created -- the toast was just one signal, not the only one. Sets ``${successToastMessageOnRecordDetailsPage}`` to ``${EMPTY}`` when missed so downstream consumers of that variable can detect the no-toast path.",
       "documentation_source": "author",
-      "natural_language_summary": "This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.",
+      "natural_language_summary": "Fetches the record ID from the success toast that Salesforce shows after a record is created. IMPORTANT timing semantics: Salesforce auto- dismisses the success toast in ~3-5 seconds. When this keyword runs AFTER another step that already consumed the toast (e.g. when called from ``Verify Lead Created Successfully`` right after ``Create A New Lead`` which already clicked Save), the toast is already gone. The previous 120 s timeout was a paranoid setting that turned every missed-toast race into a 60-120 s test-stalling wait (RF-MCP's per-keyword ceiling sometimes truncated it to 60 s, but either way the test was burned). New behaviour: 8 s wait, then GRACEFULLY return if the toast wasn't seen. Downstream verifications (``Page Should Contain``, ``Verify Field Value On Detail Page``) still validate the record was actually created -- the toast was just one signal, not the only one. Sets ``${successToastMessageOnRecordDetailsPage}`` to ``${EMPTY}`` when missed so downstream consumers of that variable can detect the no-toast path.",
       "inferred_description": null,
       "tags": [
         "records",
@@ -2273,6 +2273,22 @@
       "source_file": "Resources/Common/GlobalKeywords.robot"
     },
     {
+      "keyword_name": "Save And Heal",
+      "arguments": [
+        "${sobject}=Lead",
+        "${max_attempts}=3",
+        "${duplicate_strategy}=regenerate",
+        "${session_id}=${EMPTY}",
+        "${save_action}=Save"
+      ],
+      "documentation": "Click Save and run runtime form-healing when available. If the bridge cannot run (e.g. no MCP session id in standalone Robot replay), falls back to the legacy Attempt Save And Auto-Heal Missing Fields keyword. On a successful save this keyword ALSO calls ``Capture Record Id From Current Url    ${sobject}`` so the rest of the test (verification, cleanup) can address the new record by Id without re-finding it in the UI. The capture is best-effort: when the page didn't navigate to a record detail URL (e.g. Save & New, modal stayed open) it logs WARN and continues without setting a variable.",
+      "documentation_source": "author",
+      "natural_language_summary": "Click Save and run runtime form-healing when available. If the bridge cannot run (e.g. no MCP session id in standalone Robot replay), falls back to the legacy Attempt Save And Auto-Heal Missing Fields keyword. On a successful save this keyword ALSO calls ``Capture Record Id From Current Url    ${sobject}`` so the rest of the test (verification, cleanup) can address the new record by Id without re-finding it in the UI. The capture is best-effort: when the page didn't navigate to a record detail URL (e.g. Save & New, modal stayed open) it logs WARN and continues without setting a variable.",
+      "inferred_description": null,
+      "tags": [],
+      "source_file": "Resources/Common/HealKeywords.robot"
+    },
+    {
       "keyword_name": "Open Lucy ChatBot",
       "arguments": [],
       "documentation": null,
@@ -2417,6 +2433,148 @@
       "inferred_description": "Selects Back To Main Menu.",
       "tags": [],
       "source_file": "Resources/Common/LucyChatBot/LucyChatBotCommon.robot"
+    },
+    {
+      "keyword_name": "Start Playwright Trace If Enabled",
+      "arguments": [],
+      "documentation": "Pre-suite hook. When ``${USE_PLAYWRIGHT_TRACE}`` is ``1``, imports the Browser library and starts a tracing session that captures screenshots + DOM snapshots + network. Otherwise no-op. Robot suites that want tracing should call this from ``Suite Setup`` (or piggyback the project's existing setup).",
+      "documentation_source": "author",
+      "natural_language_summary": "Pre-suite hook. When ``${USE_PLAYWRIGHT_TRACE}`` is ``1``, imports the Browser library and starts a tracing session that captures screenshots + DOM snapshots + network. Otherwise no-op. Robot suites that want tracing should call this from ``Suite Setup`` (or piggyback the project's existing setup).",
+      "inferred_description": null,
+      "tags": [
+        "debug",
+        "playwright",
+        "optional"
+      ],
+      "source_file": "Resources/Common/PlaywrightDebug.robot"
+    },
+    {
+      "keyword_name": "Stop Playwright Trace If Enabled",
+      "arguments": [],
+      "documentation": "Post-suite hook. Counterpart to the start keyword. Stops the tracing session, packages the events into ``trace.zip``, and writes it under ``${OUTPUT_DIR}``. The runner's bundle builder picks it up automatically.",
+      "documentation_source": "author",
+      "natural_language_summary": "Post-suite hook. Counterpart to the start keyword. Stops the tracing session, packages the events into ``trace.zip``, and writes it under ``${OUTPUT_DIR}``. The runner's bundle builder picks it up automatically.",
+      "inferred_description": null,
+      "tags": [
+        "debug",
+        "playwright",
+        "optional"
+      ],
+      "source_file": "Resources/Common/PlaywrightDebug.robot"
+    },
+    {
+      "keyword_name": "Capture Record Id From Current Url",
+      "arguments": [
+        "${sobject}",
+        "${var_name}=${EMPTY}"
+      ],
+      "documentation": "Reads the Salesforce record Id from the current browser URL (``/lightning/r/<SObject>/<Id>/view``) and stores it as a TEST-scoped variable named ``${<sobject_var>Id}`` (default: lowercase first letter of ``${sobject}`` + ``\"Id\"``, e.g. ``${leadId}``). When the URL is NOT a record detail page (modal stayed open, Save & New cleared the form, the browser was redirected to a list view, etc.) this keyword falls back to ``Get Success Toast Message Related Record Creation ID`` so the captured Id is best-effort. When neither source yields an Id, returns ``${EMPTY}`` and logs a WARN -- callers should treat capture as non-blocking. Returns the captured Id (or ``${EMPTY}``) so the caller can chain it into a follow-up verification.",
+      "documentation_source": "author",
+      "natural_language_summary": "Reads the Salesforce record Id from the current browser URL (``/lightning/r/<SObject>/<Id>/view``) and stores it as a TEST-scoped variable named ``${<sobject_var>Id}`` (default: lowercase first letter of ``${sobject}`` + ``\"Id\"``, e.g. ``${leadId}``). When the URL is NOT a record detail page (modal stayed open, Save & New cleared the form, the browser was redirected to a list view, etc.) this keyword falls back to ``Get Success Toast Message Related Record Creation ID`` so the captured Id is best-effort. When neither source yields an Id, returns ``${EMPTY}`` and logs a WARN -- callers should treat capture as non-blocking. Returns the captured Id (or ``${EMPTY}``) so the caller can chain it into a follow-up verification.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "capture",
+        "utilities"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "Verify Record Exists By SOQL",
+      "arguments": [
+        "${sobject}",
+        "${where_clause}",
+        "${expected_count}=1"
+      ],
+      "documentation": "Asserts the SOQL ``SELECT Id FROM <sobject> WHERE <where_clause>`` returns ``expected_count`` rows (default 1). Use this in place of ``Search In List View`` + ``Verify Table Cell Record`` whenever you just want to confirm a record exists -- no page reload, no spinner waits, no per-org list-view labels. On ``INVALID_SESSION_ID`` (the API-eligible cookie hasn't propagated yet) waits 0.5 s and retries once; the session upgrade typically completes within that window.",
+      "documentation_source": "author",
+      "natural_language_summary": "Asserts the SOQL ``SELECT Id FROM <sobject> WHERE <where_clause>`` returns ``expected_count`` rows (default 1). Use this in place of ``Search In List View`` + ``Verify Table Cell Record`` whenever you just want to confirm a record exists -- no page reload, no spinner waits, no per-org list-view labels. On ``INVALID_SESSION_ID`` (the API-eligible cookie hasn't propagated yet) waits 0.5 s and retries once; the session upgrade typically completes within that window.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "verification"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "Verify Record Absent By SOQL",
+      "arguments": [
+        "${sobject}",
+        "${where_clause}"
+      ],
+      "documentation": "Asserts the SOQL ``SELECT Id FROM <sobject> WHERE <where_clause>`` returns 0 rows. This is the semantically-correct way to check that a record is \"no longer in the active list\" (filter-based visibility), or that a cleanup-deleted record is actually gone.",
+      "documentation_source": "author",
+      "natural_language_summary": "Asserts the SOQL ``SELECT Id FROM <sobject> WHERE <where_clause>`` returns 0 rows. This is the semantically-correct way to check that a record is \"no longer in the active list\" (filter-based visibility), or that a cleanup-deleted record is actually gone.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "verification"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "Verify Lead Was Converted",
+      "arguments": [
+        "${lead_id}"
+      ],
+      "documentation": "Asserts the Lead with the given Id has ``IsConverted = TRUE`` and a populated ``ConvertedOpportunityId``. Sets ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` as TEST-scoped variables so the rest of the suite (and cleanup) can address the derived records by Id without another SOQL round-trip.",
+      "documentation_source": "author",
+      "natural_language_summary": "Asserts the Lead with the given Id has ``IsConverted = TRUE`` and a populated ``ConvertedOpportunityId``. Sets ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` as TEST-scoped variables so the rest of the suite (and cleanup) can address the derived records by Id without another SOQL round-trip.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "verification",
+        "lead",
+        "convert"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "Verify Lead Absent From Active List",
+      "arguments": [
+        "${lead_id}"
+      ],
+      "documentation": "Asserts the given Lead is no longer visible in the \"Active Leads\" list view filter. The Active Leads filter in Salesforce is implemented as ``IsConverted = FALSE``, so this is a single deterministic SOQL check -- vastly more reliable than reload-page + change-list-view + search-box + table-cell-lookup.",
+      "documentation_source": "author",
+      "natural_language_summary": "Asserts the given Lead is no longer visible in the \"Active Leads\" list view filter. The Active Leads filter in Salesforce is implemented as ``IsConverted = FALSE``, so this is a single deterministic SOQL check -- vastly more reliable than reload-page + change-list-view + search-box + table-cell-lookup.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "verification",
+        "lead"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "Cleanup Captured Records",
+      "arguments": [
+        "&{additional_pairs}"
+      ],
+      "documentation": "Tear-down helper that deletes every captured Id set on this test by the ``Save And Heal`` hook, ``Capture Record Id From Current Url``, or ``Verify Lead Was Converted``. Auto-discovers ``${leadId}``, ``${accountId}``, ``${contactId}``, ``${opportunityId}``, ``${campaignId}``, ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` -- skipping any that are unset or empty. Safe to call from a ``[Teardown]`` even when no records were created. Pass ``additional_pairs`` (SObject=Id strings) to clean up extra records not covered by the auto-discovery list, e.g. ``Cleanup Captured Records    Case=${caseId}``.",
+      "documentation_source": "author",
+      "natural_language_summary": "Tear-down helper that deletes every captured Id set on this test by the ``Save And Heal`` hook, ``Capture Record Id From Current Url``, or ``Verify Lead Was Converted``. Auto-discovers ``${leadId}``, ``${accountId}``, ``${contactId}``, ``${opportunityId}``, ``${campaignId}``, ``${convertedAccountId}``, ``${convertedContactId}``, and ``${convertedOpportunityId}`` -- skipping any that are unset or empty. Safe to call from a ``[Teardown]`` even when no records were created. Pass ``additional_pairs`` (SObject=Id strings) to clean up extra records not covered by the auto-discovery list, e.g. ``Cleanup Captured Records    Case=${caseId}``.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "teardown",
+        "cleanup"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
+    },
+    {
+      "keyword_name": "_Run SOQL With Retry",
+      "arguments": [
+        "${soql}"
+      ],
+      "documentation": "Internal: run a SOQL query via the live Selenium session; on ``INVALID_SESSION_ID`` (the API-eligible ``my.salesforce.com`` sid hasn't been set yet, which happens within ~1 s of the first login), wait briefly and retry once.",
+      "documentation_source": "author",
+      "natural_language_summary": "Internal: run a SOQL query via the live Selenium session; on ``INVALID_SESSION_ID`` (the API-eligible ``my.salesforce.com`` sid hasn't been set yet, which happens within ~1 s of the first login), wait briefly and retry once.",
+      "inferred_description": null,
+      "tags": [
+        "soql",
+        "internal"
+      ],
+      "source_file": "Resources/Common/SoqlVerify.robot"
     }
   ]
 }

@@ -2,6 +2,7 @@
 Library     SeleniumLibrary
 Resource    ../../TestData/Platform/SalesData.robot
 Resource    ../../Common/GlobalKeywords.robot
+Resource    ../../Common/HealKeywords.robot
 
 
 *** Keywords ***
@@ -14,7 +15,7 @@ Open New Contact From Sales App
     Open New Dialog    Contact
 
 Create A New Contact
-    [Documentation]    Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Attempt Save And Auto-Heal Missing Fields to recover from custom required-field validation errors.
+    [Documentation]    Fills the New Contact modal using SalesData contact variables. Uses Enter Text With Fallback for all text fields so custom orgs are handled gracefully. Salutation and other picklists use Open Dropdown And Select First Option for org-agnostic selection. Calls Save And Heal to run runtime healing with a legacy fallback path.
     ...
     ...    Optional named overrides (``first_name``, ``last_name``, ``email``, ``phone``, ``title``, ``account_name``) let callers pass values from the user prompt without redefining suite variables. Suite variables are kept in sync so verification picks up the same values. Call with ZERO args to use ``SalesData`` defaults.
     [Tags]    interaction    contact    modal
@@ -35,7 +36,7 @@ Create A New Contact
     IF    ${account_set}
         Enter Into Search Field    Account Name    ${contactAccountName}
     END
-    Attempt Save And Auto-Heal Missing Fields
+    Save And Heal    sobject=Contact
 
 Verify Contact Created Successfully
     [Documentation]    Confirms the Contact was saved via the success toast, then verifies Last Name and Title are visible on the record page.

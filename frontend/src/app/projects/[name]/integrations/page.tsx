@@ -96,13 +96,36 @@ function JiraTab({ slug }: { slug: string }) {
   const [issues, setIssues] = useState<JiraSyncedIssue[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Mirror-row selection (separate sets for sprints + issues so they
+  // don't visually interfere with each other). Each set holds the
+  // row's UUID `id` -- not the Jira `jira_id` -- so we can target a
+  // single connection's row without ambiguity. The "Remove from
+  // mirror" verb is deliberate: this does NOT delete in Atlassian.
+  const [selectedSprintRowIds, setSelectedSprintRowIds] = useState<string[]>([]);
+  const [selectedIssueRowIds, setSelectedIssueRowIds] = useState<string[]>([]);
 
   const refreshConnection = useCallback(async () => {
     setLoading(true);
     try {
       const c = await api.jira.getProjectConnection(slug);
-      setConn(c);
-      if (c) setForm((f) => ({ ...f, base_url: c.base_url, email: c.email, default_jira_project_key: c.default_jira_project_key || "" }));
+      // The backend may fall back to org-scoped credentials when there is no
+      // project-scoped Jira connection yet. For this page we only prefill when
+      // a real project-level connection exists; otherwise keep fields empty so
+      // users don't accidentally save inherited org credentials as project ones.
+      const isProjectScoped = !!c && c.scope === "project" && c.project_slug === slug;
+      if (isProjectScoped && c) {
+        setConn(c);
+        setForm((f) => ({
+          ...f,
+          base_url: c.base_url,
+          email: c.email,
+          default_jira_project_key: c.default_jira_project_key || "",
+          api_token: "",
+        }));
+      } else {
+        setConn(null);
+        setForm({ base_url: "", email: "", api_token: "", default_jira_project_key: "" });
+      }
     } finally {
       setLoading(false);
     }
@@ -156,6 +179,24 @@ function JiraTab({ slug }: { slug: string }) {
     }
   }
 
+  async function disconnect() {
+    setBusy("disconnect"); setError(null); setSyncStats(null);
+    try {
+      await api.jira.deleteProjectConnection(slug);
+      setConn(null);
+      setProjects([]);
+      setSelectedKey("");
+      setSprints([]);
+      setIssues([]);
+      setForm({ base_url: "", email: "", api_token: "", default_jira_project_key: "" });
+      setError("Jira connection removed.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function syncNow() {
     if (!selectedKey) return;
     setBusy("sync"); setError(null); setSyncStats(null);
@@ -164,6 +205,52 @@ function JiraTab({ slug }: { slug: string }) {
       setSyncStats(stats);
       void api.jira.listSyncedSprints(slug, selectedKey).then(setSprints).catch(() => {});
       void api.jira.listSyncedIssues(slug, { jiraProjectKey: selectedKey, limit: 50 }).then(setIssues).catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // --- Mirror-row delete helpers -----------------------------------
+  function toggleSprintRow(id: string) {
+    setSelectedSprintRowIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+  function toggleAllSprintRows() {
+    setSelectedSprintRowIds((prev) =>
+      prev.length === sprints.length ? [] : sprints.map((s) => s.id),
+    );
+  }
+  function toggleIssueRow(id: string) {
+    setSelectedIssueRowIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+  function toggleAllIssueRows() {
+    setSelectedIssueRowIds((prev) =>
+      prev.length === issues.length ? [] : issues.map((i) => i.id),
+    );
+  }
+  async function removeSprintsFromMirror(ids: string[]) {
+    if (ids.length === 0) return;
+    setBusy("remove-sprints"); setError(null);
+    try {
+      const res = await api.jira.bulkDeleteSyncedSprints(slug, ids);
+      setError(`Removed ${res.deleted} sprint(s) from the local mirror. Next "Sync now" will re-pull any rows still present in Atlassian.`);
+      setSelectedSprintRowIds([]);
+      void api.jira.listSyncedSprints(slug, selectedKey || undefined).then(setSprints).catch(() => {});
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  async function removeIssuesFromMirror(ids: string[]) {
+    if (ids.length === 0) return;
+    setBusy("remove-issues"); setError(null);
+    try {
+      const res = await api.jira.bulkDeleteSyncedIssues(slug, ids);
+      setError(`Removed ${res.deleted} issue(s) from the local mirror. Next "Sync now" will re-pull any rows still present in Atlassian.`);
+      setSelectedIssueRowIds([]);
+      void api.jira.listSyncedIssues(slug, { jiraProjectKey: selectedKey || undefined, limit: 50 }).then(setIssues).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -186,6 +273,7 @@ function JiraTab({ slug }: { slug: string }) {
           <Btn onClick={save} loading={busy === "save"}>Save connection</Btn>
           {conn && <Btn onClick={testConn} loading={busy === "test"} variant="ghost">Test</Btn>}
           {conn && <Btn onClick={loadProjects} loading={busy === "projects"} variant="ghost">List Jira projects</Btn>}
+          {conn && <Btn onClick={disconnect} loading={busy === "disconnect"} variant="ghost">Disconnect Jira</Btn>}
         </div>
         {error && <p className="text-amber-300 text-sm mt-3">{error}</p>}
       </Section>
@@ -202,32 +290,153 @@ function JiraTab({ slug }: { slug: string }) {
             <Btn onClick={syncNow} loading={busy === "sync"} disabled={!selectedKey}>Sync now</Btn>
           </div>
           {syncStats && (
-            <div className="text-sm text-slate-300 mt-4 grid grid-cols-4 gap-3">
-              <Stat label="Sprints" value={syncStats.sprints_upserted} />
-              <Stat label="Issues" value={syncStats.issues_upserted} />
-              <Stat label="Comments" value={syncStats.comments_upserted} />
-              <Stat label="Errors" value={syncStats.errors.length} />
+            <div className="mt-4 space-y-2">
+              <div className="text-sm text-slate-300 grid grid-cols-4 gap-3">
+                <Stat label="Sprints" value={syncStats.sprints_upserted} />
+                <Stat label="Issues" value={syncStats.issues_upserted} />
+                <Stat label="Comments" value={syncStats.comments_upserted} />
+                <Stat label="Errors" value={syncStats.errors.length} />
+              </div>
+              {syncStats.errors.length > 0 && (
+                /* The provider already swallows expected "this board has no
+                   sprints" 400s before they reach here, so anything in this
+                   list is genuinely interesting (auth fault on Agile API,
+                   per-issue comment fetch failure, etc.). Cap at 5 lines so
+                   one runaway sync doesn't drown the panel. */
+                <details className="text-xs bg-slate-900/60 border border-slate-800 rounded p-3">
+                  <summary className="cursor-pointer text-amber-300">
+                    {syncStats.errors.length} non-fatal issue
+                    {syncStats.errors.length === 1 ? "" : "s"} during sync
+                  </summary>
+                  <ul className="mt-2 space-y-1 list-disc pl-5 text-slate-400">
+                    {syncStats.errors.slice(0, 5).map((e, i) => (
+                      <li key={i} className="break-words">{e}</li>
+                    ))}
+                    {syncStats.errors.length > 5 && (
+                      <li className="text-slate-500 italic">
+                        ...and {syncStats.errors.length - 5} more (check backend logs)
+                      </li>
+                    )}
+                  </ul>
+                </details>
+              )}
             </div>
           )}
         </Section>
       )}
 
-      <Section title={`Imported sprints (${sprints.length})`}>
-        <Table headers={["Name", "State", "Start", "End", "Portal sprint"]} rows={sprints.map((s) => [
-          s.name, s.state,
-          s.start_date?.slice(0, 10) ?? "—",
-          s.end_date?.slice(0, 10) ?? "—",
-          s.portal_sprint_id ? <Link className="text-indigo-300 hover:underline" key={s.id} href={`/sprints/${s.portal_sprint_id}`}>open</Link> : <span className="text-slate-500">not imported</span>,
-        ])} empty="No synced sprints yet." />
+      <Section
+        title={`Imported sprints (${sprints.length})`}
+        subtitle="Mirror of /rest/agile/1.0/board sprints. 'Remove from mirror' deletes the local row only -- Atlassian is untouched, and the next 'Sync now' will re-pull anything still on the board."
+      >
+        {sprints.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <label className="inline-flex items-center gap-2 text-slate-300">
+              <input
+                type="checkbox"
+                checked={selectedSprintRowIds.length === sprints.length && sprints.length > 0}
+                onChange={toggleAllSprintRows}
+                className="accent-cyan-500"
+              />
+              Select all ({sprints.length})
+            </label>
+            <button
+              type="button"
+              disabled={selectedSprintRowIds.length === 0 || busy === "remove-sprints"}
+              onClick={() => void removeSprintsFromMirror(selectedSprintRowIds)}
+              className="px-3 py-1.5 rounded-lg border border-red-400/40 bg-red-500/10 text-red-200 hover:bg-red-500/20 disabled:opacity-40"
+            >
+              {busy === "remove-sprints"
+                ? "Working…"
+                : `Remove from mirror (${selectedSprintRowIds.length})`}
+            </button>
+          </div>
+        )}
+        <Table
+          headers={["", "Name", "State", "Start", "End", "Portal sprint", ""]}
+          rows={sprints.map((s) => [
+            <input
+              key={`cb-${s.id}`}
+              type="checkbox"
+              checked={selectedSprintRowIds.includes(s.id)}
+              onChange={() => toggleSprintRow(s.id)}
+              className="accent-cyan-500"
+              aria-label={`Select ${s.name}`}
+            />,
+            s.name,
+            s.state,
+            s.start_date?.slice(0, 10) ?? "—",
+            s.end_date?.slice(0, 10) ?? "—",
+            s.portal_sprint_id ? <Link className="text-indigo-300 hover:underline" key={s.id} href={`/sprints/${s.portal_sprint_id}`}>open</Link> : <span className="text-slate-500">not imported</span>,
+            <button
+              key={`rm-${s.id}`}
+              type="button"
+              onClick={() => void removeSprintsFromMirror([s.id])}
+              className="text-[11px] text-slate-400 hover:text-red-300"
+              title="Remove this row from the local mirror"
+            >
+              Remove
+            </button>,
+          ])}
+          empty="No synced sprints yet."
+        />
       </Section>
 
-      <Section title={`Imported issues (${issues.length})`}>
-        <Table headers={["Key", "Type", "Status", "Summary", "Portal story"]} rows={issues.map((i) => [
-          <span key={i.id} className="font-mono text-xs">{i.jira_key}</span>,
-          i.issue_type ?? "—", i.status ?? "—",
-          <span key={`s-${i.id}`} className="truncate block max-w-md">{i.summary}</span>,
-          i.portal_story_id ? <Link className="text-indigo-300 hover:underline" key={`p-${i.id}`} href={`/user-stories/${i.portal_story_id}`}>open</Link> : <span className="text-slate-500">not imported</span>,
-        ])} empty="No synced issues yet." />
+      <Section
+        title={`Imported issues (${issues.length})`}
+        subtitle="Mirror of /rest/api/3/search/jql results. Same 'mirror only' semantics as sprints."
+      >
+        {issues.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <label className="inline-flex items-center gap-2 text-slate-300">
+              <input
+                type="checkbox"
+                checked={selectedIssueRowIds.length === issues.length && issues.length > 0}
+                onChange={toggleAllIssueRows}
+                className="accent-cyan-500"
+              />
+              Select all ({issues.length})
+            </label>
+            <button
+              type="button"
+              disabled={selectedIssueRowIds.length === 0 || busy === "remove-issues"}
+              onClick={() => void removeIssuesFromMirror(selectedIssueRowIds)}
+              className="px-3 py-1.5 rounded-lg border border-red-400/40 bg-red-500/10 text-red-200 hover:bg-red-500/20 disabled:opacity-40"
+            >
+              {busy === "remove-issues"
+                ? "Working…"
+                : `Remove from mirror (${selectedIssueRowIds.length})`}
+            </button>
+          </div>
+        )}
+        <Table
+          headers={["", "Key", "Type", "Status", "Summary", "Portal story", ""]}
+          rows={issues.map((i) => [
+            <input
+              key={`cb-${i.id}`}
+              type="checkbox"
+              checked={selectedIssueRowIds.includes(i.id)}
+              onChange={() => toggleIssueRow(i.id)}
+              className="accent-cyan-500"
+              aria-label={`Select ${i.jira_key}`}
+            />,
+            <span key={i.id} className="font-mono text-xs">{i.jira_key}</span>,
+            i.issue_type ?? "—",
+            i.status ?? "—",
+            <span key={`s-${i.id}`} className="truncate block max-w-md">{i.summary}</span>,
+            i.portal_story_id ? <Link className="text-indigo-300 hover:underline" key={`p-${i.id}`} href={`/user-stories/${i.portal_story_id}`}>open</Link> : <span className="text-slate-500">not imported</span>,
+            <button
+              key={`rm-${i.id}`}
+              type="button"
+              onClick={() => void removeIssuesFromMirror([i.id])}
+              className="text-[11px] text-slate-400 hover:text-red-300"
+              title="Remove this row from the local mirror"
+            >
+              Remove
+            </button>,
+          ])}
+          empty="No synced issues yet."
+        />
       </Section>
     </div>
   );

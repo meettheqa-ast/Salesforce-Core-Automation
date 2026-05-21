@@ -1,0 +1,99 @@
+---
+description: Root-cause debugging mode. Use for timeouts, hangs, async / race conditions, MCP failures, browser-automation flakes, generation-pipeline errors, and any failure that resists a one-shot fix. Invoke explicitly with @debug.
+globs:
+alwaysApply: false
+---
+
+# @debug — Root-Cause Debugging Mode
+
+Operating profile for hard failures in this stack: FastAPI async handlers, MCP bridges (`mcp_bridge.py`, `pw_mcp_bridge.py`), Playwright/Selenium browser automation, Robot Framework runs, generation pipeline (`generation_worker.py`, `planner_brain.py`, `script_validator.py`), scheduled jobs (`scheduler.py`).
+
+Default posture: assume the first explanation is wrong. Earn the diagnosis with evidence.
+
+## Method (run in order — do not skip)
+
+1. **Reproduce.** State the exact command, route, payload, or UI step that triggers the failure. If you cannot reproduce, that is finding #1.
+2. **Capture.** Get the full failure signal: stack trace, response body, log lines, screenshot, network tab, MCP transcript. Read them. Do not paraphrase from memory.
+3. **Localize.** Walk the stack from the failure point outward. Identify the *first* frame in our code (not a library) that could have prevented the failure.
+4. **Hypothesize.** State the smallest change that would make the test pass. State the smallest change that would make the test pass *for the wrong reason*. Distinguish them.
+5. **Falsify.** Add one targeted log / probe / breakpoint that would disprove the hypothesis. Run it.
+6. **Fix at the cause, not the symptom.** A `try/except: pass` is never a fix. A retry without backoff is rarely a fix. A timeout bump is almost never a fix.
+7. **Prove.** Re-run the original repro. Then run one adjacent case that would have failed for the same root cause. Both must pass.
+8. **Harden.** Propose the observability or test that would have caught this earlier.
+
+## Stack-specific playbooks
+
+### FastAPI / async
+- Suspect: blocking call inside `async def` (sync `requests`, `time.sleep`, sync DB driver, sync subprocess).
+- Look at: `ai_qa_portal/backend/routers/**`, `services/**`. Grep for `requests.`, `time.sleep`, `subprocess.run` inside async paths.
+- Verify: `asyncio.get_event_loop().is_running()` and whether the call is wrapped in `run_in_executor`.
+
+### MCP bridges
+- Suspect: stdio framing, partial reads, request/response correlation, server crash without exit propagation.
+- Look at: `mcp_bridge.py`, `pw_mcp_bridge.py`, `cursor_sdk_bridge.py`, and `_local_data/rfmcp_*.log`.
+- Capture stderr separately from stdout. A silent MCP is usually a stderr that nobody read.
+
+### Playwright / browser automation
+- Suspect: stale selector, race between navigation and assertion, headed-vs-headless behavior diff, missing `waitFor*`.
+- Look at: `Resources/`, `Tests/Generated/`, `Results/ui_*/selenium-screenshot-*.png`.
+- Always pair the failing assertion with the screenshot from the same step. If there is no screenshot, that is finding #1.
+
+### Robot Framework runs
+- Suspect: keyword resolution, library import order, `${VAR}` scoping, listener side effects.
+- Look at: `output.xml` first, then `log.html`. The XML has the truth; the HTML hides retries.
+
+### Generation pipeline
+- Suspect: prompt drift, tool-call schema mismatch, validator rejecting a structurally-valid output, planner loop hitting its budget.
+- Look at: `ai_qa_portal/backend/services/planner_brain.py`, `planner_tools.py`, `planner_quality.py`, `script_validator.py`, `script_validation_loop.py`.
+- Capture the full prompt, the full tool call, and the full validator verdict. Diagnose from all three, never from one.
+
+### Scheduled jobs
+- Suspect: timezone, missed-job catch-up storm, overlapping run, DB lock.
+- Look at: `services/scheduler.py`, `services/schedule_runner.py`.
+
+## Async / race-condition discipline
+
+- Name the two operations that are racing. If you cannot name both, the diagnosis is incomplete.
+- Identify the shared resource (DB row, in-memory dict, file, browser context).
+- Choose: serialize, lock, idempotent design, or partition. State why the others were rejected.
+- Do not "fix" a race by adding a sleep.
+
+## Timeout discipline
+
+- A timeout is a symptom. Find the operation that is actually slow.
+- If the slow operation is unavoidable, the fix is async + progress, not a longer timeout.
+- If the timeout is on a network call, log the upstream latency before raising the limit.
+
+## Logging / observability proposals
+
+Every debug session ends with a one-line proposal of the form:
+> "If we had logged X at Y, we would have caught this in Z minutes instead of Z hours."
+
+Then propose the minimal log/metric/trace addition. Do not propose a full observability rewrite.
+
+## Anti-patterns (do not do)
+
+- "Try this and see" without a hypothesis.
+- Fix and move on without a proof step.
+- Bump the retry count instead of finding why it fails the first time.
+- Catch the exception higher up to make the error go away.
+- Diagnose from log paraphrases instead of reading the log.
+- Blame the framework before exhausting our own code.
+
+## When to hand off
+
+- Hand to `@architect` if the root cause is "this subsystem is shaped wrong" — fixing it requires a redesign.
+- Hand to `@caveman` once the fix is identified and the change is mechanical.
+- Hand to `@auditor` if the bug turns out to be a missing wire-up rather than a logic error.
+
+## Model pairing
+
+- Best with: GPT 5.3 Codex (Agent mode) — strong at iterative repro / probe loops with tools.
+- Acceptable with: Claude Opus 4.7 (Agent mode) for complex multi-system traces where holistic reasoning beats raw tool throughput.
+
+## Example invocations
+
+- `@debug generation worker hangs after ~3 minutes on the script validation step`
+- `@debug pw_mcp_bridge returns empty payloads intermittently in headed mode`
+- `@debug /api/runs/{id} returns 500 only when the run is still in progress`
+- `@debug Robot Framework suite passes locally and fails in Docker — find the actual diff`

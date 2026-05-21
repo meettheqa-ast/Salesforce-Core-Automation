@@ -11,7 +11,7 @@
  * that powers per-story / per-tag bulk runs.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -19,8 +19,11 @@ import AnimatedCard from "@/components/cards/AnimatedCard";
 import GlassSelect from "@/components/ui/GlassSelect";
 import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
 import AddStoryToSprintModal from "@/components/sprints/AddStoryToSprintModal";
-import { api } from "@/lib/api";
+import SelectionToolbar from "@/components/lists/SelectionToolbar";
+import ConfirmDeleteModal, { type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
+import { api, parseDeleteBlockersError, type BulkDeleteRowResult } from "@/lib/api";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
+import { useToast } from "@/components/ui/ToastProvider";
 
 type Sprint = {
   id: string;
@@ -70,6 +73,13 @@ export default function SprintDetailPage() {
   const [editForm, setEditForm] = useState({ name: "", goal: "", state: "planned", start_date: "", end_date: "" });
   const [err, setErr] = useState<string | null>(null);
   const [showAddStory, setShowAddStory] = useState(false);
+  // Story delete state. Mirrors /user-stories: this view shows live
+  // stories assigned to the sprint, so the toolbar mode stays "soft"
+  // (archive). Permanent purge happens on a different surface.
+  const [selectedStoryIds, setSelectedStoryIds] = useState<string[]>([]);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTargets, setConfirmTargets] = useState<StoryRow[]>([]);
+  const toast = useToast();
 
   const load = useCallback(() => {
     api.sprints.get(id).then((s: Sprint) => {
@@ -134,12 +144,61 @@ export default function SprintDetailPage() {
     }, 0);
   };
 
-  const removeStory = async (storyId: string) => {
+  const unassignStory = async (storyId: string) => {
     try {
       await api.sprints.unassignStory(id, storyId);
       load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not remove story from sprint");
+      setErr(e instanceof Error ? e.message : "Could not unassign story from sprint");
+    }
+  };
+
+  // Story selection helpers. Clear stale ids whenever the list changes
+  // so removing a story doesn't leave a phantom selection.
+  useEffect(() => {
+    setSelectedStoryIds((prev) => prev.filter((sid) => stories.some((s) => s.id === sid)));
+  }, [stories]);
+
+  const selectedStories = useMemo(
+    () => stories.filter((s) => selectedStoryIds.includes(s.id)),
+    [stories, selectedStoryIds],
+  );
+
+  const toggleStorySelection = (sid: string) => {
+    setSelectedStoryIds((prev) => (prev.includes(sid) ? prev.filter((x) => x !== sid) : [...prev, sid]));
+  };
+
+  const openDeleteStories = (targets: StoryRow[]) => {
+    if (targets.length === 0) return;
+    setConfirmTargets(targets);
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmStoryDelete = async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+    const ids = confirmTargets.map((t) => t.id);
+    try {
+      if (ids.length === 1) {
+        await api.userStories.delete(ids[0], false);
+      } else {
+        const res = await api.userStories.bulkDelete(ids, false);
+        const blocked = res.results.filter((r: BulkDeleteRowResult) => r.status === "skipped_blocked");
+        if (blocked.length > 0) {
+          return {
+            ok: false,
+            blockers: blocked.flatMap((r) => r.blockers || []),
+            message: `${blocked.length} stor${blocked.length === 1 ? "y" : "ies"} could not be archived.`,
+          };
+        }
+      }
+      toast.success(`${ids.length} stor${ids.length === 1 ? "y" : "ies"} archived.`);
+      setSelectedStoryIds([]);
+      load();
+      notifyTreeRefresh({ kind: "story", projectId: sprint?.project_id, sprintId: id });
+      return { ok: true };
+    } catch (err: unknown) {
+      const parsed = parseDeleteBlockersError(err);
+      if (parsed) return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+      return { ok: false, message: err instanceof Error ? err.message : "Archive failed" };
     }
   };
 
@@ -299,6 +358,15 @@ export default function SprintDetailPage() {
         )}
       </div>
 
+      <ConfirmDeleteModal
+        open={confirmOpen}
+        entityNoun="story"
+        targetLabels={confirmTargets.map((t) => t.title || t.id)}
+        mode="soft"
+        onConfirm={handleConfirmStoryDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
+
       {stories.length === 0 ? (
         <AnimatedCard className="mb-8 border border-dashed border-white/10">
           <p className="text-sm text-slate-400">
@@ -307,32 +375,61 @@ export default function SprintDetailPage() {
           </p>
         </AnimatedCard>
       ) : (
-        <div className="space-y-2 mb-8">
-          {stories.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10"
-            >
-              <Link
-                href={`/user-stories/${encodeURIComponent(s.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
-                className="flex items-center gap-2 min-w-0 flex-1 hover:text-purple-300"
+        <>
+          <SelectionToolbar
+            count={selectedStoryIds.length}
+            entityNoun="story"
+            mode="soft"
+            onSoftDelete={() => openDeleteStories(selectedStories)}
+            onClear={() => setSelectedStoryIds([])}
+          />
+          <div className="space-y-2 mb-8">
+            {stories.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10"
               >
-                <span className="text-sm text-slate-100 truncate">{s.title}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-600/30 text-purple-200">
-                  v{s.version}
-                </span>
-              </Link>
-              <button
-                type="button"
-                onClick={() => removeStory(s.id)}
-                className="text-[11px] text-slate-400 hover:text-red-300"
-                title="Remove story from this sprint (it goes back to the backlog)"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
+                <label className="flex items-center gap-2 min-w-0 flex-1">
+                  <input
+                    type="checkbox"
+                    checked={selectedStoryIds.includes(s.id)}
+                    onChange={() => toggleStorySelection(s.id)}
+                    className="accent-cyan-500"
+                  />
+                  <Link
+                    href={`/user-stories/${encodeURIComponent(s.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
+                    className="flex items-center gap-2 min-w-0 flex-1 hover:text-purple-300"
+                  >
+                    <span className="text-sm text-slate-100 truncate">{s.title}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-600/30 text-purple-200">
+                      v{s.version}
+                    </span>
+                  </Link>
+                </label>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Unassign: remove the story from this sprint (it returns to backlog).
+                      Distinct from Delete which archives the story entirely. */}
+                  <button
+                    type="button"
+                    onClick={() => unassignStory(s.id)}
+                    className="text-[11px] text-slate-400 hover:text-amber-300"
+                    title="Remove from this sprint (story goes back to the backlog)"
+                  >
+                    Unassign
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDeleteStories([s])}
+                    className="text-[11px] text-slate-400 hover:text-red-300"
+                    title="Archive this story (status → archived)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Run all approved cases */}

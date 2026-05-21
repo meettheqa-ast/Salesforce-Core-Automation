@@ -46,6 +46,7 @@ class TestCaseScriptBuilder:
         skip_dryrun: bool = False,
         db=None,
         project_slug: str | None = None,
+        user_id: str | None = None,
     ) -> str:
         """Compile an approved test case into a ``.robot`` file.
 
@@ -97,13 +98,26 @@ class TestCaseScriptBuilder:
             except Exception as exc:  # noqa: BLE001 -- RAG miss is non-fatal
                 logger.warning("RAG retrieval skipped for build: %s", exc)
 
-        system_prompt = assembler.build_system_prompt("builder")
+        # Resolve via the registry so org / project / user overrides for
+        # the builder role land here too. Provenance is captured for
+        # callers that want it (currently logged for traceability).
+        assembled = assembler.build_system_prompt_resolved(
+            "builder",
+            user_id=user_id,
+            project_id=str(tc.project_id) if getattr(tc, "project_id", None) else None,
+        )
+        system_prompt = assembled.text
         user_prompt = assembler.build_user_prompt_with_catalog(
             user_body,
             include_full_catalog=True,
             default_app=persona_default_app,
             rag_context=rag_block,
         )
+        if assembled.template_id:
+            logger.info(
+                "script_builder using template=%s version=%s scope=%s",
+                assembled.template_id, assembled.version_id, assembled.source_scope,
+            )
 
         if not validate:
             return call_llm(system_prompt, user_prompt)

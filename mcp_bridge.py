@@ -40,6 +40,18 @@ RESOURCE_FILES_TO_IMPORT = [
     "Resources/PO/Platform/SalesPO.robot",
 ]
 
+# Libraries we explicitly load into every session via manage_session(init).
+# Importing them as Robot libraries (rather than relying on resource-file
+# transitive imports) ensures they're registered in RF-MCP's RF native
+# context manager so keywords like ``Open Browser`` / ``Click Element`` are
+# resolvable AND so SeleniumLibrary's WebDriver state is owned by the
+# session that's also running our user keywords. Without this, Login To
+# Sandbox would parse fine but ``Open Browser`` would fail with "No
+# browser is open." on every subsequent keyword.
+SESSION_LIBRARIES_TO_IMPORT = [
+    "SeleniumLibrary",
+]
+
 # --- Session cache --------------------------------------------------------
 # Reusing an MCP session across consecutive Stepwise generations skips the
 # 15-25 s "open browser + log into Salesforce + import 5 resources" tax that
@@ -118,6 +130,9 @@ def is_server_running() -> bool:
     return False
 
 
+_RFMCP_LOG_FILE = ROOT / "_local_data" / "rfmcp_server.log"
+
+
 def start_mcp_server() -> subprocess.Popen:
     """Launch the RF-MCP HTTP server as a background subprocess.
 
@@ -135,17 +150,33 @@ def start_mcp_server() -> subprocess.Popen:
     _kill_orphan_on_port(port)
 
     cmd = [
-        _PYTHON, "-m", "robotmcp.server",
+        _PYTHON, "-u", "-m", "robotmcp.server",
         "--transport", "http",
         "--host", host,
         "--port", str(port),
     ]
     _logger.info("Starting RF-MCP server: %s", " ".join(cmd))
+    # Stream RF-MCP stdout/stderr to a log file so we can diagnose wedges
+    # post-hoc instead of guessing. The previous PIPE'd-but-never-read
+    # buffer would silently fill the OS pipe (default 64 KB on Windows)
+    # and block the subprocess on its NEXT print() -- which looked exactly
+    # like a wedge during long-running stepwise sessions. Writing to a real
+    # file removes that hidden backpressure entirely.
+    try:
+        _RFMCP_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        log_handle = open(_RFMCP_LOG_FILE, "ab", buffering=0)  # append, line-flushed
+    except OSError as exc:
+        _logger.warning(
+            "Could not open RF-MCP log file %s: %s; falling back to PIPE",
+            _RFMCP_LOG_FILE, exc,
+        )
+        log_handle = subprocess.PIPE
+
     _server_proc = subprocess.Popen(
         cmd,
         cwd=str(ROOT),
         env=_subprocess_env(),
-        stdout=subprocess.PIPE,
+        stdout=log_handle,
         stderr=subprocess.STDOUT,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
@@ -154,18 +185,106 @@ def start_mcp_server() -> subprocess.Popen:
     return _server_proc
 
 
+_MEMORY_PREWARM_DONE = False
+
+
+def _embedding_model_is_cached() -> bool:
+    """True when the sentence-transformers model RF-MCP wants is on disk.
+
+    RF-MCP's memory uses the small MiniLM model (~80 MB) by default. We
+    don't want to flip the env to `true` until the model is actually
+    cached, otherwise the first ``manage_session(init)`` would hang while
+    HuggingFace downloads. The check probes a few likely cache paths.
+    """
+    cache_root = Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface")
+    if not cache_root.exists():
+        return False
+    # Common transformer cache layout.
+    target_marker = "all-MiniLM-L6-v2"
+    for sub in ("hub", "transformers"):
+        sub_dir = cache_root / sub
+        if not sub_dir.exists():
+            continue
+        for child in sub_dir.iterdir():
+            try:
+                if target_marker in child.name:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def prewarm_memory_model() -> bool:
+    """Pre-download the sentence-transformers model in a way that's safe
+    to call from a background thread. Returns ``True`` when the model
+    is already cached or finished loading; ``False`` on any failure.
+
+    This is what makes the ``MCP_PLANNER_USE_RECALL`` feature usable in
+    practice: once the model is cached, RF-MCP's memory hooks load in
+    < 2 s and we can flip ``ROBOTMCP_MEMORY_ENABLED`` to ``true`` for
+    the next subprocess spawn.
+    """
+    global _MEMORY_PREWARM_DONE  # noqa: PLW0603
+    if _MEMORY_PREWARM_DONE:
+        return True
+    try:
+        # Lazy import so non-prewarm installs don't pay sentence-transformers
+        # import cost (it pulls torch).
+        from sentence_transformers import SentenceTransformer  # type: ignore
+
+        SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        _MEMORY_PREWARM_DONE = True
+        _logger.info("RF-MCP memory: embedding model prewarmed.")
+        return True
+    except Exception as exc:  # noqa: BLE001 -- best-effort prewarm
+        _logger.info(
+            "RF-MCP memory prewarm skipped (%s); memory will stay disabled "
+            "until the model is cached. Run `python -c \"from "
+            "sentence_transformers import SentenceTransformer; "
+            "SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')\"` "
+            "once to cache it.",
+            type(exc).__name__,
+        )
+        return False
+
+
+def _memory_should_be_enabled() -> bool:
+    """Decide whether to flip ``ROBOTMCP_MEMORY_ENABLED`` to true for the
+    next RF-MCP spawn.
+
+    Rules (first match wins):
+      1. If the operator explicitly set ``ROBOTMCP_MEMORY_ENABLED`` in
+         the parent env, honour that exactly (no override).
+      2. If the operator opted in via ``MCP_PLANNER_USE_RECALL=1`` AND
+         the embedding model is already cached on disk, enable memory.
+      3. Otherwise, keep memory off (avoids the cold-download wedge we
+         debugged at length).
+    """
+    explicit = os.environ.get("ROBOTMCP_MEMORY_ENABLED")
+    if explicit is not None:
+        return explicit.strip().lower() in ("1", "true", "yes", "on")
+    use_recall = (os.environ.get("MCP_PLANNER_USE_RECALL", "1") or "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+    if not use_recall:
+        return False
+    if _MEMORY_PREWARM_DONE:
+        return True
+    return _embedding_model_is_cached()
+
+
 def _subprocess_env() -> dict[str, str]:
     """Build the env for the RF-MCP subprocess.
 
     Defaults (overridable from the parent process or .env) we want every run:
 
-    * ``ROBOTMCP_MEMORY_ENABLED=true`` — turns on the persistent semantic-memory
-      tools (``recall_step``, ``recall_fix``, ``recall_locator``, ...). The
-      ``rf-mcp[memory]`` extra is required for these to register; we install
-      it via requirements.txt.
+    * ``ROBOTMCP_MEMORY_ENABLED`` — auto-decided by ``_memory_should_be_enabled``.
+      Memory tools (``recall_step``, ``recall_fix``, ``recall_locator``,
+      ``store_knowledge``) become available only when the embedding model
+      is already cached locally; otherwise memory stays off and the
+      planner falls back to its own DB-backed verified-recipe store.
     * ``ROBOTMCP_MEMORY_DB_PATH`` — points at ``_local_data/rfmcp_memory.db``
-      so the warm DB persists across restarts and lives in the project's
-      single per-machine data root.
+      so memory state lives under our per-machine data root.
     * ``ROBOTMCP_OUTPUT_VERBOSITY=compact`` — collapses oversized fields in
       every response. Saves 50-70% tokens on ``get_session_state`` polls.
     * ``ROBOTMCP_OUTPUT_MODE=auto`` — RF-MCP auto-selects delta responses on
@@ -176,7 +295,11 @@ def _subprocess_env() -> dict[str, str]:
     via .env or shell exports without touching code.
     """
     base = os.environ.copy()
-    base.setdefault("ROBOTMCP_MEMORY_ENABLED", "true")
+    memory_enabled = _memory_should_be_enabled()
+    base.setdefault(
+        "ROBOTMCP_MEMORY_ENABLED",
+        "true" if memory_enabled else "false",
+    )
     base.setdefault("ROBOTMCP_MEMORY_DB_PATH", str(_DEFAULT_MEMORY_DB))
     base.setdefault("ROBOTMCP_OUTPUT_VERBOSITY", "compact")
     base.setdefault("ROBOTMCP_OUTPUT_MODE", "auto")
@@ -373,8 +496,29 @@ def _get_or_create_event_loop() -> asyncio.AbstractEventLoop:
         return loop
 
 
+class MCPToolError(RuntimeError):
+    """Raised when an MCP tool call comes back with isError=True or success=False.
+
+    Without this, our bridge silently swallowed RF-MCP failures (e.g. "No
+    browser is open." when Login To Sandbox didn't load SeleniumLibrary).
+    Every step appeared to "pass" but nothing actually executed against the
+    browser, and ``build_test_suite`` then returned an empty suite because
+    no real steps had been recorded -- which was reported to the user as
+    "MCP returned empty suite. Falling back to Quick Generate.".
+    """
+
+
 async def _call_tool_async(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Open an MCP client session, call one tool, return the result dict."""
+    """Open an MCP client session, call one tool, return the result dict.
+
+    Raises ``MCPToolError`` when the MCP transport reports an error
+    (``result.isError``) or when the tool's own response payload signals
+    failure via ``success=False``. Callers can ``except MCPToolError`` to
+    react -- ``execute_step`` in particular relies on this so a failed
+    keyword surfaces as a real exception instead of a silent pass.
+    """
+    import json
+
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
 
@@ -389,10 +533,26 @@ async def _call_tool_async(tool_name: str, arguments: dict[str, Any]) -> dict[st
                     text_parts.append(block.text)
             combined = "\n".join(text_parts)
             try:
-                import json
-                return json.loads(combined)
+                payload: dict[str, Any] = json.loads(combined)
             except (ValueError, TypeError):
-                return {"raw": combined}
+                payload = {"raw": combined}
+
+            is_error = bool(getattr(result, "isError", False))
+            tool_success = payload.get("success") if isinstance(payload, dict) else None
+            if is_error or tool_success is False:
+                msg = ""
+                if isinstance(payload, dict):
+                    msg = (
+                        payload.get("error")
+                        or payload.get("message")
+                        or payload.get("guidance")
+                        or payload.get("raw")
+                        or ""
+                    )
+                if not msg:
+                    msg = combined or f"{tool_name} reported failure"
+                raise MCPToolError(str(msg)[:500])
+            return payload
 
 
 def _run_async_with_timeout(coro_factory, *, timeout: float, label: str):
@@ -458,6 +618,9 @@ def list_mcp_tools() -> list[dict[str, Any]]:
     return loop.run_until_complete(_list_tools_async())
 
 
+_MANAGE_SESSION_INIT_TIMEOUT_S = int(os.environ.get("MCP_MANAGE_SESSION_TIMEOUT_S", "30"))
+
+
 def init_session(
     sandbox_url: str,
     username: str,
@@ -475,13 +638,60 @@ def init_session(
     a 60 s orchestrator-timeout failure -- we observed this when the RF-MCP
     server's async loop crashed mid-flight on a prior request and stopped
     accepting new connections while still holding port 8765.
+
+    Second guard: the ``manage_session(action="init")`` call itself can
+    wedge inside RF-MCP (e.g. when memory hooks try to download a
+    sentence-transformers model on first call). We bound it with
+    ``MCP_MANAGE_SESSION_TIMEOUT_S`` (default 30 s) and on timeout we
+    forcibly restart RF-MCP, then retry once -- so a one-shot wedge on
+    subprocess startup self-heals instead of bubbling up as the parent
+    orchestrator's 180 s init timeout.
     """
     ensure_server_responsive(timeout=3.0)
 
     from run_test import write_envdata
     write_envdata(sandbox_url, username, password)
 
-    result = call_mcp_tool("manage_session", {"action": "init"})
+    cred_vars = {
+        "globalSandboxTestUrl": sandbox_url,
+        "sandboxUserNameInput": username,
+        "sandboxPasswordInput": password,
+    }
+
+    init_payload = {
+        "action": "init",
+        # Load SeleniumLibrary up-front so GlobalKeywords / SalesPO have
+        # the browser library registered in the same RF native context as
+        # the user keywords. Without this, ``Open Browser`` would parse
+        # but every subsequent keyword would fail with "No browser is
+        # open." -- the symptom we hit on first integration.
+        "libraries": list(SESSION_LIBRARIES_TO_IMPORT),
+        # Set the SF login variables in the same round-trip. The legacy
+        # ``set_variable`` action no longer exists in current RF-MCP; the
+        # plural ``set_variables`` does, but seeding here is one fewer
+        # round-trip and keeps init atomic.
+        "variables": cred_vars,
+    }
+
+    def _manage_init():
+        return _run_async_with_timeout(
+            lambda: _call_tool_async("manage_session", init_payload),
+            timeout=_MANAGE_SESSION_INIT_TIMEOUT_S,
+            label="MCP manage_session(init)",
+        )
+
+    try:
+        result = _manage_init()
+    except TimeoutError as exc:
+        _logger.warning(
+            "manage_session(init) wedged (%s) -- restarting RF-MCP and retrying once",
+            exc,
+        )
+        stop_mcp_server()
+        start_mcp_server()
+        ensure_server_responsive(timeout=5.0)
+        result = _manage_init()
+
     session_id = result.get("session_id", "")
     if not session_id:
         raise RuntimeError(f"MCP session init failed: {result}")
@@ -505,21 +715,24 @@ def init_session(
         except Exception as exc:
             _logger.warning("Could not import %s: %s", resource_path, exc)
 
-    cred_vars = {
-        "globalSandboxTestUrl": sandbox_url,
-        "sandboxUserNameInput": username,
-        "sandboxPasswordInput": password,
-    }
-    for name, value in cred_vars.items():
-        try:
-            call_mcp_tool("manage_session", {
-                "action": "set_variable",
-                "session_id": session_id,
-                "name": name,
-                "value": value,
-            })
-        except Exception as exc:
-            _logger.warning("Could not set variable %s: %s", name, exc)
+    # Bring up the browser. Begin Web Test is the suite setup keyword in
+    # GlobalKeywords.robot -- it's what every generated suite calls before
+    # the first Login To Sandbox. During Stepwise execution there is no
+    # Suite Setup phase, so we have to call it explicitly here. Without
+    # this, every subsequent Login / navigation keyword fails immediately
+    # with "No browser is open." and build_test_suite serializes a script
+    # full of `# FAILED:` step comments.
+    try:
+        call_mcp_tool("execute_step", {
+            "session_id": session_id,
+            "keyword": "GlobalKeywords.Begin Web Test",
+            "arguments": [],
+        })
+    except Exception as exc:
+        _logger.warning(
+            "Could not run GlobalKeywords.Begin Web Test (browser warm-up): %s",
+            exc,
+        )
 
     return session_id
 
@@ -567,6 +780,14 @@ def get_or_init_session(
     return session_id, False
 
 
+class StepExecutionFailed(MCPToolError):
+    """A keyword executed but failed (e.g. element not found, assertion failed).
+
+    Distinct from ``MCPToolError`` so callers can choose to keep going on a
+    bad keyword while still aborting on a transport / session-level failure.
+    """
+
+
 def execute_step(
     session_id: str,
     keyword: str,
@@ -581,18 +802,44 @@ def execute_step(
     later steps can reference as ``${name}``. ``timeout_ms`` overrides RF-MCP's
     automatic per-keyword timeout — useful for long Salesforce loads where
     the default is too aggressive.
+
+    NOTE on the parameter name: RF-MCP's ``execute_step`` tool takes
+    ``arguments`` (not ``args``). When we sent ``args=...`` the FastMCP
+    pydantic validator silently rejected each call with
+    ``unexpected_keyword_argument`` and the keyword body never executed --
+    every step appeared to "pass" in <500 ms because nothing actually ran
+    against the browser. Mapping ``args`` -> ``arguments`` here is the fix.
+
+    NOTE on raise_on_failure: we pass ``raise_on_failure=False`` so RF-MCP
+    *records* the failed step in the session's step list (and returns
+    ``success=False``) rather than throwing before persisting. Without this
+    flag, ``build_test_suite`` would see an empty session whenever any
+    keyword failed and emit an empty .robot file -- which the Stepwise
+    pipeline then surfaced as "MCP returned empty suite. Falling back to
+    Quick Generate.". We translate the ``success=False`` payload into a
+    ``StepExecutionFailed`` exception here so generate.py keeps its
+    pass/fail accounting; the underlying step is still in the session and
+    will appear in the generated suite.
     """
     payload: dict[str, Any] = {
         "session_id": session_id,
         "keyword": keyword,
+        "raise_on_failure": False,
     }
     if args:
-        payload["args"] = args
+        payload["arguments"] = list(args)
     if assign_to:
         payload["assign_to"] = assign_to
     if timeout_ms is not None:
         payload["timeout_ms"] = int(timeout_ms)
-    return call_mcp_tool("execute_step", payload)
+
+    try:
+        return call_mcp_tool("execute_step", payload)
+    except MCPToolError as exc:
+        # Tool-level failure that wasn't a clean "success: False" payload
+        # (e.g. validation error). Re-raise as a step failure so the caller
+        # can treat it the same way it treats keyword failures.
+        raise StepExecutionFailed(str(exc)) from exc
 
 
 def execute_batch(
@@ -674,12 +921,29 @@ def build_suite(session_id: str, test_name: str = "Generated Test") -> str:
     """Ask RF-MCP to build a .robot file from the validated steps.
 
     Returns the Robot source code string.
+
+    NOTE on field names: current RF-MCP returns ``rf_text`` (the field used
+    to be ``suite_content`` in older releases; both names are checked here
+    for forward/backward compatibility). When neither is present we fall
+    back to the raw response so the empty-suite branch in generate.py
+    surfaces a useful error instead of silently truncating.
     """
     result = call_mcp_tool("build_test_suite", {
         "session_id": session_id,
         "test_name": test_name,
     })
-    return result.get("suite_content", result.get("raw", ""))
+    if not isinstance(result, dict):
+        return ""
+    suite = result.get("rf_text") or result.get("suite_content") or ""
+    if isinstance(suite, str) and suite.strip():
+        return suite
+    # Some RF-MCP responses nest the script under suite -> rf_text.
+    nested = result.get("suite") or {}
+    if isinstance(nested, dict):
+        suite = nested.get("rf_text") or nested.get("suite_content") or ""
+        if isinstance(suite, str) and suite.strip():
+            return suite
+    return result.get("raw", "")
 
 
 def analyze_scenario(scenario: str, session_id: str = "") -> dict[str, Any]:

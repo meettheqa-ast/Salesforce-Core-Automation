@@ -27,6 +27,8 @@ from .routers import (
     analytics,
     catalog,
     generate,
+    heal,
+    imports as imports_router,
     integrations,
     invitations,
     llm,
@@ -37,6 +39,7 @@ from .routers import (
     orgs,
     personas,
     projects,
+    prompts as prompts_router,
     runs,
     salesforce,
     sprints,
@@ -70,6 +73,10 @@ _explicit_origins = sorted({
 _origin_regex = (
     r"^(https?://localhost(:\d+)?"
     r"|https?://127\.0\.0\.1(:\d+)?"
+    # Allow local-network dev origins (e.g. http://10.15.0.52:3000)
+    r"|https?://10(?:\.\d{1,3}){3}(:\d+)?"
+    r"|https?://192\.168(?:\.\d{1,3}){2}(:\d+)?"
+    r"|https?://172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}(:\d+)?"
     r"|https://sf-core-automation(-[a-z0-9-]+)?\.vercel\.app)$"
 )
 
@@ -93,6 +100,7 @@ app.include_router(personas.router)
 app.include_router(runs.router)
 app.include_router(runs.exec_router)
 app.include_router(generate.router)
+app.include_router(heal.router)
 app.include_router(mcp.router)
 app.include_router(salesforce.router)
 app.include_router(catalog.router)
@@ -104,6 +112,8 @@ app.include_router(test_cases.router)
 app.include_router(tags.router)
 app.include_router(llm.router)
 app.include_router(integrations.router)
+app.include_router(imports_router.router)
+app.include_router(prompts_router.router)
 app.include_router(visual_regression.router)
 app.include_router(users.router)
 app.include_router(admin.router)
@@ -130,6 +140,21 @@ def _prewarm_rfmcp() -> None:
         logger.info("RF-MCP pre-warmed at %s", mcp_bridge.mcp_url())
     except Exception as exc:  # noqa: BLE001 -- pre-warm is best-effort
         logger.warning("RF-MCP pre-warm failed (non-fatal): %s", exc)
+
+
+def _prewarm_memory_model() -> None:
+    """Best-effort: ensure the sentence-transformers embedding model RF-MCP
+    needs for semantic memory is cached on disk. Once cached, subsequent
+    RF-MCP spawns can enable memory without the cold-download wedge.
+
+    Skip silently when sentence-transformers isn't installed -- the
+    planner brain falls back to its own DB-backed verified-recipe store.
+    """
+    try:
+        import mcp_bridge
+        mcp_bridge.prewarm_memory_model()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("memory model prewarm skipped: %s", exc)
 
 
 def _probe_ollama() -> None:
@@ -173,12 +198,35 @@ def _probe_ollama() -> None:
 @app.on_event("startup")
 def _on_startup() -> None:
     init_db()
+    # Seed system prompt templates -- idempotent + content-aware. Safe
+    # to call on every boot; appends a new system version only when a
+    # seed .md changed since last run (release upgrade).
+    try:
+        from .services.db import SessionLocal
+        from .services.prompt_registry import seed_system_templates
+        db = SessionLocal()
+        try:
+            seed_system_templates(db)
+        finally:
+            db.close()
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.warning("prompt seed failed at startup: %s", exc)
     if os.environ.get("MCP_PREWARM", "1").strip() not in ("0", "false", "False", ""):
         threading.Thread(target=_prewarm_rfmcp, name="rfmcp-prewarm", daemon=True).start()
     # Probe Ollama once at startup (non-blocking via thread). The
     # reachability cache then drives the failover chain build for the
     # next 60s; subsequent probes happen lazily inside _has_api_key.
     threading.Thread(target=_probe_ollama, name="ollama-probe", daemon=True).start()
+    # Pre-cache the sentence-transformers embedding model in the
+    # background. Once it's on disk we can enable RF-MCP semantic memory
+    # without the cold-download wedge that would otherwise hang
+    # manage_session(init) for ~5 minutes on first call.
+    if os.environ.get("MCP_MEMORY_PREWARM", "1").strip() not in ("0", "false", "False", ""):
+        threading.Thread(
+            target=_prewarm_memory_model,
+            name="rfmcp-memory-prewarm",
+            daemon=True,
+        ).start()
 
     # Start APScheduler and re-register every enabled local schedule.
     # github_actions schedules are intentionally not registered here --
@@ -201,6 +249,11 @@ def _on_shutdown() -> None:
     try:
         from .services import scheduler as _scheduler_service
         _scheduler_service.shutdown()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .services.generation_worker import shutdown_generation_pool
+        shutdown_generation_pool()
     except Exception:  # noqa: BLE001
         pass
 

@@ -13,7 +13,18 @@ from __future__ import annotations
 
 from .context import ContextFile, ContextFileRow
 from .embeddings import Embedding, EmbeddingSourceKind
+from .generation import GenerationJob, GenerationMetric, GenerationStatus
+from .heal import HealEvent, OrgFieldLearning
+from .imports import ImportBatch
+from .prompts import (
+    PromptMeta,
+    PromptOverride,
+    PromptTemplate,
+    PromptUsageAudit,
+    PromptVersion,
+)
 from .github import GitHubAuthKind, GitHubConnection, GitHubRepo, GitHubScope
+from .planner import KeywordOutcome, VerifiedRecipe
 from .jira import (
     JiraComment,
     JiraConnection,
@@ -31,7 +42,19 @@ __all__ = [
     "ContextFileRow",
     "Embedding",
     "EmbeddingSourceKind",
+    "GenerationJob",
+    "GenerationMetric",
+    "GenerationStatus",
+    "HealEvent",
+    "ImportBatch",
+    "PromptMeta",
+    "PromptOverride",
+    "PromptTemplate",
+    "PromptUsageAudit",
+    "PromptVersion",
     "GitHubAuthKind",
+    "KeywordOutcome",
+    "VerifiedRecipe",
     "GitHubConnection",
     "GitHubRepo",
     "GitHubScope",
@@ -49,5 +72,6 @@ __all__ = [
     "ScheduleTargetKind",
     "TestDataRow",
     "TestDataTable",
+    "OrgFieldLearning",
     "VectorColumn",
 ]

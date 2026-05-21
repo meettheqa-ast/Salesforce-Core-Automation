@@ -1,4 +1,28 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const _configuredApiBase = (process.env.NEXT_PUBLIC_API_URL || "").trim();
+const _localhostHosts = new Set(["localhost", "127.0.0.1"]);
+const _runtimeDefaultApiBase =
+  typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://localhost:8000";
+
+const API_BASE = (() => {
+  const normalized = (v: string) => v.replace(/\/+$/, "");
+  if (!_configuredApiBase) return normalized(_runtimeDefaultApiBase);
+  if (typeof window === "undefined") return normalized(_configuredApiBase);
+  try {
+    const parsed = new URL(_configuredApiBase);
+    const currentHost = window.location.hostname;
+    // If env points to localhost but UI is opened via LAN host/IP, rewrite to
+    // the current host so browser fetches the reachable backend origin.
+    if (_localhostHosts.has(parsed.hostname) && !_localhostHosts.has(currentHost)) {
+      parsed.hostname = currentHost;
+      return normalized(parsed.toString());
+    }
+  } catch {
+    // Keep original value on malformed URL; caller will surface a useful error.
+  }
+  return normalized(_configuredApiBase);
+})();
 
 // --- Auth token plumbing -------------------------------------------------
 // Fetched lazily from /api/auth/jwt the first time `apiFetch` runs in the
@@ -123,6 +147,81 @@ export async function prepareAuth(): Promise<void> {
 // a token available for sync URL builders below.
 if (typeof window !== "undefined") {
   void _fetchJwt();
+}
+
+// --- Delete lifecycle types ----------------------------------------------
+// Shared shapes used by every delete + bulk-delete helper on this client.
+// The backend returns 409 with a structured body when a hard delete is
+// blocked by live children; we want the UI to render the blocker list
+// cleanly without each page reparsing `error.message`.
+
+/** One row that prevented a hard delete from succeeding. */
+export interface DeleteBlocker {
+  id: string;
+  label: string;
+  reason: string;
+}
+
+/** Per-id result returned by the bulk-delete endpoints. Mirrors the
+ *  backend's pydantic model so the frontend can switch on `status`
+ *  exhaustively. */
+export interface BulkDeleteRowResult {
+  id: string;
+  status:
+    | "soft_deleted"
+    | "hard_deleted"
+    | "skipped_blocked"
+    | "skipped_forbidden"
+    | "skipped_not_found"
+    | "skipped_invalid_state";
+  detail?: string;
+  blockers?: DeleteBlocker[];
+}
+
+export interface BulkDeleteResponse {
+  results: BulkDeleteRowResult[];
+}
+
+/** Pulls the structured 409 body out of an apiFetch Error. Returns
+ *  null when the error isn't a 409 with the documented shape so
+ *  callers can fall through to generic error handling. */
+export function parseDeleteBlockersError(
+  err: unknown,
+): { detail: string; blockers: DeleteBlocker[] } | null {
+  if (!(err instanceof Error)) return null;
+  // apiFetch's error shape: `API 409: {"detail":"...","blockers":[...]}`
+  // ``[\s\S]`` lets us span newlines without requiring the ``s`` (dotAll)
+  // regex flag, which is only available in ES2018+; tsconfig targets a
+  // lower revision on this project.
+  const m = /^API\s+409:\s*([\s\S]*)$/.exec(err.message);
+  if (!m) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(m[1]);
+  } catch {
+    return null;
+  }
+  if (!body || typeof body !== "object") return null;
+  // FastAPI wraps custom detail in {"detail": ...}; the inner detail
+  // may itself be the structured object when we passed a dict.
+  let inner: any = body;
+  if ("detail" in inner) {
+    inner = (inner as any).detail;
+  }
+  if (typeof inner === "string") {
+    return { detail: inner, blockers: [] };
+  }
+  if (inner && typeof inner === "object" && Array.isArray((inner as any).blockers)) {
+    return {
+      detail: String((inner as any).detail || "Delete refused"),
+      blockers: ((inner as any).blockers as any[]).map((b) => ({
+        id: String(b.id),
+        label: String(b.label || b.id),
+        reason: String(b.reason || ""),
+      })),
+    };
+  }
+  return null;
 }
 
 export type RunStatus = "PASS" | "FAIL" | "EMPTY" | "VISUAL_DRIFT";
@@ -680,11 +779,42 @@ export const api = {
         method: "POST",
         body: "{}",
       }),
+    /** Two-step delete. Default soft-archives (`status -> archived`);
+     *  `permanent=true` hard-deletes the JSON row + indexes once every
+     *  test case under the story is rejected. The 409 body lists the
+     *  live test cases as blockers. */
+    delete: (id: string, permanent: boolean = false) => {
+      const sp = permanent ? "?permanent=true" : "";
+      return apiFetch<any>(`/user-stories/${encodeURIComponent(id)}${sp}`, { method: "DELETE" });
+    },
+    bulkDelete: (ids: string[], permanent: boolean = false) =>
+      apiFetch<BulkDeleteResponse>(`/user-stories/bulk-delete`, {
+        method: "POST",
+        body: JSON.stringify({ ids, permanent }),
+      }),
   },
   testCases: {
     get: (id: string) => apiFetch<any>(`/test-cases/${encodeURIComponent(id)}`),
-    list: (userStoryId: string) =>
-      apiFetch<any[]>(`/test-cases?user_story_id=${encodeURIComponent(userStoryId)}`),
+    /** List test cases for a story. Pass `includeArchived: true` to
+     *  surface rows whose status is `rejected` (the Archived bucket).
+     *  Default is false; the backend filters them out so list views
+     *  don't accidentally show stale work. */
+    list: (
+      userStoryId: string,
+      opts?: { includeArchived?: boolean },
+    ) => {
+      const qs = new URLSearchParams({ user_story_id: userStoryId });
+      if (opts?.includeArchived) qs.set("include_archived", "true");
+      return apiFetch<any[]>(`/test-cases?${qs.toString()}`);
+    },
+    /** Restore a previously-archived test case (status: rejected -> draft).
+     *  Dedicated endpoint instead of a generic patch so the audit log
+     *  has a distinct `tc_restored` action. */
+    restore: (id: string) =>
+      apiFetch<any>(`/test-cases/${encodeURIComponent(id)}/restore`, {
+        method: "POST",
+        body: "{}",
+      }),
     /** Per-case patch. Every field is optional -- the backend applies only
      *  what's sent. Editing any of title / steps / expected_result /
      *  preconditions clears `script_path` so the next bulk run re-builds. */
@@ -786,6 +916,20 @@ export const api = {
         tags: string[];
       }>;
     }) => apiFetch<any>("/test-cases/batch-approve", { method: "POST", body: JSON.stringify(data) }),
+    /** Two-step delete. Default soft-rejects (`status -> rejected`,
+     *  matches the existing "Reject" button via `patch`); `permanent=
+     *  true` purges the JSON row + on-disk Robot script + history.
+     *  No children to check, so no 409 path -- the only refusal is
+     *  "test case is not yet rejected" (409 with detail message). */
+    delete: (id: string, permanent: boolean = false) => {
+      const sp = permanent ? "?permanent=true" : "";
+      return apiFetch<any>(`/test-cases/${encodeURIComponent(id)}${sp}`, { method: "DELETE" });
+    },
+    bulkDelete: (ids: string[], permanent: boolean = false) =>
+      apiFetch<BulkDeleteResponse>(`/test-cases/bulk-delete`, {
+        method: "POST",
+        body: JSON.stringify({ ids, permanent }),
+      }),
   },
   tags: {
     list: (projectId: string) => apiFetch<any[]>(`/tags?project_id=${encodeURIComponent(projectId)}`),
@@ -828,10 +972,26 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(body),
     }),
-    /** Soft-delete: state -> cancelled and every assigned story has
-     *  sprint_id cleared back to null. */
-    delete: (id: string) =>
-      apiFetch<any>(`/sprints/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    /** Two-step lifecycle delete. Default (`permanent=false`)
+     *  soft-cancels the sprint and unlinks its stories; the row stays
+     *  in the JSON store so it can be permanently deleted later. With
+     *  `permanent=true` the backend hard-deletes the row, refusing
+     *  with 409 + a blocker list when live stories remain (caller
+     *  archives them first). The 409 body is parsed by
+     *  ``parseDeleteBlockersError`` so the UI can render the blocker
+     *  list without bespoke string slicing. */
+    delete: (id: string, permanent: boolean = false) => {
+      const sp = permanent ? "?permanent=true" : "";
+      return apiFetch<any>(`/sprints/${encodeURIComponent(id)}${sp}`, { method: "DELETE" });
+    },
+    /** Same lifecycle, applied to a list of ids. Always returns 200
+     *  with per-id results so the UI can render mixed outcomes
+     *  (some soft-deleted, some hard-deleted, some blocked). */
+    bulkDelete: (ids: string[], permanent: boolean = false) =>
+      apiFetch<BulkDeleteResponse>(`/sprints/bulk-delete`, {
+        method: "POST",
+        body: JSON.stringify({ ids, permanent }),
+      }),
     assignStory: (sprintId: string, storyId: string) =>
       apiFetch<any>(
         `/sprints/${encodeURIComponent(sprintId)}/stories/${encodeURIComponent(storyId)}/assign`,
@@ -900,6 +1060,28 @@ export const api = {
     stepwise: (data: any) => apiFetch<any>("/api/generate/mcp-stepwise", { method: "POST", body: JSON.stringify(data) }),
     /** SSE -- the JWT is embedded in the query string because EventSource cannot set headers. */
     stepwiseStreamUrl: () => withAuthQuery(`${API_BASE}/api/generate/mcp-stepwise/stream`),
+    jobs: {
+      create: (data: any) =>
+        apiFetch<{ job_id: string }>("/api/generate/jobs", {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      status: (jobId: string) =>
+        apiFetch<GenerationJobSnapshot>(`/api/generate/jobs/${encodeURIComponent(jobId)}`),
+      inFlight: () =>
+        apiFetch<{ job: { id: string; status: string; mode: string; current_phase: string; event_seq: number } | null }>(
+          "/api/generate/jobs/in-flight",
+        ),
+      cancel: (jobId: string) =>
+        apiFetch<{ ok: boolean; status: string; cancellation_requested_at?: string }>(
+          `/api/generate/jobs/${encodeURIComponent(jobId)}/cancel`,
+          { method: "POST", body: "{}" },
+        ),
+      eventsUrl: (jobId: string, fromSeq = 0) =>
+        withAuthQuery(
+          `${API_BASE}/api/generate/jobs/${encodeURIComponent(jobId)}/events?from=${fromSeq}`,
+        ),
+    },
     /** Deterministic recipe registry. Drives the "Recipes" panel in /generate. */
     recipes: () => apiFetch<Array<{ name: string; description: string; sample_prompt: string }>>("/api/generate/recipes"),
     /** Save edited generated script to disk. */
@@ -936,6 +1118,33 @@ export const api = {
           `/api/generate/record/${encodeURIComponent(sessionId)}/stop`,
           { method: "POST", body: "{}" },
         ),
+    },
+  },
+  heal: {
+    save: (data: {
+      session_id: string;
+      sobject: string;
+      save_action?: string;
+      duplicate_strategy?: string;
+      project_slug?: string;
+      run_id?: string;
+      job_id?: string;
+      step_index?: number;
+      sandbox_url?: string;
+      username?: string;
+      password?: string;
+    }) =>
+      apiFetch<any>("/api/heal/save", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    events: (params: { run_id?: string; job_id?: string; project_slug?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params.run_id) q.set("run_id", params.run_id);
+      if (params.job_id) q.set("job_id", params.job_id);
+      if (params.project_slug) q.set("project_slug", params.project_slug);
+      q.set("limit", String(params.limit ?? 100));
+      return apiFetch<{ events: HealEventRow[] }>(`/api/heal/events?${q.toString()}`);
     },
   },
   runs: {
@@ -1133,6 +1342,31 @@ export const api = {
         `/projects/${encodeURIComponent(slug)}/integrations/jira/import`,
         { method: "POST", body: JSON.stringify(body) },
       ),
+    /** Remove a synced sprint from the local mirror (Atlassian is
+     *  untouched -- the next "Sync now" will re-pull it unless you
+     *  also filter it out on the Atlassian side). */
+    deleteSyncedSprint: (slug: string, rowId: string) =>
+      apiFetch<{ id: string; status: string }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/sprints/${encodeURIComponent(rowId)}`,
+        { method: "DELETE" },
+      ),
+    bulkDeleteSyncedSprints: (slug: string, ids: string[]) =>
+      apiFetch<{ deleted: number; deleted_ids: string[]; skipped: string[] }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/sprints/bulk-delete`,
+        { method: "POST", body: JSON.stringify({ ids }) },
+      ),
+    /** Remove a synced issue from the local mirror (cascades to its
+     *  jira_comments rows). Atlassian is untouched. */
+    deleteSyncedIssue: (slug: string, rowId: string) =>
+      apiFetch<{ id: string; status: string }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/issues/${encodeURIComponent(rowId)}`,
+        { method: "DELETE" },
+      ),
+    bulkDeleteSyncedIssues: (slug: string, ids: string[]) =>
+      apiFetch<{ deleted: number; deleted_ids: string[]; skipped: string[] }>(
+        `/projects/${encodeURIComponent(slug)}/integrations/jira/issues/bulk-delete`,
+        { method: "POST", body: JSON.stringify({ ids }) },
+      ),
   },
 
   // ---- GitHub integration ----
@@ -1199,6 +1433,157 @@ export const api = {
       apiFetch<void>(`/projects/${encodeURIComponent(slug)}/context-files/${encodeURIComponent(fileId)}`, {
         method: "DELETE",
       }),
+  },
+
+  // ---- AI Prompt Management ----
+  //
+  // Backend lives at /api/prompts. The Settings -> AI Prompts page
+  // walks the resolver UI through:
+  //   list() -> get(id) -> appendVersion / activate / reset / preview
+  //
+  // Resolution chain is sparse user -> project -> org -> system seed,
+  // so the list view labels each row with its `source_scope` (see
+  // PromptActiveOverride.scope) and lets admins flip the org default.
+  prompts: {
+    categories: () =>
+      apiFetch<PromptCategory[]>("/api/prompts/categories"),
+    list: (opts?: { category?: string; includeDeleted?: boolean; mineOnly?: boolean }) => {
+      const qs = new URLSearchParams();
+      if (opts?.category) qs.set("category", opts.category);
+      if (opts?.includeDeleted) qs.set("include_deleted", "true");
+      if (opts?.mineOnly) qs.set("mine_only", "true");
+      const q = qs.toString();
+      return apiFetch<PromptTemplateSummary[]>(`/api/prompts${q ? `?${q}` : ""}`);
+    },
+    get: (id: string, versionsLimit = 50) =>
+      apiFetch<PromptTemplateDetail>(
+        `/api/prompts/${encodeURIComponent(id)}?versions_limit=${versionsLimit}`,
+      ),
+    /** Fetch a single version's full body (versions listed on get()
+     *  only carry metadata; the body is heavy and lazy-loaded). */
+    getVersion: (id: string, versionNumber: number) =>
+      apiFetch<PromptVersionBody>(
+        `/api/prompts/${encodeURIComponent(id)}/versions/${versionNumber}`,
+      ),
+    /** Create a user / project / org clone (or a blank template) and
+     *  return the detail shape. */
+    create: (body: PromptCreateRequest) =>
+      apiFetch<PromptTemplateDetail>("/api/prompts", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    /** Append a new immutable version (the "save" action in the
+     *  editor). */
+    appendVersion: (id: string, body: { body: string; change_note?: string }) =>
+      apiFetch<PromptVersionSummary>(
+        `/api/prompts/${encodeURIComponent(id)}/versions`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Pin a specific version as the active override for a scope.
+     *  Replaces any existing override row for (scope, scope_id, category). */
+    activate: (
+      id: string,
+      body: { version_number: number; scope: "user" | "project" | "org"; scope_id?: string | null },
+    ) =>
+      apiFetch<PromptActiveOverride>(
+        `/api/prompts/${encodeURIComponent(id)}/activate`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Remove a scope's override row -- the resolver falls back to the
+     *  next layer (project -> org -> system seed). */
+    reset: (
+      id: string,
+      body: { scope: "user" | "project" | "org"; scope_id?: string | null },
+    ) =>
+      apiFetch<{ removed_override: boolean; category: string }>(
+        `/api/prompts/${encodeURIComponent(id)}/reset`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Render the latest version body against a context dict without
+     *  hitting the LLM. ``strict=false`` lets the user preview even
+     *  when context fields are missing (rendered as ""). */
+    preview: (id: string, body: { context: Record<string, unknown>; strict?: boolean }) =>
+      apiFetch<PromptPreviewResponse>(
+        `/api/prompts/${encodeURIComponent(id)}/preview`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Render + send to LLM + parse the response, without persisting.
+     *  Used by the editor's Preview tab to verify a draft prompt
+     *  produces parseable output for the template's output_format
+     *  before the user activates it for real generation runs. */
+    dryRun: (
+      id: string,
+      body: { context: Record<string, unknown>; user_message?: string; qa_mode?: string },
+    ) =>
+      apiFetch<PromptDryRunResponse>(
+        `/api/prompts/${encodeURIComponent(id)}/dry-run`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    /** Soft delete (sets deleted_at) by default; ?permanent=true is
+     *  admin-only and drops the row + cascades to its versions. */
+    delete: (id: string, opts?: { permanent?: boolean }) =>
+      apiFetch<{ id: string; status: "soft" | "permanent" }>(
+        `/api/prompts/${encodeURIComponent(id)}${opts?.permanent ? "?permanent=true" : ""}`,
+        { method: "DELETE" },
+      ),
+    /** prompt_usage_audit feed. Non-admins are scoped to their own
+     *  rows by the backend. */
+    audit: (opts?: { category?: string; userId?: string; limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (opts?.category) qs.set("category", opts.category);
+      if (opts?.userId) qs.set("user_id", opts.userId);
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      const q = qs.toString();
+      return apiFetch<PromptAuditRow[]>(`/api/prompts/audit${q ? `?${q}` : ""}`);
+    },
+  },
+
+  // ---- Test case import (CSV / Excel) ----
+  //
+  // Two-step wizard:
+  //   1. imports.parse(slug, file) -> { batch_id, columns, suggested_mapping, preview, ... }
+  //   2. imports.commit(body) -> { imported, skipped, failed, ... }
+  //
+  // The wizard at /projects/[name]/imports calls these in order and
+  // shows the user the suggested_mapping for confirmation in between.
+  imports: {
+    /** Step 1: upload + preview. Returns the parse response + a
+     *  batch_id the wizard threads into the subsequent commit call. */
+    parse: (slug: string, file: File) => {
+      const form = new FormData();
+      form.append("project_slug", slug);
+      form.append("file", file);
+      return apiFetchMultipart<ImportParseResponse>("/api/imports/test-cases/parse", form);
+    },
+    /** Step 2: persist. body.mapping is the user-confirmed
+     *  column-to-canonical-field mapping; body.target picks the
+     *  destination story (or null when story_id is in the mapping). */
+    commit: (body: {
+      batch_id: string;
+      mapping: Record<string, string | null>;
+      target: { project_id: string; sprint_id?: string | null; story_id?: string | null };
+      duplicate_strategy: "skip" | "overwrite" | "create_new";
+      default_status: "draft" | "approved";
+    }) =>
+      apiFetch<ImportCommitResponse>("/api/imports/test-cases/commit", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    /** List historical import batches under a project. */
+    list: (slug: string, limit = 50) =>
+      apiFetch<{ batches: ImportBatchSummary[] }>(
+        `/api/imports?project_slug=${encodeURIComponent(slug)}&limit=${limit}`,
+      ),
+    /** Single batch detail (includes failed_rows for the error
+     *  download). */
+    get: (batchId: string) =>
+      apiFetch<ImportBatchDetail>(`/api/imports/${encodeURIComponent(batchId)}`),
+    /** Hard-delete every TC this batch created. Admin / lead only. */
+    rollback: (batchId: string) =>
+      apiFetch<{ batch_id: string; reverted_count: number; status: string }>(
+        `/api/imports/${encodeURIComponent(batchId)}/rollback`,
+        { method: "POST", body: "{}" },
+      ),
   },
 
   // ---- Test data tables ----
@@ -1392,6 +1777,199 @@ export interface TestDataTableRow {
   updated_at: string | null;
 }
 
+// ---- Test case import (CSV/Excel) ----
+
+/** Response of POST /api/imports/test-cases/parse. The wizard renders
+ *  the preview + suggested_mapping side-by-side for the user to
+ *  confirm before calling commit. */
+export interface ImportParseResponse {
+  batch_id: string;
+  source_filename: string;
+  source_kind: "csv" | "xlsx" | "xls" | string;
+  columns: string[];
+  row_count: number;
+  sheet_name: string | null;
+  encoding: string | null;
+  /** Pre-filled mapping; null means "we couldn't guess; user must
+   *  pick a canonical field or leave the column out". */
+  suggested_mapping: Record<string, string | null>;
+  /** First 50 rows. Cell values are pre-coerced to strings. */
+  preview: Record<string, string>[];
+  /** The canonical fields the wizard's <select> dropdowns should
+   *  expose. Stable across batches; sent so the frontend doesn't
+   *  hard-code the list. */
+  canonical_fields: string[];
+}
+
+export interface ImportFailedRow {
+  row_index: number;
+  title: string | null;
+  message: string;
+}
+
+export interface ImportCommitResponse {
+  batch_id: string;
+  status: "committed" | "partial" | "failed";
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  created_test_case_ids: string[];
+  failed_rows: ImportFailedRow[];
+  duration_ms: number;
+}
+
+export interface ImportBatchSummary {
+  id: string;
+  project_slug: string;
+  user_id: string | null;
+  source_filename: string;
+  source_kind: string;
+  target_project_id: string;
+  target_sprint_id: string | null;
+  target_story_id: string | null;
+  mapping: Record<string, string | null>;
+  duplicate_strategy: string;
+  total_rows: number;
+  imported_count: number;
+  skipped_count: number;
+  failed_count: number;
+  status: "pending" | "committed" | "partial" | "failed" | "rolled_back" | string;
+  error_message: string | null;
+  failed_rows_count?: number;
+  created_at: string | null;
+  committed_at: string | null;
+}
+
+export interface ImportBatchDetail extends ImportBatchSummary {
+  /** Full failed-rows array (only present on the detail endpoint). */
+  failed_rows: ImportFailedRow[];
+}
+
+// ---- AI Prompt Management ----
+
+export type PromptOutputFormat =
+  | "json_array"
+  | "markdown_table"
+  | "robot_script"
+  | "freeform"
+  | string;
+
+export type PromptScope = "user" | "project" | "org" | "system";
+
+/** /api/prompts/categories row. Drives the editor's variable-reference
+ *  right rail + the create-form category dropdown. */
+export interface PromptCategory {
+  category: string;
+  default_name: string;
+  description: string;
+  output_format: PromptOutputFormat;
+  placeholders: string[];
+  compose_with_playbook: boolean;
+}
+
+export interface PromptTemplateSummary {
+  id: string;
+  category: string;
+  name: string;
+  description: string | null;
+  is_system: boolean;
+  is_active: boolean;
+  output_format: PromptOutputFormat;
+  model_hint: string | null;
+  placeholders_declared: string[];
+  owner_user_id: string | null;
+  source_template_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  deleted_at: string | null;
+}
+
+export interface PromptVersionSummary {
+  id: string;
+  version_number: number;
+  change_note: string | null;
+  body_bytes: number;
+  created_by_user_id: string | null;
+  created_at: string | null;
+}
+
+export interface PromptVersionBody extends PromptVersionSummary {
+  template_id: string;
+  body: string;
+}
+
+export interface PromptActiveOverride {
+  scope: PromptScope;
+  scope_id: string | null;
+  template_id: string;
+  template_name: string;
+  active_version_id: string;
+  active_version_number: number;
+}
+
+export interface PromptTemplateDetail extends PromptTemplateSummary {
+  versions: PromptVersionSummary[];
+  overrides: PromptActiveOverride[];
+}
+
+export interface PromptCreateRequest {
+  category: string;
+  name: string;
+  description?: string | null;
+  body: string;
+  output_format: PromptOutputFormat;
+  model_hint?: string | null;
+  placeholders_declared?: string[] | null;
+  source_template_id?: string | null;
+  scope: "user" | "project" | "org";
+  scope_id?: string | null;
+  change_note?: string | null;
+}
+
+export interface PromptPreviewResponse {
+  text: string;
+  bytes: number;
+  placeholders_used: string[];
+  output_format: PromptOutputFormat;
+  template_id: string;
+  template_name: string;
+}
+
+export interface PromptDryRunResponse {
+  template_id: string;
+  template_name: string;
+  output_format: PromptOutputFormat;
+  model: string | null;
+  provider: string | null;
+  latency_ms: number;
+  raw: string;
+  test_cases: Array<{
+    title: string;
+    steps: string[];
+    expected_result: string;
+    preconditions: string | null;
+    suggested_tags: string[];
+  }>;
+  warnings: string[];
+}
+
+export interface PromptAuditRow {
+  id: string;
+  template_version_id: string | null;
+  category: string;
+  user_id: string | null;
+  project_id: string | null;
+  model: string | null;
+  provider: string | null;
+  qa_mode: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  latency_ms: number | null;
+  target_type: string | null;
+  target_id: string | null;
+  created_at: string | null;
+}
+
 export type ScheduleRunner = "local" | "github_actions";
 export type ScheduleTargetKind = "sprint" | "story" | "test_case" | "tag";
 export interface ScheduleRow {
@@ -1451,4 +2029,35 @@ export interface PersonaBulkImportResult {
     credentials_pending: boolean;
   }>;
   skipped: Array<{ row_index: number; reason: string; row: Record<string, string> }>;
+}
+
+export interface GenerationJobSnapshot {
+  id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  mode: string;
+  current_phase: string;
+  event_seq: number;
+  events: Array<{ seq: number; ts: string; event: string; payload: any }>;
+  robot_code: string | null;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  cancellation_requested_at: string | null;
+}
+
+export interface HealEventRow {
+  id: string;
+  project_slug: string | null;
+  run_id: string | null;
+  generation_job_id: string | null;
+  sobject: string;
+  step_index: number | null;
+  attempt_number: number;
+  error_type: string;
+  field_label: string | null;
+  strategy: string;
+  outcome: string;
+  latency_ms: number;
+  payload: any;
+  created_at: string | null;
 }

@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, parseDeleteBlockersError, type BulkDeleteRowResult } from "@/lib/api";
 import GlassSelect from "@/components/ui/GlassSelect";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import CreateStoryModal from "@/components/user-stories/CreateStoryModal";
+import SelectionToolbar from "@/components/lists/SelectionToolbar";
+import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
+import { useToast } from "@/components/ui/ToastProvider";
 import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 
 export default function UserStoriesPage() {
@@ -30,6 +33,9 @@ export default function UserStoriesPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMsg, setBulkMsg] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTargets, setConfirmTargets] = useState<StoryRow[]>([]);
+  const toast = useToast();
 
   useEffect(() => {
     api.projects.list().then(setProjects).catch(() => {}).finally(() => setLoading(false));
@@ -101,6 +107,55 @@ export default function UserStoriesPage() {
 
   const toggleStory = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // The /user-stories list only shows active stories (the backend
+  // filters out archived rows), so the toolbar mode here is always
+  // "soft" -- the first click archives. To permanently delete an
+  // already-archived story, the user has to use a project-detail
+  // surface where archived rows are visible (out of scope for this
+  // pass; see plan section "Out of scope").
+  const selectedStories = useMemo(
+    () => stories.filter((s) => selectedIds.includes(s.id)),
+    [stories, selectedIds],
+  );
+
+  const openDeleteModal = (targets: StoryRow[]) => {
+    if (targets.length === 0) return;
+    setConfirmTargets(targets);
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+    const ids = confirmTargets.map((t) => t.id);
+    try {
+      if (ids.length === 1) {
+        await api.userStories.delete(ids[0], false);
+      } else {
+        const res = await api.userStories.bulkDelete(ids, false);
+        const blocked = res.results.filter((r: BulkDeleteRowResult) => r.status === "skipped_blocked");
+        if (blocked.length > 0) {
+          // Soft delete shouldn't trip blocker checks (those are hard-only),
+          // but surface the message if the backend ever changes.
+          return {
+            ok: false,
+            blockers: blocked.flatMap((r) => r.blockers || []),
+            message: `${blocked.length} stor${blocked.length === 1 ? "y" : "ies"} could not be archived.`,
+          };
+        }
+      }
+      toast.success(`${ids.length} stor${ids.length === 1 ? "y" : "ies"} archived.`);
+      setSelectedIds([]);
+      reloadStories();
+      notifyTreeRefresh({ kind: "story", projectId: projectId || undefined });
+      return { ok: true };
+    } catch (err: unknown) {
+      const parsed = parseDeleteBlockersError(err);
+      if (parsed) {
+        return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+      }
+      return { ok: false, message: err instanceof Error ? err.message : "Archive failed" };
+    }
   };
 
   const bulkMove = async (destSprintId: string | null) => {
@@ -194,6 +249,23 @@ export default function UserStoriesPage() {
           });
         }}
       />
+      <ConfirmDeleteModal
+        open={confirmOpen}
+        entityNoun="story"
+        targetLabels={confirmTargets.map((t) => t.title || t.id)}
+        mode={"soft" as ConfirmDeleteMode}
+        onConfirm={handleConfirmDelete}
+        onClose={() => setConfirmOpen(false)}
+      />
+      {projectId && stories.length > 0 && (
+        <SelectionToolbar
+          count={selectedIds.length}
+          entityNoun="story"
+          mode="soft"
+          onSoftDelete={() => openDeleteModal(selectedStories)}
+          onClear={() => setSelectedIds([])}
+        />
+      )}
       {projectId && stories.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <label className="inline-flex items-center gap-2 text-xs text-slate-300">
@@ -258,9 +330,25 @@ export default function UserStoriesPage() {
                     <div className="text-xs text-slate-500">v{s.version} · {s.status}</div>
                   </Link>
                 </label>
-                <Link href={`/user-stories/${encodeURIComponent(s.id)}?project=${encodeURIComponent(projectName)}`} className="text-purple-400 text-sm">
-                  Open →
-                </Link>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openDeleteModal([s])}
+                    title="Archive this story"
+                    className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-300"
+                    aria-label="Delete story"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6l-2 14H7L5 6"></path>
+                      <path d="M10 11v6M14 11v6"></path>
+                      <path d="M9 6V4h6v2"></path>
+                    </svg>
+                  </button>
+                  <Link href={`/user-stories/${encodeURIComponent(s.id)}?project=${encodeURIComponent(projectName)}`} className="text-purple-400 text-sm">
+                    Open →
+                  </Link>
+                </div>
               </motion.div>
             ))
           )}

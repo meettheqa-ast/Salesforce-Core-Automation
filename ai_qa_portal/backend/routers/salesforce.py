@@ -16,6 +16,7 @@ from ai_qa_portal.backend.models.schemas import (
     SOQLResponse,
 )
 from ai_qa_portal.backend.services.auth import get_current_user
+from ai_qa_portal.backend.services.org_metadata import OrgMetadataService
 
 router = APIRouter(
     prefix="/api/salesforce",
@@ -27,9 +28,15 @@ router = APIRouter(
 @router.post("/schema/context", response_model=SchemaResponse)
 def get_schema_context(body: SchemaRequest):
     try:
-        from app_schema import detect_salesforce_objects, get_schema_context
+        from app_schema import detect_salesforce_objects
+
         objects = detect_salesforce_objects(body.prompt)
-        context = get_schema_context(body.prompt, body.sandbox_url, body.username, body.password)
+        context = OrgMetadataService.safe_get_schema_context(
+            body.prompt,
+            body.sandbox_url,
+            body.username,
+            body.password,
+        )
         return SchemaResponse(objects=objects, context=context)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -38,9 +45,21 @@ def get_schema_context(body: SchemaRequest):
 @router.get("/schema/objects/{object_name}")
 def describe_object(object_name: str, sandbox_url: str = "", username: str = "", password: str = ""):
     try:
-        from app_schema import get_object_schema
-        schema = get_object_schema(object_name, sandbox_url, username, password)
-        return {"object": object_name, "schema": schema}
+        service = OrgMetadataService()
+        schema = service.describe_object(
+            object_name,
+            org_key="",
+            sandbox_url=sandbox_url,
+            username=username,
+            password=password,
+        )
+        summary = OrgMetadataService.safe_get_object_schema_summary(
+            object_name,
+            sandbox_url,
+            username,
+            password,
+        )
+        return {"object": object_name, "schema": schema, "summary": summary}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -765,7 +765,7 @@ def _call_openai_compatible(
     # Hard timeout so a slow / hung upstream returns an error instead of
     # blocking the user-facing request for the SDK default (~10 min).
     # Configurable via LLM_REQUEST_TIMEOUT_S env var.
-    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "40"))
+    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "60"))
     client_kwargs: dict = {"api_key": api_key, "timeout": _llm_timeout}
     if base_url:
         client_kwargs["base_url"] = base_url
@@ -845,7 +845,7 @@ def _call_gemini(
     # for defense in depth, but that only abandons the thread -- the HTTP
     # request keeps running in the background until *something* fails it.
     # Setting it here actually cancels the upstream request.
-    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "40"))
+    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "60"))
 
     try:
         resp = model.generate_content(
@@ -953,7 +953,8 @@ def _call_anthropic(
 
     hydrate_llm_env()
     api_key, model = _get_provider_key_and_model("anthropic")
-    client = anthropic.Anthropic(api_key=api_key)
+    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "60"))
+    client = anthropic.Anthropic(api_key=api_key, timeout=_llm_timeout)
 
     content: list[dict] = [{"type": "text", "text": user_content}]
     if image_bytes:
@@ -983,7 +984,8 @@ def _call_cohere(
 
     hydrate_llm_env()
     api_key, model = _get_provider_key_and_model("cohere")
-    client = cohere.ClientV2(api_key=api_key)
+    _llm_timeout = float(os.environ.get("LLM_REQUEST_TIMEOUT_S", "60"))
+    client = cohere.ClientV2(api_key=api_key, timeout=_llm_timeout)
 
     resp = client.chat(
         model=model,
@@ -1768,31 +1770,146 @@ def call_llm(
     )
 
 
+@_dataclass
+class LLMResult:
+    """Rich return shape used by call sites that need provenance for
+    the prompt registry's ``prompt_usage_audit`` rows.
+
+    The bare ``call_llm`` stays string-returning so the dozens of
+    existing callers don't change; new generation code paths import
+    ``call_llm_with_metadata`` instead and unpack ``.text``.
+
+    Token counts are best-effort. Most providers don't return them in
+    the chat completion response (Ollama, raw OpenAI-compat); the few
+    that do (recent OpenAI, Anthropic) will populate them when we
+    extend the per-provider callers in a follow-up. For now they stay
+    ``None`` which the audit row tolerates.
+    """
+
+    text: str
+    provider: str
+    model: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    latency_ms: int
+
+
+def call_llm_with_metadata(
+    system_prompt: str,
+    user_content: str,
+    image_bytes: bytes | None = None,
+    provider: str | None = None,
+) -> LLMResult:
+    """``call_llm`` + provenance. Always succeeds (raises on hard
+    failure same as ``call_llm``). The provider name and latency are
+    captured around the failover loop; the model name is read from the
+    same env var the chosen provider uses (so it matches what the LLM
+    actually saw)."""
+    import time as _t
+    t0 = _t.monotonic()
+    primary_before = (provider or os.environ.get("LLM_PROVIDER") or _default_primary_provider()).strip().lower()
+    if primary_before == "google":
+        primary_before = "gemini"
+    # Drain notes BEFORE the call so we can detect if failover happened
+    # during this specific call.
+    notes_before = len(_get_notes_buffer())
+    text = call_llm(system_prompt, user_content, image_bytes=image_bytes, provider=provider)
+    latency_ms = int((_t.monotonic() - t0) * 1000)
+    notes_after = _get_notes_buffer()
+    if len(notes_after) > notes_before:
+        # The most recent note tells us where we ACTUALLY landed.
+        final_provider = notes_after[-1].to_provider
+    else:
+        final_provider = primary_before
+    # Model name = per-provider env override (e.g. GEMINI_MODEL) or
+    # the tuple's hard-coded default. The LLM_PROVIDERS tuple shape is
+    # (API_KEY_ENV, MODEL_ENV, DEFAULT_MODEL).
+    spec = LLM_PROVIDERS.get(final_provider)
+    if spec:
+        _api_key_env, model_env_var, default_model = spec
+        model: str | None = os.environ.get(model_env_var) or default_model
+    else:
+        model = None
+    return LLMResult(
+        text=text,
+        provider=final_provider,
+        model=model,
+        input_tokens=None,
+        output_tokens=None,
+        latency_ms=latency_ms,
+    )
+
+
+def _strip_llm_fence(raw: str) -> str:
+    """Strip Markdown ``` fences and surrounding whitespace from an LLM reply."""
+    raw = (raw or "").strip()
+    if raw.startswith("```"):
+        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        raw = raw.strip()
+    return raw
+
+
+def _parse_steps_json(raw: str) -> list[dict]:
+    """Parse the LLM's response into a list of step dicts (no validation)."""
+    raw = _strip_llm_fence(raw)
+    try:
+        steps = json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", raw, re.DOTALL)
+        if not match:
+            raise ValueError(f"LLM did not return valid JSON steps: {raw[:500]}")
+        steps = json.loads(match.group())
+    if not isinstance(steps, list):
+        raise ValueError(f"Expected a JSON array of steps, got: {type(steps)}")
+    return steps
+
+
 def break_prompt_into_steps(
     user_prompt: str,
     catalog_json: str | None = None,
     scenario_analysis: dict | None = None,
     default_app: str = "",
+    *,
+    max_replan_attempts: int = 3,
+    project_slug: str | None = None,
+    recall_hints: list[dict] | None = None,
 ) -> list[dict[str, list[str] | str]]:
     """Use the current LLM to decompose a natural-language prompt into
     a list of Robot Framework keyword steps.
 
     Returns a list of dicts: [{"keyword": "...", "args": ["...", ...]}, ...]
+
+    The planner runs a validate-fix-replan loop (up to
+    ``max_replan_attempts`` total LLM calls): if the produced plan fails
+    catalog or sequence validation, the LLM is sent a structured fix
+    prompt and asked to resubmit. On final failure we return the LAST
+    plan so the caller can still try to execute it (some validation
+    issues are warnings rather than hard errors at runtime).
     """
     hydrate_llm_env()
 
     # Prefer the assembler-built system prompt (Salesforce playbook + stepwise
     # tail) over the legacy inline string. Live catalog supersedes static
     # JSON when the scanner is available.
+    use_signatures_index = False
+    planner_quality = None
     try:
         from ai_qa_portal.backend.prompts import assembler as _assembler
         from ai_qa_portal.backend.services import keyword_catalog as _kw_catalog
+        from ai_qa_portal.backend.services import planner_quality as _pq
         system = _assembler.build_system_prompt("stepwise")
         if catalog_json is None:
-            # Lean projection: ~3-5k tokens vs ~36k for the full catalog,
-            # which is the difference between "Groq 413s, Gemini takes
-            # 30-100 s" and "any model returns in a few seconds".
-            catalog_json = _kw_catalog.compact_for_prompt()
+            # Use the new signature-aware catalog projection -- includes
+            # named-arg vs positional hints derived from the live signature
+            # index, which is the single biggest planner accuracy lever.
+            try:
+                catalog_json = _pq.signatures_for_prompt()
+                use_signatures_index = True
+            except Exception:  # pylint: disable=broad-exception-caught
+                catalog_json = _kw_catalog.compact_for_prompt()
+        planner_quality = _pq
     except Exception:  # pylint: disable=broad-exception-caught
         if catalog_json is None:
             catalog_json = _load_catalog_compact()
@@ -1825,8 +1942,18 @@ def break_prompt_into_steps(
     analysis_block = ""
     if scenario_analysis:
         analysis_block = (
-            "\n\nRF-MCP scenario analysis result:\n"
+            "\n\n## RF-MCP scenario analysis (use these as planning hints)\n\n"
             + json.dumps(scenario_analysis, indent=2, ensure_ascii=False)
+        )
+
+    recall_block = ""
+    if recall_hints:
+        recall_block = (
+            "\n\n## Past successful sequences for similar prompts\n\n"
+            "These are real keyword sequences from earlier successful runs "
+            "(possibly on a different org). Lean on them but adapt to the "
+            "current prompt -- copy the SHAPE, not the literal field values.\n\n"
+            + json.dumps(recall_hints, indent=2, ensure_ascii=False)
         )
 
     persona_block = ""
@@ -1843,33 +1970,96 @@ def break_prompt_into_steps(
                 f"(injected as ${{salesAutomationAppName}} at runtime)\n\n"
             )
 
-    user_content = (
+    project_block = ""
+    if project_slug:
+        project_block = f"## Project\n\n{project_slug}\n\n"
+
+    catalog_label = (
+        "Keyword Catalog (signature index)"
+        if use_signatures_index
+        else "Keyword Catalog"
+    )
+    base_user_content = (
+        f"{project_block}"
         f"{persona_block}"
-        f"## Keyword Catalog\n\n{catalog_json}\n\n"
+        f"## {catalog_label}\n\n{catalog_json}\n\n"
         f"## User Request\n\n{user_prompt.strip()}"
-        f"{analysis_block}\n"
+        f"{analysis_block}"
+        f"{recall_block}\n"
     )
 
-    raw = call_llm(system, user_content)
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1] if "\n" in raw else raw[3:]
-        if raw.endswith("```"):
-            raw = raw[:-3]
-        raw = raw.strip()
+    fix_prompt = ""
+    last_steps: list[dict] = []
+    last_validation_error: Exception | None = None
 
-    try:
-        steps = json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"\[.*\]", raw, re.DOTALL)
-        if match:
-            steps = json.loads(match.group())
-        else:
-            raise ValueError(f"LLM did not return valid JSON steps: {raw[:500]}")
+    for attempt in range(1, max(1, max_replan_attempts) + 1):
+        content = base_user_content
+        if fix_prompt:
+            content = (
+                base_user_content
+                + "\n\n## Validator feedback (previous plan failed)\n\n"
+                + fix_prompt
+                + "\n\nResubmit the COMPLETE corrected JSON array."
+            )
 
-    if not isinstance(steps, list):
-        raise ValueError(f"Expected a JSON array of steps, got: {type(steps)}")
-    return [_sanitize_step(s) for s in steps]
+        raw = call_llm(system, content)
+        try:
+            steps = _parse_steps_json(raw)
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_validation_error = exc
+            fix_prompt = (
+                f"Your last response was not valid JSON ({exc}). "
+                "Return ONLY a JSON array, no prose, no markdown fences."
+            )
+            continue
+
+        sanitized = [_sanitize_step(s) for s in steps]
+        last_steps = sanitized
+
+        if planner_quality is None:
+            return sanitized
+
+        # Validate against the live catalog signatures and the sequence linter.
+        step_issues = planner_quality.validate_steps(sanitized)
+        seq_issues = planner_quality.lint_sequence(sanitized)
+
+        # Errors only -- the linter currently emits warnings as errors too,
+        # which is intentional for the Stepwise planner: a sequence violation
+        # almost always wastes browser time at runtime.
+        critical = [iss for iss in step_issues if iss.severity == "error"]
+        if not critical and not seq_issues:
+            _logger.info(
+                "break_prompt_into_steps: validated plan on attempt %s/%s "
+                "(%s steps)",
+                attempt, max_replan_attempts, len(sanitized),
+            )
+            return sanitized
+
+        feedback_parts: list[str] = []
+        if critical:
+            feedback_parts.append(planner_quality.format_issues_as_fix_prompt(critical))
+        if seq_issues:
+            feedback_parts.append(planner_quality.format_sequence_issues_as_fix_prompt(seq_issues))
+        fix_prompt = "\n\n".join(p for p in feedback_parts if p.strip())
+        _logger.warning(
+            "break_prompt_into_steps: attempt %s/%s failed validation: "
+            "%s catalog issue(s), %s sequence issue(s)",
+            attempt, max_replan_attempts, len(critical), len(seq_issues),
+        )
+
+    if last_steps:
+        _logger.warning(
+            "break_prompt_into_steps: exhausted %s replan attempts; "
+            "returning last plan as best-effort",
+            max_replan_attempts,
+        )
+        return last_steps
+    if last_validation_error is not None:
+        raise last_validation_error
+    raise ValueError(
+        "Planner produced no usable steps after "
+        f"{max_replan_attempts} attempt(s)."
+    )
 
 
 def _sanitize_step(step: dict) -> dict:

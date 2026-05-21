@@ -336,15 +336,30 @@ def sync_project(
         _upsert_jira_project(db, connection_id=connection.id, raw=project_raw)
         stats.projects_seen = 1
 
-        sprints_raw = provider.list_sprints_for_project(jira_project_key)
+        # Sprint enumeration is best-effort: a single bad board (Kanban,
+        # SM, WM business project, or any board that 4xxs on /sprint)
+        # should never block issue import, which is what users actually
+        # care about. The provider already skips Kanban boards at the
+        # `list_sprints_for_project` level; this try/except handles any
+        # remaining structural surprises (e.g. Agile API gated off the
+        # token) by recording them in stats.errors and continuing.
+        try:
+            sprints_raw = provider.list_sprints_for_project(jira_project_key)
+        except Exception as exc:  # noqa: BLE001 -- best-effort
+            stats.errors.append(f"sprints {jira_project_key}: {exc}")
+            sprints_raw = []
         for sprint_raw in sprints_raw:
-            _, _ = _upsert_jira_sprint(
-                db,
-                connection_id=connection.id,
-                project_key=jira_project_key,
-                raw=sprint_raw,
-            )
-            stats.sprints_upserted += 1
+            try:
+                _upsert_jira_sprint(
+                    db,
+                    connection_id=connection.id,
+                    project_key=jira_project_key,
+                    raw=sprint_raw,
+                )
+                stats.sprints_upserted += 1
+            except Exception as exc:  # noqa: BLE001 -- per-sprint resilience
+                sid = sprint_raw.get("id") if isinstance(sprint_raw, dict) else "?"
+                stats.errors.append(f"sprint {sid}: {exc}")
 
         jql = f'project = "{jira_project_key}"'
         if issue_jql_extra:

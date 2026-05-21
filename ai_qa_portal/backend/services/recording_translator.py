@@ -53,10 +53,9 @@ class TranslationResult:
 
 
 def _load_translator_prompt() -> str:
-    """Read the translator system prompt. Cached implicitly via Python's
-    module-level immutability after first call. We don't memoise
-    explicitly because the file is tiny and edits should be picked up
-    without a restart in dev.
+    """Read the translator system prompt from the legacy on-disk file.
+    Used by ``_resolve_recording_system_prompt`` as the fallback when
+    the prompt registry is unavailable / disabled.
     """
     if not _PROMPT_PATH.is_file():
         # Fallback: a minimal inline prompt. Should never trigger in
@@ -67,6 +66,33 @@ def _load_translator_prompt() -> str:
             "the project's keyword catalog. Output ONLY the .robot file."
         )
     return _PROMPT_PATH.read_text(encoding="utf-8")
+
+
+def _resolve_recording_system_prompt() -> str:
+    """Return the active recording-translator system prompt. Resolves
+    via the prompt registry when ``PROMPT_REGISTRY_ENABLED=true`` so
+    org / user overrides apply; otherwise falls back to the on-disk
+    legacy file so behaviour is byte-identical to the pre-registry
+    build."""
+    import os
+
+    if os.environ.get("PROMPT_REGISTRY_ENABLED", "").lower() not in {"1", "true", "yes", "on"}:
+        return _load_translator_prompt()
+    try:
+        from ai_qa_portal.backend.services import prompt_resolver
+        from ai_qa_portal.backend.services.db import SessionLocal
+        db = SessionLocal()
+        try:
+            resolved = prompt_resolver.resolve(db, category="recording_translator")
+        finally:
+            db.close()
+        if resolved is not None and resolved.body.strip():
+            return resolved.body
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "recording_translator registry resolve failed (%s); using on-disk fallback", exc,
+        )
+    return _load_translator_prompt()
 
 
 def translate_actions(
@@ -128,14 +154,15 @@ def translate_actions(
 
     hydrate_llm_env()
 
-    # Build the user content: translator instructions + JSON action log
-    # + project catalog (delegates to the same assembler that drives
-    # quick generate). This keeps the LLM grounded in the same keyword
-    # catalog every other path uses.
-    translator_instructions = _load_translator_prompt()
+    # Build the user content: JSON action log + project catalog. The
+    # translator INSTRUCTIONS now live in the prompt registry under
+    # category=recording_translator (seeded from the same
+    # recording_translator.md file we used historically). When the
+    # registry isn't enabled, we fall back to the file-on-disk so the
+    # behaviour is identical to the pre-registry build.
     action_json = json.dumps(actions, indent=2)
+    translator_instructions = _resolve_recording_system_prompt()
     user_body = (
-        f"{translator_instructions}\n\n"
         f"## Action log (chronological)\n\n"
         f"```json\n{action_json}\n```\n\n"
         + (f"## Suggested test name\n\n{test_name_hint}\n\n" if test_name_hint else "")
@@ -143,7 +170,11 @@ def translate_actions(
     user_prompt = assembler.build_user_prompt_with_catalog(
         user_body, include_full_catalog=True,
     )
-    system_prompt = assembler.build_system_prompt("drafter")
+    # The translator system prompt previously sat in the USER message
+    # appended above the action log. Move it to the SYSTEM slot now so
+    # registry overrides land where the user expects ("system" prompt
+    # = "what the LLM is told to do as a recording translator").
+    system_prompt = translator_instructions
 
     def _llm(fix_prompt: str | None) -> str:
         content = user_prompt

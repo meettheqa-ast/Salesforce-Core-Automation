@@ -954,12 +954,43 @@ Open Related Record Dropdown
     Wait Until Element Is Visible    ${dialogLocator}    timeout=15s
 
 Get Success Toast Message Related Record Creation ID
-    [Documentation]    This keyword is used to fetch the record ID from the success toast message that appears on the record details page when related records are created. It waits for the toast message to become visible, retrieves its text, and stores it in a test variable. After the record ID is captured, it waits for the success toast message to disappear, confirming that the record creation process has been completed. This is typically used to capture the record ID generated from the success toast message after creating related records on the details page.
+    [Documentation]    Fetches the record ID from the success toast that
+    ...                Salesforce shows after a record is created.
+    ...
+    ...                IMPORTANT timing semantics: Salesforce auto-
+    ...                dismisses the success toast in ~3-5 seconds. When
+    ...                this keyword runs AFTER another step that already
+    ...                consumed the toast (e.g. when called from
+    ...                ``Verify Lead Created Successfully`` right after
+    ...                ``Create A New Lead`` which already clicked Save),
+    ...                the toast is already gone. The previous 120 s
+    ...                timeout was a paranoid setting that turned every
+    ...                missed-toast race into a 60-120 s test-stalling
+    ...                wait (RF-MCP's per-keyword ceiling sometimes
+    ...                truncated it to 60 s, but either way the test was
+    ...                burned).
+    ...
+    ...                New behaviour: 8 s wait, then GRACEFULLY return if
+    ...                the toast wasn't seen. Downstream verifications
+    ...                (``Page Should Contain``, ``Verify Field Value
+    ...                On Detail Page``) still validate the record was
+    ...                actually created -- the toast was just one signal,
+    ...                not the only one. Sets
+    ...                ``${successToastMessageOnRecordDetailsPage}`` to
+    ...                ``${EMPTY}`` when missed so downstream consumers
+    ...                of that variable can detect the no-toast path.
     [Tags]    records    related record    utilities
-    Wait Until Element Is Visible    ${successToastMessageOnRecordDetailsPageLocator}    timeout=120s
+    ${visible}=    Run Keyword And Return Status
+    ...    Wait Until Element Is Visible    ${successToastMessageOnRecordDetailsPageLocator}    timeout=8s
+    IF    not ${visible}
+        Set Test Variable    ${successToastMessageOnRecordDetailsPage}    ${EMPTY}
+        Log    Success toast not visible within 8 s -- likely already auto-dismissed by Salesforce. Continuing without toast capture; downstream verifications will still validate the record.    WARN
+        RETURN
+    END
     ${successToastMessageOnRecordDetailsPage}=    Get Text    ${successToastMessageOnRecordDetailsPageLocator}
     Set Test Variable    ${successToastMessageOnRecordDetailsPage}    ${successToastMessageOnRecordDetailsPage}
-    Wait Until Element Is Not Visible    ${successToastMessageOnRecordDetailsPageLocator}    timeout=25s
+    Run Keyword And Ignore Error
+    ...    Wait Until Element Is Not Visible    ${successToastMessageOnRecordDetailsPageLocator}    timeout=10s
 
 Verify Related Records Creation
     [Documentation]    Verifies the creation of related records by opening the Related Records List View from the Record Details Page. It clicks on the "View All" button in the related records section, waits for the list view to become visible, and then verifies the presence of the newly created related record. Specifically, it verifies the presence of the record ID in the related records list view, using the Verify Table Cell Record keyword.
@@ -1538,6 +1569,15 @@ Verify Field Value On Detail Page
     ...    Industry=Industry
     ...    Type=Type
     ...    Rating=Rating
+    # Phase 1 dual-source: keep the local fallback map, then overlay the
+    # shared Python alias module when available so healing + verification stay
+    # in sync without breaking standalone Robot runs.
+    ${map_status}    ${external_map}=    Run Keyword And Ignore Error
+    ...    Evaluate
+    ...    __import__('ai_qa_portal.backend.services.salesforce_field_aliases', fromlist=['FIELD_LABEL_TO_API_NAME']).FIELD_LABEL_TO_API_NAME
+    IF    '${map_status}' == 'PASS'
+        Set To Dictionary    ${api_name_map}    &{external_map}
+    END
     ${api_name}=    Get From Dictionary    ${api_name_map}    ${field_label}    default=${EMPTY}
     ${actual}=    Set Variable    ${EMPTY}
     ${found}=    Set Variable    ${FALSE}
@@ -1551,8 +1591,15 @@ Verify Field Value On Detail Page
     IF    "${api_name}" != "${EMPTY}"
         ${field_root_xpath}=    Set Variable
         ...    xpath://*[@data-target-selection-name='sfdc:RecordField.${sobject}.${api_name}']
+        # Tier-1 timeout cut from 8s → 4s. On a freshly-loaded detail page
+        # the canonical record-field element is in the DOM in well under
+        # a second. Leaving 8s here meant every "field doesn't exist on
+        # this layout" miss burned the full 8s before we even tried tier 2,
+        # which compounded into 22s+ verify failures on routine wrong-
+        # field guesses from the planner. Real-render misses still get
+        # 4s, which is comfortable margin on slow Pentair sandboxes.
         ${visible}=    Run Keyword And Return Status
-        ...    Wait Until Element Is Visible    ${field_root_xpath}    timeout=8s
+        ...    Wait Until Element Is Visible    ${field_root_xpath}    timeout=4s
         IF    ${visible}
             ${selector}=    Set Variable    [data-target-selection-name="sfdc:RecordField.${sobject}.${api_name}"]
             ${raw_text}=    Execute Javascript    return (document.querySelector('${selector}') || {textContent: ''}).textContent || '';
@@ -1579,7 +1626,12 @@ Verify Field Value On Detail Page
     @{skip_texts}=    Create List    Change Owner    Change User    Edit    Delete    Clone    Share    Sharing
     IF    not ${found}
         FOR    ${loc}    IN    @{candidates}
-            ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc}    timeout=4s
+            # Per-candidate timeout cut from 4s → 2s. Three candidates
+            # × 4s = 12s of wait penalty when the field genuinely isn't
+            # on the page (e.g. planner asked for a non-existent label).
+            # 2s is enough on a rendered detail page; 6s total worst-case
+            # plus tier-1's 4s = 10s vs the previous 20s.
+            ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${loc}    timeout=2s
             IF    not ${ok}    CONTINUE
             @{matches}=    Get WebElements    ${loc}
             FOR    ${el}    IN    @{matches}
