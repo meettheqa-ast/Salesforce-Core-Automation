@@ -269,6 +269,42 @@ def list_templates(
     return [_template_summary(r) for r in rows]
 
 
+class _ActiveOverridesMap(BaseModel):
+    """Lightweight payload for the Settings -> Prompts list page so it
+    can badge each row as "active for me" / "active for org" without an
+    N+1 fan-out of detail calls. Maps ``category -> template_id``."""
+
+    user: dict[str, str]
+    org: dict[str, str]
+
+
+@router.get("/active", response_model=_ActiveOverridesMap)
+def list_active_overrides(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the active overrides the current user is affected by.
+
+    Two maps in one round-trip:
+      * ``user`` -- categories overridden at user scope (=current_user.id)
+      * ``org``  -- categories overridden at org scope (scope_id null)
+
+    The frontend joins these maps against the templates list to render
+    the "Active for me" / "Org default" badges without paying N detail
+    requests on every Settings page open.
+    """
+    user_rows = prompt_registry.list_overrides_for_scope(
+        db, scope="user", scope_id=str(current_user.id),
+    )
+    org_rows = prompt_registry.list_overrides_for_scope(
+        db, scope="org", scope_id=None,
+    )
+    return _ActiveOverridesMap(
+        user={r.category: r.template_id for r in user_rows},
+        org={r.category: r.template_id for r in org_rows},
+    )
+
+
 @router.get("/{template_id}", response_model=_TemplateDetail)
 def get_template(
     template_id: str,
@@ -467,6 +503,26 @@ def activate_version(
             "scope_id": body.scope_id, "category": tpl.category,
         },
     )
+    # When an admin flips the org default everyone is potentially
+    # affected (until they set their own user override). Notify the
+    # admin who made the change and let the activity feed broadcast
+    # the change project-wide. A broader fan-out (notify every user
+    # whose default just changed) is intentionally deferred; many
+    # orgs would treat that as spam.
+    if body.scope == "org":
+        try:
+            from ..services.audit_actions import PROMPT_ACTIVATED_BY_ADMIN
+            from ..services.db import push_notification
+            push_notification(
+                db,
+                user_id=str(current_user.id),
+                type=PROMPT_ACTIVATED_BY_ADMIN,
+                title=f"Set org default: {tpl.name}",
+                body=f"Category: {tpl.category} -- version {v.version_number}",
+                action_url=f"/settings/prompts/{tpl.id}",
+            )
+        except Exception:
+            pass
     return _ActiveOverride(
         scope=override.scope,
         scope_id=override.scope_id,

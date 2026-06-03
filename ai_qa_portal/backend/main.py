@@ -42,6 +42,7 @@ from .routers import (
     prompts as prompts_router,
     runs,
     salesforce,
+    search as search_router,
     sprints,
     tags,
     test_cases,
@@ -89,6 +90,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# API-prefix alias middleware (Phase 3 IA audit). Lets clients call
+# /api/<bare>/... for any bare-prefixed router (user-stories, sprints,
+# test-cases, tags, personas, orgs, run) so the frontend can migrate
+# off the legacy bare paths incrementally without coordinated router
+# constructor changes. See services/api_alias_middleware.py.
+from .services.api_alias_middleware import ApiPrefixAliasMiddleware  # noqa: E402
+
+app.add_middleware(ApiPrefixAliasMiddleware)
+
 app.include_router(projects.router)
 app.include_router(memberships.router)
 app.include_router(invitations.project_router)
@@ -114,6 +124,7 @@ app.include_router(llm.router)
 app.include_router(integrations.router)
 app.include_router(imports_router.router)
 app.include_router(prompts_router.router)
+app.include_router(search_router.router)
 app.include_router(visual_regression.router)
 app.include_router(users.router)
 app.include_router(admin.router)

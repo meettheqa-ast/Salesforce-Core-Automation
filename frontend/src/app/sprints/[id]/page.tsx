@@ -69,6 +69,11 @@ export default function SprintDetailPage() {
   const [personaId, setPersonaId] = useState("");
   const [autoHeal, setAutoHeal] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  // Sprint-level "Build all scripts" feedback. Closes the IA gap
+  // flagged in the audit (previously users had to open each story
+  // individually before kicking off a sprint run).
+  const [buildAllBusy, setBuildAllBusy] = useState(false);
+  const [buildAllMsg, setBuildAllMsg] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", goal: "", state: "planned", start_date: "", end_date: "" });
   const [err, setErr] = useState<string | null>(null);
@@ -430,6 +435,129 @@ export default function SprintDetailPage() {
             ))}
           </div>
         </>
+      )}
+
+      {/* Per-story coverage matrix. Renders the already-fetched `tcs`
+          payload (stories[].test_cases[]) as a compact table so the
+          user can answer "which stories still need scripts / which
+          have stale cases" without opening each story. */}
+      {tcs && tcs.stories.length > 0 && (
+        <div className="mb-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-wider">
+                Coverage
+              </h2>
+              <Link
+                href={`/sprints/${encodeURIComponent(id)}/report${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
+                className="text-[11px] text-purple-300 hover:text-purple-200"
+              >
+                View sprint report →
+              </Link>
+            </div>
+            {/* Build all scripts at sprint level -- fans out story-
+                level build-scripts so users don't have to visit each
+                story before a sprint run. */}
+            <button
+              type="button"
+              disabled={buildAllBusy || !tcs || tcs.by_status.approved === 0}
+              onClick={async () => {
+                if (!tcs) return;
+                setBuildAllBusy(true);
+                setBuildAllMsg(null);
+                try {
+                  const r = await api.sprints.buildScripts(id);
+                  setBuildAllMsg(
+                    `Built ${r.built.length} script(s); skipped ${r.skipped.length}` +
+                      (r.errors.length ? `; ${r.errors.length} error(s)` : "") +
+                      ".",
+                  );
+                  // Refresh the coverage rollup so newly built scripts appear.
+                  api.sprints.testCases(id).then(setTcs).catch(() => {});
+                } catch (e) {
+                  setBuildAllMsg(
+                    e instanceof Error ? e.message : "Bulk build failed",
+                  );
+                } finally {
+                  setBuildAllBusy(false);
+                }
+              }}
+              title={
+                tcs.by_status.approved === 0
+                  ? "No approved test cases in this sprint to build."
+                  : "Build a Robot script for every approved + non-stale test case across every story in this sprint."
+              }
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-cyan-600 text-white text-xs font-semibold disabled:opacity-40"
+            >
+              {buildAllBusy
+                ? "Building…"
+                : `Build all scripts (${tcs.by_status.approved} approved)`}
+            </button>
+          </div>
+          {buildAllMsg && (
+            <p className="mb-2 text-xs text-emerald-200">{buildAllMsg}</p>
+          )}
+          <AnimatedCard glow="cyan" className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-900/60 text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">Story</th>
+                    <th className="px-2 py-2 text-right font-semibold">Approved</th>
+                    <th className="px-2 py-2 text-right font-semibold">Draft</th>
+                    <th className="px-2 py-2 text-right font-semibold">Archived</th>
+                    <th className="px-2 py-2 text-right font-semibold">Stale</th>
+                    <th className="px-2 py-2 text-right font-semibold">Scripts</th>
+                    <th className="px-3 py-2 text-right font-semibold">Coverage</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tcs.stories.map((story) => {
+                    const approved = story.test_cases.filter((t) => t.status === "approved" && !t.stale).length;
+                    const draft = story.test_cases.filter((t) => t.status === "draft").length;
+                    const archived = story.test_cases.filter((t) => t.status === "rejected").length;
+                    const stale = story.test_cases.filter((t) => t.stale).length;
+                    const withScript = story.test_cases.filter((t) => t.script_path).length;
+                    const coverable = story.test_cases.length - archived;
+                    const cov = coverable > 0 ? Math.round((withScript / coverable) * 100) : 0;
+                    return (
+                      <tr key={story.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                        <td className="px-3 py-2">
+                          <Link
+                            href={`/user-stories/${encodeURIComponent(story.id)}${projectSlug ? `?project=${encodeURIComponent(projectSlug)}` : ""}`}
+                            className="text-slate-100 hover:text-cyan-200"
+                          >
+                            {story.title}
+                          </Link>{" "}
+                          <span className="text-[10px] text-slate-500">v{story.version}</span>
+                        </td>
+                        <td className="px-2 py-2 text-right text-emerald-200">{approved}</td>
+                        <td className="px-2 py-2 text-right text-slate-300">{draft}</td>
+                        <td className="px-2 py-2 text-right text-amber-300">{archived}</td>
+                        <td className={`px-2 py-2 text-right ${stale > 0 ? "text-amber-400 font-semibold" : "text-slate-500"}`}>{stale}</td>
+                        <td className="px-2 py-2 text-right text-cyan-200">{withScript}/{coverable}</td>
+                        <td className={`px-3 py-2 text-right font-semibold ${cov >= 80 ? "text-emerald-300" : cov >= 40 ? "text-amber-300" : "text-red-300"}`}>
+                          {cov}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-900/40 text-slate-300">
+                  <tr>
+                    <td className="px-3 py-2 font-semibold">Sprint total</td>
+                    <td className="px-2 py-2 text-right">{tcs.by_status.approved}</td>
+                    <td className="px-2 py-2 text-right">{tcs.by_status.draft}</td>
+                    <td className="px-2 py-2 text-right">{tcs.by_status.rejected}</td>
+                    <td className="px-2 py-2 text-right">{tcs.by_status.stale ?? 0}</td>
+                    <td className="px-2 py-2 text-right">{tcs.scripts_built}/{tcs.total - tcs.by_status.rejected}</td>
+                    <td className="px-3 py-2 text-right">--</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </AnimatedCard>
+        </div>
       )}
 
       {/* Run all approved cases */}

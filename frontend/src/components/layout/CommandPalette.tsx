@@ -32,7 +32,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSession } from "next-auth/react";
-import { api } from "@/lib/api";
+import { api, type SearchHit } from "@/lib/api";
 import { subscribeTreeRefresh } from "@/lib/useTreeRefresh";
 import CreateProjectModal from "@/components/projects/CreateProjectModal";
 import CreateSprintModal from "@/components/sprints/CreateSprintModal";
@@ -40,7 +40,7 @@ import CreateStoryModal from "@/components/user-stories/CreateStoryModal";
 
 // ---------- Result model ----------
 
-type ResultKind = "action" | "project" | "sprint" | "story" | "run";
+type ResultKind = "action" | "project" | "sprint" | "story" | "test_case" | "run";
 
 type Result = {
   kind: ResultKind;
@@ -76,6 +76,11 @@ interface PaletteCache {
   recentRuns?: RunRow[];
   /** True once we've kicked off the deep fetch (sprints + stories per project). */
   deepFetchStarted: boolean;
+  /** Server-side search results (Phase 2 IA audit). Keyed by the
+   *  query string so a typed sequence "te" -> "tes" doesn't show
+   *  the wrong hits while the new request is in flight. */
+  serverHits?: SearchHit[];
+  serverHitsQuery?: string;
 }
 
 const cache: PaletteCache = {
@@ -92,6 +97,8 @@ export function clearPaletteCache(): void {
   cache.projectIds.clear();
   cache.sprintsByProject.clear();
   cache.storiesByProject.clear();
+  cache.serverHits = undefined;
+  cache.serverHitsQuery = undefined;
   cache.recentRuns = undefined;
   cache.deepFetchStarted = false;
 }
@@ -236,6 +243,32 @@ export default function CommandPalette({ disableHotkey }: Props = {}) {
     if (!open) return;
     if (query.trim().length < 2) return;
     void ensureDeep().then(() => setTick((t) => t + 1));
+  }, [open, query, enabled]);
+
+  // Server-side search (Phase 2 IA audit). Surfaces test cases the
+  // client-side cache excluded. Debounced ~200ms; cached per-query so
+  // a backspace doesn't re-fetch.
+  useEffect(() => {
+    if (!enabled || !open) return;
+    const q = query.trim();
+    if (q.length < 2) {
+      cache.serverHits = undefined;
+      cache.serverHitsQuery = undefined;
+      return;
+    }
+    if (cache.serverHitsQuery === q) return; // already have these
+    const id = setTimeout(async () => {
+      try {
+        const r = await api.search(q, 8);
+        if (cache.serverHitsQuery === q) return; // a newer query took over
+        cache.serverHits = r.hits;
+        cache.serverHitsQuery = q;
+        setTick((t) => t + 1);
+      } catch {
+        // Search failures fall back to the local cache silently.
+      }
+    }, 200);
+    return () => clearTimeout(id);
   }, [open, query, enabled]);
 
   // ---------- Result composition ----------
@@ -602,23 +635,68 @@ function buildResults(
   }
 
   // Score = position of first substring match (lower = better).
-  // Equal scores fall back to result-kind order (actions > project > sprint > story > run).
+  // Equal scores fall back to result-kind order (actions > project > sprint > story > test_case > run).
   const kindOrder: Record<ResultKind, number> = {
     action: 0,
     project: 1,
     sprint: 2,
     story: 3,
-    run: 4,
+    test_case: 4,
+    run: 5,
   };
+
+  // Server-side hits (Phase 2 IA audit). These surface test cases
+  // the client-side cache excludes + extend project / sprint / story
+  // coverage past the 50-project deep-fetch cap. Deduped against the
+  // local hits by id (server kind -> local result id format).
+  const serverResults: Result[] = [];
+  if (cache.serverHits && cache.serverHitsQuery === query.trim().toLowerCase()) {
+    for (const hit of cache.serverHits) {
+      const idPrefix: Record<SearchHit["kind"], string> = {
+        project: "proj:",
+        sprint: "sprint:",
+        story: "story:",
+        test_case: "tc:",
+        run: "run:",
+      };
+      const icon: Record<SearchHit["kind"], string> = {
+        project: "📁",
+        sprint: "🏃",
+        story: "📖",
+        test_case: "🧪",
+        run: "⏺",
+      };
+      serverResults.push({
+        kind: hit.kind === "test_case" ? "test_case" : hit.kind,
+        id: `${idPrefix[hit.kind]}${hit.id}`,
+        title: hit.title,
+        subtitle: hit.subtitle || undefined,
+        icon: icon[hit.kind],
+        href: hit.url,
+        searchKey: `${hit.title} ${hit.subtitle || ""}`.toLowerCase(),
+      });
+    }
+  }
+
   const all: Result[] = [
     ...allActions,
     ...projectResults,
     ...sprintResults,
     ...storyResults,
+    ...serverResults,
     ...runResults,
   ];
-  const scored: Array<{ r: Result; score: number }> = [];
+  // Dedupe by id so a result that exists in both local cache + server
+  // hits doesn't render twice.
+  const seenIds = new Set<string>();
+  const unique: Result[] = [];
   for (const r of all) {
+    if (seenIds.has(r.id)) continue;
+    seenIds.add(r.id);
+    unique.push(r);
+  }
+  const scored: Array<{ r: Result; score: number }> = [];
+  for (const r of unique) {
     const idx = r.searchKey.indexOf(q);
     if (idx >= 0) {
       scored.push({ r, score: idx + kindOrder[r.kind] * 0.001 });

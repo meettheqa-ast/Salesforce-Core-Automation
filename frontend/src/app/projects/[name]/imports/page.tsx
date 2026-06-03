@@ -553,6 +553,38 @@ export default function ImportTestCasesPage({
               </details>
             )}
 
+            {/* Touched-stories deep links. Single-story mode lists
+                one; per-row mode lists every touched story so the
+                user has a path forward instead of having to find
+                each one manually. */}
+            {commit.touched_story_ids && commit.touched_story_ids.length > 0 && (
+              <div className="mt-4 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+                <p className="text-[11px] uppercase tracking-wider text-cyan-300 mb-2">
+                  Touched {commit.touched_story_ids.length} story{commit.touched_story_ids.length === 1 ? "" : "ies"}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {commit.touched_story_ids.slice(0, 12).map((sid) => {
+                    const title = stories.find((s) => s.id === sid)?.title;
+                    return (
+                      <Link
+                        key={sid}
+                        href={`/user-stories/${encodeURIComponent(sid)}?project=${encodeURIComponent(slug)}`}
+                        className="text-xs px-2.5 py-1 rounded bg-cyan-600/30 text-cyan-100 hover:bg-cyan-600/50 truncate max-w-[18rem]"
+                        title={title || sid}
+                      >
+                        {title ? `${title} →` : `Story ${sid.slice(0, 8)} →`}
+                      </Link>
+                    );
+                  })}
+                  {commit.touched_story_ids.length > 12 && (
+                    <span className="text-[11px] text-slate-500 italic self-center">
+                      +{commit.touched_story_ids.length - 12} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="mt-6 flex gap-2 justify-between">
               <button
                 type="button"
@@ -561,6 +593,10 @@ export default function ImportTestCasesPage({
               >
                 Import another file
               </button>
+              {/* Primary CTA: when one story was targeted, deep-link
+                  straight to it. Per-row imports show the touched-
+                  stories list above instead so users can pick where
+                  to go next. */}
               {commit.created_test_case_ids.length > 0 && storyId && (
                 <Link
                   href={`/user-stories/${encodeURIComponent(storyId)}?project=${encodeURIComponent(slug)}`}

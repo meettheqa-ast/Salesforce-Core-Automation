@@ -11,6 +11,8 @@ import BulkExecutionStream from "@/components/execution/BulkExecutionStream";
 import SelectionToolbar, { type SelectionToolbarMode } from "@/components/lists/SelectionToolbar";
 import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
 import { useToast } from "@/components/ui/ToastProvider";
+import { usePersistedState } from "@/hooks/usePersistedState";
+import OverflowMenu from "@/components/menus/OverflowMenu";
 
 type TestCaseRow = {
   id: string;
@@ -70,8 +72,15 @@ export default function UserStoryDetailPage() {
    *  unified screen. We re-fetch when this changes because the
    *  backend honours `?include_archived=` and we want the canonical
    *  shape, not a client-side filter (which would drift from any
-   *  server-side ownership / RBAC filtering). */
-  const [showArchived, setShowArchived] = useState(false);
+   *  server-side ownership / RBAC filtering).
+   *
+   *  Persisted to localStorage so the toggle survives navigation --
+   *  users who keep it on get the same view every time they revisit
+   *  any story (key is global, not per-story, by design). */
+  const [showArchived, setShowArchived] = usePersistedState<boolean>(
+    "tc.showArchived",
+    false,
+  );
   const [confirmTcOpen, setConfirmTcOpen] = useState(false);
   const [confirmTcMode, setConfirmTcMode] = useState<ConfirmDeleteMode>("soft");
   const [confirmTcTargets, setConfirmTcTargets] = useState<TestCaseRow[]>([]);
@@ -1239,8 +1248,15 @@ export default function UserStoryDetailPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1">
-                    {t.status !== "approved" && t.status !== "rejected" && (
+                  {/* Action density audit: primary verbs (Approve /
+                      Run) stay visible; everything else collapses
+                      into a More menu. Restore stays visible on
+                      archived rows because it's the only useful
+                      forward action there. Archive stays visible as
+                      the primary destructive verb on live rows. */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {/* PRIMARY: Approve (draft only) */}
+                    {t.status === "draft" && (
                       <button
                         type="button"
                         disabled={busy}
@@ -1250,21 +1266,7 @@ export default function UserStoryDetailPage() {
                         Approve
                       </button>
                     )}
-                    {t.status === "approved" && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setCaseStatus(t.id, "draft")}
-                        title="Move back to draft"
-                        className="px-2.5 py-1 text-xs rounded glass text-slate-300 disabled:opacity-50"
-                      >
-                        Re-draft
-                      </button>
-                    )}
-                    {/* Archived (status=rejected) rows surface a Restore
-                        button so the user can recover an accidental
-                        Archive without leaving the page. The Archive
-                        button itself is hidden on already-archived rows. */}
+                    {/* PRIMARY: Restore (archived only) */}
                     {t.status === "rejected" && (
                       <button
                         type="button"
@@ -1276,69 +1278,8 @@ export default function UserStoryDetailPage() {
                         Restore
                       </button>
                     )}
-                    {/* Single destructive verb: Archive. Replaces the
-                        former Reject + Delete pair that did the same
-                        thing. Permanent purge has moved to the
-                        Archived view's bulk toolbar so it's no longer
-                        one click away on every row. */}
-                    {t.status !== "rejected" && (
-                      <button
-                        type="button"
-                        onClick={() => openDeleteTcs([t], "soft")}
-                        title="Archive this test case (restorable from the Show archived view)"
-                        className="px-2.5 py-1 text-xs rounded border border-red-400/40 text-red-300 hover:bg-red-500/10"
-                      >
-                        Archive
-                      </button>
-                    )}
-                    {/* Permanent delete is available on archived rows
-                        only, when the user has opted into the archived
-                        view. Admin / project-lead gate is enforced on
-                        the backend (the button is shown to everyone;
-                        unauthorized clicks see a clean 403). */}
-                    {t.status === "rejected" && (
-                      <button
-                        type="button"
-                        onClick={() => openDeleteTcs([t], "permanent")}
-                        title="Permanently delete this test case (JSON + script + history); cannot be undone"
-                        className="px-2.5 py-1 text-xs rounded border border-red-500/60 bg-red-700/20 text-red-200 hover:bg-red-700/40"
-                      >
-                        Delete permanently
-                      </button>
-                    )}
-                    {t.script_path && (
-                      <button
-                        type="button"
-                        disabled={!!scriptLoading[t.id]}
-                        onClick={() => toggleScript(t.id)}
-                        className="px-2.5 py-1 text-xs rounded bg-cyan-600/40 text-cyan-100 disabled:opacity-50"
-                      >
-                        {scriptLoading[t.id]
-                          ? "Loading…"
-                          : scriptShown
-                            ? "Hide script"
-                            : "View script"}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={buildBusy[t.id] || t.status !== "approved" || t.stale}
-                      onClick={() => buildSingleScript(t.id)}
-                      title={
-                        t.status !== "approved"
-                          ? "Approve this test case first"
-                          : t.stale
-                            ? "Test case is stale; update/re-approve first"
-                            : "Generate or refresh this case script"
-                      }
-                      className="px-2.5 py-1 text-xs rounded bg-cyan-700/60 text-cyan-100 disabled:opacity-40"
-                    >
-                      {buildBusy[t.id] ? "Generating…" : t.script_path ? "Re-generate script" : "Generate script"}
-                    </button>
-                    {/* Run button: only shown for script-ready cases.
-                        Disabled while another run is live, so the
-                        BulkExecutionStream isn't fighting two SSE
-                        sources at once. */}
+                    {/* PRIMARY: Run (script-ready only). The most
+                        common forward action once a script exists. */}
                     {t.script_path && (
                       <button
                         type="button"
@@ -1356,6 +1297,68 @@ export default function UserStoryDetailPage() {
                         Run
                       </button>
                     )}
+                    {/* OVERFLOW: everything else lives in a kebab menu
+                        so the row doesn't grow to 8-10 buttons. */}
+                    <OverflowMenu
+                      actions={[
+                        // Build / re-build script -- top of overflow
+                        // because it's the path from Approved to
+                        // Run-ready.
+                        {
+                          label: buildBusy[t.id]
+                            ? "Generating script…"
+                            : t.script_path
+                              ? "Re-generate script"
+                              : "Generate script",
+                          onClick: () => buildSingleScript(t.id),
+                          disabled: buildBusy[t.id] || t.status !== "approved" || t.stale,
+                          title:
+                            t.status !== "approved"
+                              ? "Approve this test case first"
+                              : t.stale
+                                ? "Test case is stale; update/re-approve first"
+                                : undefined,
+                        },
+                        // View script (only when one exists)
+                        ...(t.script_path
+                          ? [{
+                              label: scriptLoading[t.id]
+                                ? "Loading script…"
+                                : scriptShown
+                                  ? "Hide script"
+                                  : "View script",
+                              onClick: () => toggleScript(t.id),
+                              disabled: !!scriptLoading[t.id],
+                            }]
+                          : []),
+                        // Status toggles
+                        ...(t.status === "approved"
+                          ? [{
+                              label: "Move back to draft",
+                              onClick: () => setCaseStatus(t.id, "draft"),
+                              disabled: busy,
+                            }]
+                          : []),
+                        // Archive (live rows)
+                        ...(t.status !== "rejected"
+                          ? [{
+                              label: "Archive",
+                              onClick: () => openDeleteTcs([t], "soft"),
+                              destructive: true,
+                              title: "Restorable from the Show archived view",
+                            }]
+                          : []),
+                        // Delete permanently (archived rows)
+                        ...(t.status === "rejected"
+                          ? [{
+                              label: "Delete permanently",
+                              onClick: () => openDeleteTcs([t], "permanent"),
+                              destructive: true,
+                              title: "Removes the JSON row, on-disk script, and history. Cannot be undone.",
+                            }]
+                          : []),
+                      ]}
+                    />
                   </div>
                 </div>
 

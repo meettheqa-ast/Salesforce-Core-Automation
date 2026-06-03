@@ -7,6 +7,7 @@ import LeftHierarchySidebar from "@/components/layout/LeftHierarchySidebar";
 import WorkspaceSubHeader from "@/components/layout/WorkspaceSubHeader";
 import SessionProviderWrapper from "@/components/auth/SessionProviderWrapper";
 import ToastProvider from "@/components/ui/ToastProvider";
+import ThemeApplier from "@/components/layout/ThemeApplier";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -21,6 +22,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} font-sans bg-gradient-animated min-h-screen antialiased`}>
         <SessionProviderWrapper>
           <ToastProvider>
+            {/* Mounts at the root so every page picks up the user's
+                theme preference from localStorage on first render.
+                Listens for storage events + system color-scheme
+                changes; light-theme styles will activate when the
+                design pass ships :root[data-theme="light"] rules. */}
+            <ThemeApplier />
             <FloatingNavbar />
             {/* Cmd+K command palette: portal-rendered, listens for the
                 hotkey globally. Mounted once at root so every page gets

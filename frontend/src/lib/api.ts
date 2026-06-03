@@ -518,6 +518,20 @@ export const api = {
     delete: (name: string) => apiFetch<any>(`/api/projects/${name}`, { method: "DELETE" }),
     tests: (name: string) => apiFetch<any[]>(`/api/projects/${name}/tests`),
     testSource: (name: string, test: string) => apiFetch<any>(`/api/projects/${name}/tests/${test}/source`),
+    /** Project-scoped activity feed. Aggregates audit_log rows whose
+     *  metadata mentions the project (by slug OR project_id). Powers
+     *  the right-rail Activity panel on the project home (Phase 2 of
+     *  the IA audit). Returns up to ``limit`` rows newest-first plus
+     *  a ``next_before`` cursor for paging. */
+    activity: (name: string, opts?: { limit?: number; before?: string }) => {
+      const qs = new URLSearchParams();
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      if (opts?.before) qs.set("before", opts.before);
+      const q = qs.toString();
+      return apiFetch<ProjectActivityResponse>(
+        `/api/projects/${encodeURIComponent(name)}/activity${q ? `?${q}` : ""}`,
+      );
+    },
     /** All test cases for this project, grouped by user story.
      *  Uses the JSON store (test_case_ids_project:<UUID> index), not the
      *  Robot files on disk -- that's the `tests` endpoint. */
@@ -1027,6 +1041,21 @@ export const api = {
           }>;
         }>;
       }>(`/sprints/${encodeURIComponent(id)}/test-cases`),
+    /** Fan out story-level build-scripts across every active story
+     *  in the sprint. Closes the "no sprint-level build" IA gap --
+     *  before this users had to open each story individually to
+     *  materialise scripts before a sprint run. */
+    buildScripts: (id: string) =>
+      apiFetch<{
+        sprint_id: string;
+        stories_processed: number;
+        built: Array<{ test_case_id: string; story_id: string; script_path: string; bytes_written: number }>;
+        skipped: Array<{ test_case_id: string; story_id: string; title: string; reason: string }>;
+        errors: string[];
+      }>(
+        `/sprints/${encodeURIComponent(id)}/build-scripts`,
+        { method: "POST", body: "{}" },
+      ),
   },
   /** Phase 3: visual regression endpoints. Per-project baseline
    *  management. Server-side gated by ``settings.pw_visual_regression``;
@@ -1435,6 +1464,15 @@ export const api = {
       }),
   },
 
+  // ---- Cross-entity search (Phase 2 IA audit) ----
+  //
+  // Replaces the Cmd+K palette's client-side fan-out across 3 list
+  // endpoints. Test cases are now first-class results.
+  search: (q: string, limit = 8) =>
+    apiFetch<SearchResponse>(
+      `/api/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
+
   // ---- AI Prompt Management ----
   //
   // Backend lives at /api/prompts. The Settings -> AI Prompts page
@@ -1455,6 +1493,12 @@ export const api = {
       const q = qs.toString();
       return apiFetch<PromptTemplateSummary[]>(`/api/prompts${q ? `?${q}` : ""}`);
     },
+    /** Lightweight (category -> template_id) maps for the current
+     *  user + the org default. The Settings -> Prompts list page joins
+     *  these against the template list to badge rows as Active for me
+     *  / Org default without paying N detail requests. */
+    activeOverrides: () =>
+      apiFetch<PromptActiveOverridesMap>("/api/prompts/active"),
     get: (id: string, versionsLimit = 50) =>
       apiFetch<PromptTemplateDetail>(
         `/api/prompts/${encodeURIComponent(id)}?versions_limit=${versionsLimit}`,
@@ -1814,6 +1858,10 @@ export interface ImportCommitResponse {
   skipped_count: number;
   failed_count: number;
   created_test_case_ids: string[];
+  /** Story ids that received at least one created/overwritten TC.
+   *  The wizard's Result step uses this to deep-link to every
+   *  touched story in per-row mode (single-story mode lists one). */
+  touched_story_ids: string[];
   failed_rows: ImportFailedRow[];
   duration_ms: number;
 }
@@ -1843,6 +1891,50 @@ export interface ImportBatchSummary {
 export interface ImportBatchDetail extends ImportBatchSummary {
   /** Full failed-rows array (only present on the detail endpoint). */
   failed_rows: ImportFailedRow[];
+}
+
+// ---- Cross-entity search (Phase 2 IA audit) ----
+
+export type SearchHitKind = "project" | "sprint" | "story" | "test_case" | "run";
+
+export interface SearchHit {
+  kind: SearchHitKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  url: string;
+  project_slug: string | null;
+  score: number;
+}
+
+export interface SearchResponse {
+  q: string;
+  hits: SearchHit[];
+  truncated: boolean;
+}
+
+// ---- Project activity feed (Phase 2 IA audit) ----
+
+export interface ProjectActivityRow {
+  id: string;
+  action: string;
+  /** Canonical dotted form (audit_actions.canonical_name). Stable
+   *  even if the underlying legacy snake_case action changes name. */
+  canonical: string;
+  /** Friendly verb-phrase: "archived a test case" etc. */
+  label: string;
+  target_type: string;
+  target_id: string;
+  user_id: string | null;
+  user_name: string | null;
+  user_email: string | null;
+  timestamp: string | null;
+}
+
+export interface ProjectActivityResponse {
+  project_slug: string;
+  items: ProjectActivityRow[];
+  next_before: string | null;
 }
 
 // ---- AI Prompt Management ----
@@ -1933,6 +2025,14 @@ export interface PromptPreviewResponse {
   output_format: PromptOutputFormat;
   template_id: string;
   template_name: string;
+}
+
+/** Returned by GET /api/prompts/active -- "for this user, which
+ *  templates are active" so list views can badge rows without N+1
+ *  detail fetches. */
+export interface PromptActiveOverridesMap {
+  user: Record<string, string>;
+  org: Record<string, string>;
 }
 
 export interface PromptDryRunResponse {

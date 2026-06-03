@@ -473,3 +473,170 @@ def list_sprint_test_cases(
         scripts_built=scripts_built,
         stories=groups,
     )
+
+
+# --- Build scripts for every story in the sprint ----------------------
+
+
+class _BuiltScriptRow(BaseModel):
+    test_case_id: str
+    story_id: str
+    script_path: str
+    bytes_written: int
+
+
+class _SkippedScriptRow(BaseModel):
+    test_case_id: str
+    story_id: str
+    title: str
+    reason: str
+
+
+class _SprintBuildScriptsResponse(BaseModel):
+    sprint_id: str
+    stories_processed: int
+    built: list[_BuiltScriptRow]
+    skipped: list[_SkippedScriptRow]
+    errors: list[str]
+
+
+@router.post("/{sprint_id}/build-scripts", response_model=_SprintBuildScriptsResponse)
+def build_sprint_scripts(
+    sprint_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fan out story-level build-scripts across every story in the
+    sprint. Closes the "no sprint-level build" IA gap flagged in the
+    audit -- without this, users had to open each story individually
+    to materialise scripts before a sprint run.
+
+    Behaviour mirrors :func:`user_stories.build_story_scripts` per
+    story: approved + non-stale TCs are compiled to ``.robot`` files
+    on disk, others are reported as ``skipped`` with a reason. A
+    per-story failure (rare LLM/build crash) is captured in
+    ``errors`` and the loop continues so one bad story doesn't tank
+    the whole batch.
+
+    Audit: one ``sprint_scripts_built`` row with built/skipped/errors
+    counts. Each individual story builder still emits its own
+    ``story_scripts_built`` row inside `_build_one_story`.
+    """
+    # Lazy imports because user_stories pulls in the LLM + builder
+    # stack and we don't want to pay that import cost on every sprint
+    # CRUD call.
+    from pathlib import Path  # noqa: PLC0415
+
+    from ..config import settings as _settings  # noqa: PLC0415
+    from ..models.test_case import TestCaseStatus  # noqa: PLC0415
+    from ..project_registry import slug_for_project_id  # noqa: PLC0415
+    from ..services.audit import log_action  # noqa: PLC0415
+    from ..services.test_case_script_builder import TestCaseScriptBuilder  # noqa: PLC0415
+
+    sprint = _load_sprint_or_403(sprint_id, current_user)
+    project_slug = slug_for_project_id(sprint.project_id)
+    if not project_slug:
+        raise HTTPException(400, "Could not resolve project slug for sprint")
+
+    builder = TestCaseScriptBuilder()
+    built: list[_BuiltScriptRow] = []
+    skipped: list[_SkippedScriptRow] = []
+    errors: list[str] = []
+    stories_processed = 0
+
+    story_rows = _store.get_user_stories_by_sprint(sprint_id)
+    stories = [UserStory.model_validate(r) for r in story_rows]
+    # Mirror the coverage matrix: only act on stories the user can see
+    # AND that are still active. Archived stories are skipped silently.
+    stories = [
+        s for s in stories
+        if (current_user.is_admin or (s.owner_user_id == current_user.id))
+        and s.status == UserStoryStatus.active
+    ]
+
+    for story in stories:
+        stories_processed += 1
+        out_dir = (
+            Path(_settings.saved_projects_dir)
+            / project_slug
+            / "Tests"
+            / "Generated"
+            / f"story_{str(story.id).replace('-', '')[:12]}"
+        )
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            errors.append(f"story={story.id}: mkdir failed: {exc}")
+            continue
+
+        for tc_row in _store.get_test_cases_by_story(story.id):
+            tc = TestCase.model_validate(tc_row)
+            if tc.status != TestCaseStatus.approved:
+                skipped.append(_SkippedScriptRow(
+                    test_case_id=str(tc.id), story_id=str(story.id),
+                    title=tc.title, reason="status_not_approved",
+                ))
+                continue
+            if tc.stale:
+                skipped.append(_SkippedScriptRow(
+                    test_case_id=str(tc.id), story_id=str(story.id),
+                    title=tc.title, reason="story_changed_marked_stale",
+                ))
+                continue
+            try:
+                source = builder.build_robot_script(
+                    tc,
+                    db=db,
+                    project_slug=project_slug,
+                    user_id=str(current_user.id),
+                )
+            except Exception as exc:  # noqa: BLE001
+                skipped.append(_SkippedScriptRow(
+                    test_case_id=str(tc.id), story_id=str(story.id),
+                    title=tc.title, reason=str(exc)[:200],
+                ))
+                continue
+            target = out_dir / f"case_{str(tc.id).replace('-', '')[:12]}.robot"
+            final = source.rstrip() + "\n"
+            try:
+                target.write_text(final, encoding="utf-8")
+                rel = target.resolve().relative_to(Path.cwd().resolve()).as_posix()
+            except (OSError, ValueError) as exc:
+                skipped.append(_SkippedScriptRow(
+                    test_case_id=str(tc.id), story_id=str(story.id),
+                    title=tc.title, reason=f"write failed: {exc}",
+                ))
+                continue
+            tc_row["script_path"] = rel
+            tc_row["script_built_at"] = datetime.now(UTC).isoformat()
+            _store.save_test_case(tc_row)
+            built.append(_BuiltScriptRow(
+                test_case_id=str(tc.id), story_id=str(story.id),
+                script_path=rel, bytes_written=len(final.encode("utf-8")),
+            ))
+
+    try:
+        log_action(
+            db,
+            user=current_user,
+            action="sprint_scripts_built",
+            target_type="sprint",
+            target_id=str(sprint.id),
+            metadata={
+                "stories_processed": stories_processed,
+                "built": len(built),
+                "skipped": len(skipped),
+                "errors": len(errors),
+            },
+        )
+    except Exception:
+        # Audit failure never blocks a successful response.
+        pass
+
+    return _SprintBuildScriptsResponse(
+        sprint_id=str(sprint.id),
+        stories_processed=stories_processed,
+        built=built,
+        skipped=skipped,
+        errors=errors,
+    )

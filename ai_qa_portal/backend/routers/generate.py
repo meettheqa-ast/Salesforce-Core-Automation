@@ -1401,6 +1401,31 @@ def _run_generation_job(job_id: str) -> None:
             job.robot_code = final_robot_code
         session.add(job)
         session.commit()
+        # Notify the job's submitter that their long-running stepwise
+        # generation finished. The bell badge updates within ~60s
+        # because of SWR polling on /api/me/notifications.
+        try:
+            if job.owner_user_id and terminal_status in (
+                GenerationStatus.succeeded.value,
+                GenerationStatus.failed.value,
+            ):
+                from ..services.audit_actions import GENERATION_COMPLETED
+                from ..services.db import push_notification
+                ok = terminal_status == GenerationStatus.succeeded.value
+                push_notification(
+                    session,
+                    user_id=str(job.owner_user_id),
+                    type=GENERATION_COMPLETED,
+                    title=(
+                        "Generation completed"
+                        if ok
+                        else f"Generation failed: {(terminal_error or 'unknown')[:80]}"
+                    ),
+                    body=f"Job {job.id[:8]} · {job.mode or 'stepwise'}",
+                    action_url="/generate",
+                )
+        except Exception:
+            pass
 
 
 def _job_stream(job_id: str, *, from_seq: int = 0):

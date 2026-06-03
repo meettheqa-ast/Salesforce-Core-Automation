@@ -22,7 +22,7 @@ export const CORE_NAV_GROUPS: NavGroup[] = [
       { href: "/", label: "Home", icon: "🏠", match: "exact" },
       { href: "/projects", label: "Projects", icon: "📂", match: "prefix" },
       { href: "/runs", label: "All Runs", icon: "🏁", match: "prefix" },
-      { href: "/notifications", label: "Notifications", icon: "🔔", match: "prefix", disabled: true },
+      { href: "/notifications", label: "Notifications", icon: "🔔", match: "prefix" },
     ],
   },
   {

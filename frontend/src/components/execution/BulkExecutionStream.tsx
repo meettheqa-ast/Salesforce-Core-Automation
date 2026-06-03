@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { api } from "@/lib/api";
 
@@ -633,6 +634,11 @@ function SummaryCard({ summary, cases }: { summary: BulkSummary; cases: CaseRow[
         .filter(Boolean),
     [cases],
   );
+  // Open run dashboard deep-link. The /runs page honours ?search= so
+  // we land the user on the rows produced by this bulk job. Closes
+  // the IA audit gap where story/sprint runs had no path to the full
+  // run dashboard (only inline summary + per-test report download).
+  const dashboardUrl = `/runs?search=${encodeURIComponent(summary.bulk_prefix)}`;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -655,9 +661,17 @@ function SummaryCard({ summary, cases }: { summary: BulkSummary; cases: CaseRow[
           <p className="text-[10px] uppercase tracking-wider text-slate-500">Pass rate</p>
         </div>
       </div>
-      <p className="mt-3 text-[11px] text-slate-500 break-all">
-        Bulk prefix: {summary.bulk_prefix}
-      </p>
+      <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-[11px] text-slate-500 break-all">
+          Bulk prefix: {summary.bulk_prefix}
+        </p>
+        <Link
+          href={dashboardUrl}
+          className="text-xs px-3 py-1.5 rounded-lg bg-cyan-600/30 text-cyan-100 hover:bg-cyan-600/50"
+        >
+          Open run dashboard →
+        </Link>
+      </div>
       {allFolders.length > 0 && (
         <details className="mt-3 text-xs text-slate-400">
           <summary className="cursor-pointer text-slate-500 hover:text-slate-300 select-none">

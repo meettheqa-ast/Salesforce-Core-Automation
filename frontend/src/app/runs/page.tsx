@@ -31,11 +31,21 @@ function pillCls(status: string): string {
 export default function RunHistoryPage() {
   const searchParams = useSearchParams();
   const projectFilter = searchParams.get("project") || "";
+  // Honour ?search= / ?status= URL params so deep-links from bulk
+  // execution panels can land users on a pre-filtered view. The IA
+  // audit flagged the inconsistency: story/sprint bulk runs had no
+  // path to the full run dashboard. With this param honoured, the
+  // BulkExecutionStream's "Open run dashboard" link drops users
+  // straight onto the right rows.
+  const initialSearch = searchParams.get("search") || "";
+  const initialStatus = (searchParams.get("status") || "ALL").toUpperCase();
   const [rows, setRows] = useState<RunHistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<StatusFilter>("ALL");
-  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<StatusFilter>(
+    (["ALL", "PASS", "FAIL"].includes(initialStatus) ? initialStatus : "ALL") as StatusFilter,
+  );
+  const [search, setSearch] = useState(initialSearch);
   const [savedViews, setSavedViews] = useState<SavedRunView[]>([]);
   const [selectedRuns, setSelectedRuns] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement | null>(null);

@@ -14,6 +14,7 @@ from __future__ import annotations
 from .context import ContextFile, ContextFileRow
 from .embeddings import Embedding, EmbeddingSourceKind
 from .generation import GenerationJob, GenerationMetric, GenerationStatus
+from .events import Event
 from .heal import HealEvent, OrgFieldLearning
 from .imports import ImportBatch
 from .prompts import (
@@ -45,6 +46,7 @@ __all__ = [
     "GenerationJob",
     "GenerationMetric",
     "GenerationStatus",
+    "Event",
     "HealEvent",
     "ImportBatch",
     "PromptMeta",

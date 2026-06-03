@@ -135,6 +135,12 @@ class _CommitResponse(BaseModel):
     skipped_count: int
     failed_count: int
     created_test_case_ids: list[str]
+    # Story ids that received at least one created/overwritten TC.
+    # Added in the IA audit so the import wizard's "Result" step can
+    # deep-link to every touched story in per-row mode (single-story
+    # mode just shows one link, but per-row imports across many
+    # stories previously had no follow-up affordance).
+    touched_story_ids: list[str] = []
     failed_rows: list[_CommitFailedRow]
     duration_ms: int
 
@@ -589,6 +595,7 @@ def commit_test_case_import(
         skipped_count=skipped,
         failed_count=failed_count,
         created_test_case_ids=created,
+        touched_story_ids=sorted(touched_story_ids),
         failed_rows=failed_rows,
         duration_ms=duration_ms,
     )

@@ -5,8 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from sqlalchemy.orm import Session
+
 from ai_qa_portal.backend.services.auth import get_current_user
-from ai_qa_portal.backend.services.db import SessionLocal, User
+from ai_qa_portal.backend.services.db import SessionLocal, User, get_db
 from ai_qa_portal.backend.services.form_healer import FormHealer
 
 router = APIRouter(
@@ -128,6 +130,7 @@ def aggregate_heal_feedback(
     current_user: User = Depends(get_current_user),
     project_slug: str | None = Query(None),
     lookback_days: int = Query(90, ge=1, le=365),
+    db: Session = Depends(get_db),
 ):
     is_admin = current_user.is_admin or current_user.global_role == "admin"
     if not is_admin:
@@ -135,10 +138,31 @@ def aggregate_heal_feedback(
     try:
         from ai_qa_portal.backend.services.heal_feedback import aggregate_org_field_learnings
 
-        return aggregate_org_field_learnings(
+        result = aggregate_org_field_learnings(
             project_slug=project_slug,
             lookback_days=lookback_days,
         )
+        # Notify the admin who ran the aggregation. heal.aggregated is
+        # a new event type introduced in the IA audit; it lands in the
+        # inbox so admins can see "the learnings were refreshed at X".
+        try:
+            from ..services.audit_actions import HEAL_AGGREGATED
+            from ..services.db import push_notification
+
+            push_notification(
+                db,
+                user_id=str(current_user.id),
+                type=HEAL_AGGREGATED,
+                title="Heal learnings aggregated",
+                body=(
+                    f"Lookback {lookback_days}d · "
+                    f"project={project_slug or 'all'}"
+                ),
+                action_url="/admin/audit?category=heal",
+            )
+        except Exception:
+            pass
+        return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

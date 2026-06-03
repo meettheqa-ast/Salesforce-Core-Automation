@@ -15,6 +15,8 @@ import VisualRegressionPanel from "@/components/projects/VisualRegressionPanel";
 import { api, parseDeleteBlockersError } from "@/lib/api";
 import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
+import SelectionToolbar, { type SelectionToolbarMode } from "@/components/lists/SelectionToolbar";
+import ProjectActivitySection from "./_sections/ProjectActivitySection";
 
 /** Filter state for the test-cases panel. Mirrors a `?filter=<id>` URL
  *  param so a click-through from the project list page lands here on
@@ -114,12 +116,20 @@ export default function ProjectDetailPage() {
   const [projectTCs, setProjectTCs] = useState<ProjectTestCases | null>(null);
   const [openStories, setOpenStories] = useState<Record<string, boolean>>({});
   const [scriptPreview, setScriptPreview] = useState<{ tcId: string; title: string; content: string } | null>(null);
-  // Per-row TC delete on the project-home panel. No bulk here -- the
-  // panel groups rows by story and the per-row affordance is enough
-  // for the rare "kill this one rogue case" workflow.
+  // Per-row TC delete on the project-home panel.
   const [tcDeleteOpen, setTcDeleteOpen] = useState(false);
   const [tcDeleteMode, setTcDeleteMode] = useState<ConfirmDeleteMode>("soft");
   const [tcDeleteTarget, setTcDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  // Bulk selection for the TC panel (added in the IA audit to match
+  // the SelectionToolbar pattern stories / sprints already use). The
+  // set lives at panel level (across story groups) since users
+  // typically archive cross-story batches by status, not by story.
+  // A single ConfirmDeleteModal handles both the per-row and bulk
+  // flows -- bulk passes a target list joined into one label.
+  const [tcSelected, setTcSelected] = useState<string[]>([]);
+  const [tcBulkConfirmOpen, setTcBulkConfirmOpen] = useState(false);
+  const [tcBulkConfirmMode, setTcBulkConfirmMode] = useState<ConfirmDeleteMode>("soft");
+  const [tcBulkBusy, setTcBulkBusy] = useState(false);
   // Sprints summary for the project. Fetched once we resolve the
   // project slug -> portal UUID so /sprints?project_id=... works.
   const [sprintsForProject, setSprintsForProject] = useState<
@@ -467,14 +477,21 @@ export default function ProjectDetailPage() {
         </div>
       </motion.div>
 
-      {/* Dashboard: counts row + 2 donuts + filter chips */}
-      <ProjectDashboard
-        environments={environments.length}
-        tcs={projectTCs}
-        analytics={analytics}
-        activeFilter={activeFilter}
-        onFilterChange={setFilter}
-      />
+      {/* Dashboard strip + activity feed side-by-side on wide
+          screens. On narrower viewports the feed drops below the
+          dashboard rather than competing for width. Closes the IA
+          gap flagged in the audit: project home had no "what
+          happened today" surface. */}
+      <div className="grid lg:grid-cols-[1fr_320px] gap-4 mb-4">
+        <ProjectDashboard
+          environments={environments.length}
+          tcs={projectTCs}
+          analytics={analytics}
+          activeFilter={activeFilter}
+          onFilterChange={setFilter}
+        />
+        <ProjectActivitySection projectSlug={name} limit={15} />
+      </div>
 
       {/* Inline status */}
       <AnimatePresence>
@@ -874,6 +891,46 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
+            {/* Bulk-archive / bulk-purge toolbar. Mirrors the stories +
+                sprints SelectionToolbar pattern so users get the same
+                affordance no matter which surface they're working
+                from. Mode auto-resolves: every selected row archived
+                -> permanent; every selected row live -> soft; mixed
+                -> show both buttons. */}
+            {(() => {
+              const selectedRows = filteredStories
+                .flatMap((s) => s.test_cases)
+                .filter((tc) => tcSelected.includes(tc.id));
+              if (selectedRows.length === 0) return null;
+              const allRejected = selectedRows.every((t) => t.status === "rejected");
+              const noneRejected = selectedRows.every((t) => t.status !== "rejected");
+              const mode: SelectionToolbarMode = allRejected
+                ? "permanent"
+                : noneRejected
+                  ? "soft"
+                  : "mixed";
+              return (
+                <SelectionToolbar
+                  count={selectedRows.length}
+                  entityNoun="test case"
+                  mode={mode}
+                  busy={tcBulkBusy}
+                  softLabel="Archive"
+                  onSoftDelete={
+                    mode === "soft" || mode === "mixed"
+                      ? () => { setTcBulkConfirmMode("soft"); setTcBulkConfirmOpen(true); }
+                      : undefined
+                  }
+                  onHardDelete={
+                    mode === "permanent" || mode === "mixed"
+                      ? () => { setTcBulkConfirmMode("permanent"); setTcBulkConfirmOpen(true); }
+                      : undefined
+                  }
+                  onClear={() => setTcSelected([])}
+                />
+              );
+            })()}
+
             <div className="space-y-3">
               {filteredStories.map((story: StoryGroup) => {
                 const isOpen = openStories[story.id] ?? true;
@@ -914,6 +971,20 @@ export default function ProjectDetailPage() {
                             key={tc.id}
                             className="px-3 py-2 flex flex-wrap items-center gap-2"
                           >
+                            <input
+                              type="checkbox"
+                              checked={tcSelected.includes(tc.id)}
+                              onChange={() =>
+                                setTcSelected((prev) =>
+                                  prev.includes(tc.id)
+                                    ? prev.filter((x) => x !== tc.id)
+                                    : [...prev, tc.id],
+                                )
+                              }
+                              className="accent-amber-500"
+                              aria-label={`Select test case ${tc.title}`}
+                              title="Select for bulk archive / permanent delete"
+                            />
                             <span
                               className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
                                 tc.status === "approved"
@@ -1265,6 +1336,60 @@ export default function ProjectDetailPage() {
           }
         }}
         onClose={() => setTcDeleteOpen(false)}
+      />
+      {/* Bulk archive / purge modal for the TC panel selection. Wraps
+          the same bulk endpoints used by the user-stories detail page
+          so behaviour is identical -- the only difference is which
+          surface the user kicked it off from. */}
+      <ConfirmDeleteModal
+        open={tcBulkConfirmOpen}
+        entityNoun="test case"
+        targetLabels={(() => {
+          const all = filteredStories.flatMap((s) => s.test_cases);
+          return tcSelected
+            .map((id) => all.find((t) => t.id === id)?.title || id)
+            .slice(0, 5)
+            .concat(tcSelected.length > 5 ? [`...and ${tcSelected.length - 5} more`] : []);
+        })()}
+        mode={tcBulkConfirmMode}
+        onConfirm={async (): Promise<{ ok: boolean; blockers?: DeleteBlocker[]; message?: string }> => {
+          if (tcSelected.length === 0) return { ok: false, message: "Nothing selected" };
+          setTcBulkBusy(true);
+          try {
+            const permanent = tcBulkConfirmMode === "permanent";
+            // Filter ids to only those legal for the chosen mode --
+            // soft drops already-archived ids (no-op), permanent
+            // requires status=rejected.
+            const all = filteredStories.flatMap((s) => s.test_cases);
+            const eligibleIds = tcSelected.filter((id) => {
+              const t = all.find((x) => x.id === id);
+              if (!t) return false;
+              if (permanent) return t.status === "rejected";
+              return t.status !== "rejected";
+            });
+            if (eligibleIds.length === 0) {
+              return { ok: false, message: "No eligible test cases for this action." };
+            }
+            const resp = await api.testCases.bulkDelete(eligibleIds, permanent);
+            const ok = resp.results.filter(
+              (r) => r.status === "soft_deleted" || r.status === "hard_deleted",
+            ).length;
+            flash(
+              "ok",
+              `${ok} test case${ok === 1 ? "" : "s"} ${permanent ? "permanently deleted" : "archived"}.`,
+            );
+            setTcSelected([]);
+            api.projects.testCases(name).then(setProjectTCs).catch(() => {});
+            return { ok: true };
+          } catch (err: unknown) {
+            const parsed = parseDeleteBlockersError(err);
+            if (parsed) return { ok: false, blockers: parsed.blockers, message: parsed.detail };
+            return { ok: false, message: err instanceof Error ? err.message : "Bulk delete failed" };
+          } finally {
+            setTcBulkBusy(false);
+          }
+        }}
+        onClose={() => setTcBulkConfirmOpen(false)}
       />
     </div>
   );

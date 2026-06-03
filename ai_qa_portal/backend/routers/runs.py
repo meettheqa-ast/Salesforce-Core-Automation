@@ -1128,6 +1128,32 @@ def execute_robot(
         metadata={"status": status, "passed": passed, "failed": failed, "duration_s": duration},
     )
 
+    # Fire an in-app notification so users see run outcomes from the
+    # bell (not just the inline log). One row per terminal run --
+    # bulk runs emit one "run_finished" per case which keeps the
+    # noise low; users can mute by marking-all-read.
+    # Notification type matches audit_actions.RUN_FAILED / RUN_PASSED
+    # so the activity feed and inbox classify them consistently.
+    try:
+        from ..services.audit_actions import RUN_FAILED, RUN_PASSED
+        from ..services.db import push_notification
+        ev_type = RUN_FAILED if status == "FAIL" else RUN_PASSED
+        push_notification(
+            db,
+            user_id=str(current_user.id),
+            type=ev_type,
+            title=(
+                f"Run failed ({failed} test{'' if failed == 1 else 's'})"
+                if status == "FAIL"
+                else f"Run passed ({passed} test{'' if passed == 1 else 's'})"
+            ),
+            body=f"{duration:.1f}s wall clock · {out_dir.name}",
+            action_url=f"/runs/{out_dir.name}",
+        )
+    except Exception:
+        # Notification failure must never break a run response.
+        pass
+
     error_message = None
     if completed.returncode != 0 and not output_xml.exists():
         # Robot didn't even start writing output - capture stderr/stdout snippet.

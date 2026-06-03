@@ -2,9 +2,11 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { PageHeader, PageScaffold, PageSection } from "@/components/layout/PageScaffold";
+import OnboardingChecklist from "@/components/onboarding/OnboardingChecklist";
 
 const ParticleField = dynamic(() => import("@/components/three/ParticleField"), { ssr: false });
 
@@ -22,11 +24,30 @@ const WORKFLOW = [
 ];
 
 export default function LandingPage() {
+  // Read the sidebar's persisted project slug so the onboarding
+  // checklist below points at the user's active workspace. The
+  // sidebar writes this on every project-picker change.
+  const [activeProject, setActiveProject] = useState<string>("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      setActiveProject(window.localStorage.getItem("ws.project") || "");
+    } catch {
+      // localStorage disabled; checklist just doesn't render.
+    }
+  }, []);
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       <ParticleField />
       <div className="relative z-10">
         <PageScaffold>
+          {/* Adaptive first-run checklist. Renders only when the user
+              has an active workspace AND that project has unfinished
+              steps (sprint / story / TC / script / run). Dismisses
+              forever per-project via localStorage. */}
+          {activeProject && <OnboardingChecklist projectSlug={activeProject} />}
+
           <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }}>
             <PageHeader
               eyebrow="Test Intelligence Platform"

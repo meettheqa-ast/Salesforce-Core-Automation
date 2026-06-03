@@ -515,3 +515,122 @@ def delete_persona(
     _ensure_can_access_project(project_name, current_user, db, ProjectRole.pm)
     if not project_manager.delete_persona(project_name, environment, persona):
         raise HTTPException(404, f"Persona '{persona}' not found in '{environment}'")
+
+
+# --- Project activity feed (IA audit, Phase 2) ----------------------
+#
+# Aggregates the slice of `audit_log` relevant to a project so the
+# project home + future right-rail panel can answer "what happened in
+# this project today" without admin permissions.
+
+
+class _ActivityRow(BaseModel):
+    id: str
+    action: str
+    # Canonical dotted form (audit_actions.canonical_name). The legacy
+    # snake_case action is preserved on `action` so we don't break
+    # callers that filter by the raw string.
+    canonical: str
+    label: str
+    target_type: str
+    target_id: str
+    user_id: str | None
+    user_name: str | None
+    user_email: str | None
+    timestamp: str | None
+
+
+class _ActivityResponse(BaseModel):
+    project_slug: str
+    items: list[_ActivityRow]
+    next_before: str | None = None
+
+
+@router.get("/{project_name}/activity", response_model=_ActivityResponse)
+def project_activity(
+    project_name: str,
+    limit: int = Query(50, ge=1, le=200),
+    before: str | None = Query(
+        None,
+        description="ISO timestamp -- return rows strictly before this. Used for paging.",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the audit_log slice for this project, newest first.
+
+    A row is project-scoped when the action's metadata mentions the
+    project (by slug OR project_id) OR when the target_type is one
+    of the project-owned entities (test_case / user_story / sprint /
+    prompt_template that lives under a project) AND we can resolve
+    that target back to the project.
+
+    Because metadata_json is a TEXT blob today, we use a SUBSTRING
+    LIKE search -- imperfect but cheap, and the v1 activity feed
+    doesn't need millisecond response time. The Phase 3 unified
+    event stream will replace this with a proper indexed query.
+    """
+    from ai_qa_portal.backend.services.audit_actions import canonical_name, humanize
+    from ai_qa_portal.backend.services.db import AuditLog, User as DBUser
+
+    _ensure_can_access_project(project_name, current_user, db)
+    project_id = str(ensure_project_uuid(project_name))
+
+    # Build a permissive WHERE that matches either the slug or the
+    # project_id stringified inside the JSON metadata blob.
+    slug_needle = f'"project_slug": "{project_name}"'
+    id_needle = f'"project_id": "{project_id}"'
+
+    q = (
+        db.query(AuditLog)
+        .filter(
+            (AuditLog.metadata_json.contains(slug_needle))
+            | (AuditLog.metadata_json.contains(id_needle))
+        )
+        .order_by(AuditLog.timestamp.desc())
+    )
+    if before:
+        try:
+            cutoff = datetime.fromisoformat(before)
+            q = q.filter(AuditLog.timestamp < cutoff)
+        except ValueError:
+            raise HTTPException(400, "before must be ISO-8601 timestamp")
+    rows = q.limit(limit + 1).all()  # +1 to know if more pages exist
+
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    # Resolve user names in one query rather than per-row.
+    user_ids = {r.user_id for r in rows if r.user_id}
+    user_map: dict[str, DBUser] = {}
+    if user_ids:
+        user_map = {
+            u.id: u
+            for u in db.query(DBUser).filter(DBUser.id.in_(user_ids)).all()
+        }
+
+    items = []
+    for r in rows:
+        u = user_map.get(r.user_id or "")
+        canon = canonical_name(r.action)
+        items.append(
+            _ActivityRow(
+                id=r.id,
+                action=r.action,
+                canonical=canon,
+                label=humanize(r.action),
+                target_type=r.target_type,
+                target_id=r.target_id,
+                user_id=r.user_id,
+                user_name=u.name if u else None,
+                user_email=u.email if u else None,
+                timestamp=r.timestamp.isoformat() if r.timestamp else None,
+            )
+        )
+
+    next_before = items[-1].timestamp if has_more and items else None
+    return _ActivityResponse(
+        project_slug=project_name,
+        items=items,
+        next_before=next_before,
+    )

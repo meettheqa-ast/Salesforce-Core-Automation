@@ -24,9 +24,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { api, type PromptCategory, type PromptTemplateSummary } from "@/lib/api";
+import {
+  api,
+  type PromptActiveOverridesMap,
+  type PromptCategory,
+  type PromptTemplateSummary,
+} from "@/lib/api";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
+import StatusPill from "@/components/data/StatusPill";
 
 interface Me {
   id: string;
@@ -37,6 +43,14 @@ export default function PromptsSettingsPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [categories, setCategories] = useState<PromptCategory[]>([]);
   const [templates, setTemplates] = useState<PromptTemplateSummary[]>([]);
+  /** Map of category -> template_id active for the current user / org.
+   *  Used to badge rows ("Active for me" / "Org default") without N+1
+   *  detail fetches. Falls back to empty maps when the endpoint is
+   *  unreachable -- badges just don't render in that case. */
+  const [overrides, setOverrides] = useState<PromptActiveOverridesMap>({
+    user: {},
+    org: {},
+  });
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -45,14 +59,16 @@ export default function PromptsSettingsPage() {
     setLoading(true);
     setErr(null);
     try {
-      const [cats, tpls, who] = await Promise.all([
+      const [cats, tpls, who, ovr] = await Promise.all([
         api.prompts.categories(),
         api.prompts.list(),
         api.me().catch(() => null),
+        api.prompts.activeOverrides().catch(() => ({ user: {}, org: {} } as PromptActiveOverridesMap)),
       ]);
       setCategories(cats);
       setTemplates(tpls);
       setMe(who as Me | null);
+      setOverrides(ovr);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load prompts");
     } finally {
@@ -203,14 +219,23 @@ export default function PromptsSettingsPage() {
                 ) : (
                   <div className="space-y-2">
                     {rows.map((tpl) => {
-                      // Note: the SUMMARY shape doesn't carry overrides.
-                      // The editor page joins them; here we keep the
-                      // list view lightweight and let the badges
-                      // ("Mine", "System default") tell the story.
+                      // Badges are computed from the lightweight
+                      // /api/prompts/active map (no N+1 detail fetches).
+                      // Active for me wins visually over Org default
+                      // because the user's override is what their next
+                      // generation will actually use.
+                      const activeForMe = overrides.user[tpl.category] === tpl.id;
+                      const activeForOrg = overrides.org[tpl.category] === tpl.id;
                       return (
                         <div
                           key={tpl.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2"
+                          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 ${
+                            activeForMe
+                              ? "border-emerald-500/40 bg-emerald-500/5"
+                              : activeForOrg
+                                ? "border-amber-500/30 bg-amber-500/5"
+                                : "border-white/10"
+                          }`}
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -220,20 +245,20 @@ export default function PromptsSettingsPage() {
                               >
                                 {tpl.name}
                               </Link>
+                              {activeForMe && (
+                                <StatusPill tone="success" label="Active for me" />
+                              )}
+                              {!activeForMe && activeForOrg && (
+                                <StatusPill tone="warning" label="Org default" />
+                              )}
                               {tpl.is_system && (
-                                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-600/30 text-cyan-100">
-                                  System default
-                                </span>
+                                <StatusPill tone="info" label="System default" />
                               )}
                               {!tpl.is_system && tpl.owner_user_id === me?.id && (
-                                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600/30 text-emerald-100">
-                                  Mine
-                                </span>
+                                <StatusPill tone="muted" label="Mine" />
                               )}
                               {tpl.deleted_at && (
-                                <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-600/30 text-red-100">
-                                  Deleted
-                                </span>
+                                <StatusPill tone="danger" label="Deleted" />
                               )}
                             </div>
                             {tpl.description && (

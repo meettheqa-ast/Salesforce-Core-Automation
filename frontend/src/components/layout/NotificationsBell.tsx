@@ -185,6 +185,19 @@ export default function NotificationsBell() {
                     })}
                   </ul>
                 )}
+                {/* Footer: deep-link into the full inbox. Closes the
+                    IA gap where the bell was the only surface and
+                    users couldn't browse history beyond the latest
+                    ~10. The /notifications page lives in app/ now. */}
+                <div className="border-t border-white/5 px-4 py-2 text-right">
+                  <Link
+                    href="/notifications"
+                    onClick={() => setOpen(false)}
+                    className="text-[11px] text-cyan-300 hover:text-cyan-200"
+                  >
+                    View all →
+                  </Link>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>,

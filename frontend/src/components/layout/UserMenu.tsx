@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import { signOut, useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -149,6 +150,29 @@ export default function UserMenu() {
                     </div>
                   )}
                 </div>
+                {/* Settings / Profile entry points. Closes the IA gap
+                    flagged in the audit: the user menu previously had
+                    only Sign out, so users always opened the sidebar
+                    to reach preferences. Profile is a dedicated
+                    personal-settings page; Settings is the existing
+                    hub. */}
+                <Link
+                  href="/settings/profile"
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="block px-3 py-2 text-sm text-slate-200 hover:bg-white/5 transition"
+                >
+                  Profile
+                </Link>
+                <Link
+                  href="/settings"
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="block px-3 py-2 text-sm text-slate-200 hover:bg-white/5 transition"
+                >
+                  Settings
+                </Link>
+                <div className="border-t border-white/5 my-1" />
                 <button
                   type="button"
                   role="menuitem"
