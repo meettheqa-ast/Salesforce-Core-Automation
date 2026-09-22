@@ -12,6 +12,7 @@
 | **Self-healing UI** | Shared keywords (e.g. `Attempt Save And Auto-Heal Missing Fields`, `Heal Missing Modal Field By Label`, picklist/text fallbacks) react to Salesforce validation panels and missing fields—reducing brittle one-shot scripts. |
 | **Data-driven testing** | Upload a CSV; when the generated suite references **`@{LEADS_FROM_CSV}`**, the pipeline injects **`CsvDataLibrary`**, loads **`uploaded_test_data.csv`**, and drives **FOR** loops over real rows. |
 | **Jira ingestion + RAG** | Connect a Jira Cloud project, **Sync now** to pull every sprint, issue, and comment into Postgres + pgvector, and the AI sees that context at generation time. See [`docs/jira-integration.md`](docs/jira-integration.md) and [`docs/rag-architecture.md`](docs/rag-architecture.md). |
+| **Jira Stories (in-app browser)** | Lighter weight: search Jira, review a user story (description/comments/Epic children), and pull it straight into the AI Test Agent prompt — no Postgres required. Sidebar → **Jira Stories**. See [`docs/jira-story-browser.md`](docs/jira-story-browser.md). |
 | **Context files + test data** | Upload CSV / XLSX / PDF / DOCX / MD / TXT to ground generation in your team's own docs. Reusable "test data" tables let prompts address rows by name. See [`docs/context-files.md`](docs/context-files.md). |
 | **GitHub script storage + CI** | Push approved `.robot` suites into a connected repo and let GitHub Actions run them on a cron or via `workflow_dispatch`. See [`docs/github-integration.md`](docs/github-integration.md). |
 | **Scheduled runs (hybrid)** | Cron-trigger any sprint, story, test case, or tag. Choose `local` (in-process APScheduler) or `github_actions` (cron lives in the repo workflow) per schedule. See [`docs/scheduled-runs.md`](docs/scheduled-runs.md). |
@@ -230,6 +231,7 @@ app_pipeline.py        # AI run, Robot subprocess, project suite, pending editor
 app_reporting.py       # In-app run summary from output.xml + screenshots
 run_test.py            # EnvData + robot/pabot CLI builder
 ai_bridge.py           # LLM generation, CSV injection, catalog context
+jira_bridge.py         # Jira Cloud/Server REST client: search, fetch issue/epic, ADF→text
 project_manager.py     # Saved_Projects CRUD
 Resources/Common/      # GlobalKeywords.robot (self-heal, Salesforce flows)
 Tests/Generated/       # temp_test.robot (ad-hoc / review flow)

@@ -75,7 +75,10 @@ if st.session_state.get("_catalog_init_error"):
 
 def _init_sf_credential_session_keys() -> None:
     """Ensure Streamlit widget keys for Salesforce credentials exist before first render."""
-    for k in ("sf_sandbox_url", "sf_username", "sf_password", "sf_security_token", "slack_webhook_url"):
+    for k in (
+        "sf_sandbox_url", "sf_username", "sf_password", "sf_security_token", "slack_webhook_url",
+        "jira_base_url", "jira_email", "jira_api_token", "jira_project_key",
+    ):
         if k not in st.session_state:
             st.session_state[k] = ""
     if "active_environment" not in st.session_state:
@@ -111,6 +114,7 @@ def _apply_project_credentials_to_session() -> None:
         st.session_state["jira_base_url"] = jira_cfg.get("jira_base_url") or ""
         st.session_state["jira_api_token"] = jira_cfg.get("jira_api_token") or ""
         st.session_state["jira_project_key"] = jira_cfg.get("jira_project_key") or ""
+        st.session_state["jira_email"] = jira_cfg.get("jira_email") or ""
         st.session_state["edit_creds_mode"] = False
     st.session_state["_credentials_bound_key"] = bound_key
 
@@ -417,7 +421,61 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
             )
 
         # DEMO: Slack webhook hidden for clean demo
-        # DEMO: Jira/Zephyr integration hidden for clean demo
+
+        if is_project_mode and editing:
+            st.markdown("**📋 Jira connection**")
+            st.caption(
+                "Used to browse & pull user stories into the AI prompt (Home page), and to "
+                "sync run results back to Jira/Zephyr."
+            )
+            je1, je2 = st.columns(2)
+            with je1:
+                st.text_input(
+                    "Jira Site URL",
+                    placeholder="https://yourcompany.atlassian.net",
+                    key="jira_base_url",
+                    disabled=readonly,
+                )
+            with je2:
+                st.text_input(
+                    "Project Key",
+                    placeholder="e.g. QA",
+                    key="jira_project_key",
+                    disabled=readonly,
+                )
+            je3, je4 = st.columns(2)
+            with je3:
+                st.text_input(
+                    "Atlassian Account Email",
+                    placeholder="you@example.com",
+                    help="Leave blank to use Bearer-token auth (Jira Server/Data Center PAT) instead of Jira Cloud Basic auth.",
+                    key="jira_email",
+                    disabled=readonly,
+                )
+            with je4:
+                st.text_input(
+                    "Jira API Token / PAT",
+                    type="password",
+                    placeholder="••••••••",
+                    help="Jira Cloud: generate at id.atlassian.com → Security → API tokens.",
+                    key="jira_api_token",
+                    disabled=readonly,
+                )
+            if st.button("🔌 Test Jira Connection", key="jira_test_conn_btn"):
+                try:
+                    from jira_bridge import JiraSettings, test_connection
+
+                    ok, msg = test_connection(
+                        JiraSettings(
+                            site_url=st.session_state.get("jira_base_url", ""),
+                            email=st.session_state.get("jira_email", ""),
+                            api_token=st.session_state.get("jira_api_token", ""),
+                            project_key=st.session_state.get("jira_project_key", ""),
+                        )
+                    )
+                    (st.success if ok else st.error)(msg)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Connection test failed: {exc}")
 
         # ── Action buttons ────────────────────────────────────────────
         if is_project_mode:
@@ -444,6 +502,7 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                             st.session_state.get("jira_base_url", ""),
                             st.session_state.get("jira_api_token", ""),
                             st.session_state.get("jira_project_key", ""),
+                            st.session_state.get("jira_email", ""),
                         )
                         st.session_state["edit_creds_mode"] = False
                         st.session_state.pop("_credentials_bound_key", None)
@@ -534,7 +593,7 @@ def _render_test_builder_tab(
     #             clear_pending_generation()
     #             st.session_state.pop("_loaded_test_name", None)
 
-    user_story_id = ""
+    user_story_id = st.session_state.get("jira_user_story_id_input", "")
     uploaded_csv = None
     uploaded_image = None
     csv_llm_block = ""
@@ -1473,6 +1532,22 @@ def _render_ai_agent_panel(
         unsafe_allow_html=True,
     )
 
+    # ── Jira story hand-off (from the "Jira Stories" page) ─────────────
+    _jira_banner = st.session_state.pop("_jira_story_banner", None)
+    if _jira_banner:
+        st.session_state["jira_user_story_id_input"] = _jira_banner.get("key", "")
+        st.session_state["_jira_banner_display"] = _jira_banner
+    _banner = st.session_state.get("_jira_banner_display")
+    if _banner:
+        bc1, bc2 = st.columns([5, 1])
+        with bc1:
+            st.info(f"📋 Loaded from Jira **{_banner.get('key', '')}** — {_banner.get('summary', '')}")
+        with bc2:
+            if st.button("✖ Clear", key="clear_jira_banner_btn", use_container_width=True):
+                st.session_state.pop("_jira_banner_display", None)
+                st.session_state["jira_user_story_id_input"] = ""
+                st.rerun()
+
     # ── Prompt input ──────────────────────────────────────────────────
     if st.session_state.get("_pending_prompt"):
         st.session_state["main_prompt"] = st.session_state.pop("_pending_prompt")
@@ -1485,6 +1560,13 @@ def _render_ai_agent_panel(
         placeholder="e.g. Create a Lead named John at Acme Corp, set State to CA, verify Lead Owner",
         key="main_prompt",
         label_visibility="collapsed",
+    )
+
+    st.text_input(
+        "Jira user story ID (optional)",
+        placeholder="e.g. QA-123 — tags generated tests and links results back to Jira",
+        key="jira_user_story_id_input",
+        help="Browse & pull stories from the **Jira Stories** page in the sidebar, or type a key directly.",
     )
 
     run_clicked = st.button(
@@ -1778,8 +1860,95 @@ def _render_projects_page(
     _section_header("Project Info", "Select or create a project")
 
     all_projs = _pm.list_projects()
+    show_create = bool(st.session_state.get("_show_create_project"))
 
-    if not all_projs and not st.session_state.get("_show_create_project"):
+    def _render_new_project_form(*, allow_cancel: bool) -> None:
+        """Create-project fields. Keeps ``_show_create_project`` set until Save/Cancel.
+
+        Previously the flag was cleared on first paint, so the first keystroke
+        (a Streamlit rerun) bounced the user back to the empty-state card.
+        """
+        with st.container(border=True):
+            st.caption("New Project Setup")
+            p_c1, p_c2 = st.columns(2)
+            with p_c1:
+                new_name = st.text_input(
+                    "Project Name",
+                    placeholder="e.g. Regression_Suite_Q3",
+                    key="proj_new_name",
+                )
+            with p_c2:
+                new_desc = st.text_input(
+                    "Description (optional)",
+                    placeholder="e.g. End-to-end tests for CPQ",
+                    key="proj_new_desc",
+                )
+
+            init_env = st.selectbox(
+                "Initial Environment",
+                _ENV_PRESETS + ["Custom..."],
+                key="proj_new_env",
+            )
+            if init_env == "Custom...":
+                init_env = st.text_input("Custom environment name", key="proj_new_env_custom")
+
+            np_url = st.text_input(
+                "Sandbox URL",
+                placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/",
+                key="proj_new_url",
+            )
+            cred_c1, cred_c2 = st.columns(2)
+            with cred_c1:
+                np_user = st.text_input("Username", key="proj_new_user")
+            with cred_c2:
+                np_pw = st.text_input("Password", type="password", key="proj_new_pw")
+
+            save_col, cancel_col = st.columns(2)
+            with save_col:
+                save_clicked = st.button(
+                    "Save Project", type="primary", key="proj_save_btn", use_container_width=True
+                )
+            with cancel_col:
+                cancel_clicked = (
+                    st.button("Cancel", key="proj_cancel_btn", use_container_width=True)
+                    if allow_cancel
+                    else False
+                )
+
+            if cancel_clicked:
+                st.session_state.pop("_show_create_project", None)
+                st.session_state.pop("proj_page_select", None)
+                st.rerun()
+
+            if save_clicked:
+                if not new_name or not new_name.strip():
+                    st.error("Project name cannot be empty.")
+                elif not init_env or not str(init_env).strip():
+                    st.error("Please select or enter an environment name.")
+                else:
+                    try:
+                        proj_dir = _pm.create_project(new_name, new_desc or "")
+                        project_id = proj_dir.name
+                        _pm.write_project_credentials(
+                            project_id,
+                            np_url.strip(),
+                            np_user.strip(),
+                            np_pw,
+                            environment=str(init_env).strip(),
+                            persona="System Admin",
+                        )
+                        st.session_state["active_project"] = project_id
+                        st.session_state["active_environment"] = str(init_env).strip()
+                        st.session_state["active_persona"] = "System Admin"
+                        st.session_state.pop("_credentials_bound_key", None)
+                        st.session_state.pop("_show_create_project", None)
+                        st.session_state.pop("proj_page_select", None)
+                        st.toast(f"Project **{new_name}** created!")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(str(e))
+
+    if not all_projs and not show_create:
         st.markdown(
             '<div class="feature-card" style="text-align:center;padding:2rem">'
             '<div class="feature-card-icon">📂</div>'
@@ -1788,58 +1957,48 @@ def _render_projects_page(
             "</div>",
             unsafe_allow_html=True,
         )
-        if st.button("Create Your First Project", type="primary", key="create_first_proj_btn", use_container_width=True):
+        if st.button(
+            "Create Your First Project",
+            type="primary",
+            key="create_first_proj_btn",
+            use_container_width=True,
+        ):
             st.session_state["_show_create_project"] = True
             st.rerun()
 
+    elif show_create:
+        # Keep the flag set for the whole editing session (cleared only on Save/Cancel).
+        st.session_state["_show_create_project"] = True
+        _render_new_project_form(allow_cancel=True)
+
     else:
-        proj_opts = ["+ Create New Project"] + all_projs
+        # Create option last so an existing project is the natural default —
+        # putting it first made the create form stick on every visit.
+        proj_opts = all_projs + ["+ Create New Project"]
         active_proj = st.session_state.get("active_project", "")
-        cur_idx = proj_opts.index(active_proj) if active_proj in proj_opts else (1 if all_projs else 0)
+        if active_proj in proj_opts:
+            cur_idx = proj_opts.index(active_proj)
+        else:
+            cur_idx = 0
 
-        proj_sel = st.selectbox("Project", proj_opts, index=cur_idx, key="proj_page_select", label_visibility="collapsed")
+        # Keep the selectbox in sync with the active project when the user
+        # isn't intentionally creating (avoids a stuck "+ Create" widget state).
+        if st.session_state.get("proj_page_select") == "+ Create New Project":
+            pass  # user chose create from the dropdown
+        elif active_proj in all_projs:
+            st.session_state["proj_page_select"] = active_proj
 
-        if proj_sel == "+ Create New Project" or st.session_state.get("_show_create_project"):
-            st.session_state.pop("_show_create_project", None)
-            with st.container(border=True):
-                p_c1, p_c2 = st.columns(2)
-                with p_c1:
-                    new_name = st.text_input("Project Name", placeholder="e.g. Regression_Suite_Q3", key="proj_new_name")
-                with p_c2:
-                    new_desc = st.text_input("Description (optional)", placeholder="e.g. End-to-end tests for CPQ", key="proj_new_desc")
+        proj_sel = st.selectbox(
+            "Project",
+            proj_opts,
+            index=min(cur_idx, len(proj_opts) - 1),
+            key="proj_page_select",
+            label_visibility="collapsed",
+        )
 
-                init_env = st.selectbox("Initial Environment", _ENV_PRESETS + ["Custom..."], key="proj_new_env")
-                if init_env == "Custom...":
-                    init_env = st.text_input("Custom environment name", key="proj_new_env_custom")
-
-                np_url = st.text_input("Sandbox URL", placeholder="https://yourorg--sbx.sandbox.my.salesforce.com/", key="proj_new_url")
-                cred_c1, cred_c2 = st.columns(2)
-                with cred_c1:
-                    np_user = st.text_input("Username", key="proj_new_user")
-                with cred_c2:
-                    np_pw = st.text_input("Password", type="password", key="proj_new_pw")
-
-                if st.button("Save Project", type="primary", key="proj_save_btn", use_container_width=True):
-                    if not new_name or not new_name.strip():
-                        st.error("Project name cannot be empty.")
-                    elif not init_env or not init_env.strip():
-                        st.error("Please select or enter an environment name.")
-                    else:
-                        try:
-                            proj_dir = _pm.create_project(new_name, new_desc or "")
-                            project_id = proj_dir.name
-                            _pm.write_project_credentials(
-                                project_id, np_url.strip(), np_user.strip(), np_pw,
-                                environment=init_env.strip(), persona="System Admin",
-                            )
-                            st.session_state["active_project"] = project_id
-                            st.session_state["active_environment"] = init_env.strip()
-                            st.session_state["active_persona"] = "System Admin"
-                            st.session_state.pop("_credentials_bound_key", None)
-                            st.toast(f"Project **{new_name}** created!")
-                            st.rerun()
-                        except ValueError as e:
-                            st.error(str(e))
+        if proj_sel == "+ Create New Project":
+            st.session_state["_show_create_project"] = True
+            _render_new_project_form(allow_cancel=True)
         else:
             if st.session_state.get("active_project") != proj_sel:
                 st.session_state["active_project"] = proj_sel
@@ -2358,6 +2517,197 @@ def _render_about_page() -> None:
             )
 
 
+# ---------------------------------------------------------------------------
+# Jira Stories — browse & pull Jira user stories into the AI prompt
+# ---------------------------------------------------------------------------
+
+def _current_jira_settings():
+    """Build a JiraSettings from session state (loaded from the active project, if any)."""
+    from jira_bridge import JiraSettings
+
+    return JiraSettings(
+        site_url=st.session_state.get("jira_base_url", ""),
+        email=st.session_state.get("jira_email", ""),
+        api_token=st.session_state.get("jira_api_token", ""),
+        project_key=st.session_state.get("jira_project_key", ""),
+    )
+
+
+def _render_jira_stories_page() -> None:
+    """Browse Jira user stories and pull one into the Home-page AI prompt.
+
+    Reuses the active project's Jira connection (Project Settings → Jira
+    connection). Works ad-hoc too — connection fields below are session-only
+    until a project is active and you save them from Project Settings.
+    """
+    st.markdown(
+        '<div class="page-header">'
+        "<h1>Jira Stories</h1>"
+        "<p>Search Jira, review a user story, and pull it into the AI Test Agent as prompt context.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    active_proj = st.session_state.get("active_project", "")
+    settings = _current_jira_settings()
+
+    with st.expander(
+        "🔌 Jira connection" + (f" — project **{active_proj}**" if active_proj else " (session only)"),
+        expanded=not settings.api_token.strip(),
+    ):
+        st.caption(
+            "Saved from **Project Settings** when a project is active. You can also set these "
+            "for this browser session only (won't persist) if you're working ad-hoc."
+        )
+        jc1, jc2 = st.columns(2)
+        with jc1:
+            st.text_input("Jira Site URL", placeholder="https://yourcompany.atlassian.net", key="jira_base_url")
+            st.text_input("Atlassian Account Email", placeholder="you@example.com", key="jira_email")
+        with jc2:
+            st.text_input("Project Key", placeholder="e.g. QA", key="jira_project_key")
+            st.text_input("Jira API Token / PAT", type="password", key="jira_api_token")
+
+        jc3, jc4 = st.columns(2)
+        with jc3:
+            if st.button("🔌 Test Connection", key="jira_stories_test_conn_btn"):
+                from jira_bridge import test_connection
+
+                ok, msg = test_connection(_current_jira_settings())
+                (st.success if ok else st.error)(msg)
+        with jc4:
+            if active_proj and _pm is not None:
+                if st.button("💾 Save to project", key="jira_stories_save_btn"):
+                    _pm.write_jira_config(
+                        active_proj,
+                        st.session_state.get("jira_base_url", ""),
+                        st.session_state.get("jira_api_token", ""),
+                        st.session_state.get("jira_project_key", ""),
+                        st.session_state.get("jira_email", ""),
+                    )
+                    st.toast(f"Jira connection saved to **{active_proj}**.")
+
+    settings = _current_jira_settings()
+    from jira_bridge import validate_settings
+
+    conn_error = validate_settings(settings)
+    if conn_error:
+        st.info(f"ℹ️ {conn_error}")
+        return
+
+    st.markdown("### Search")
+    query = st.text_input(
+        "Project key, issue key, keyword, or full JQL",
+        value=st.session_state.get("jira_search_query", ""),
+        placeholder='e.g. SCRUM-5, 5, "routing", or project = SCRUM AND status = "To Do"',
+        key="jira_search_query",
+        help="Bare numbers (e.g. 5) are resolved against the Project Key above as SCRUM-5.",
+    )
+    search_clicked = st.button("🔎 Search Jira", type="primary", key="jira_search_btn")
+
+    if search_clicked or "_jira_search_results" not in st.session_state:
+        from jira_bridge import build_browse_jql, search_issues, BROWSE_STORIES_NEED_PROJECT_HINT
+
+        jql = build_browse_jql(query, settings.project_key)
+        if not jql:
+            st.session_state["_jira_search_results"] = []
+            st.warning(BROWSE_STORIES_NEED_PROJECT_HINT)
+        else:
+            with st.spinner("Searching Jira…"):
+                rows, err = search_issues(settings, jql, max_results=50)
+            if err:
+                st.error(err)
+                st.session_state["_jira_search_results"] = []
+            else:
+                st.session_state["_jira_search_results"] = rows
+                st.caption(f"JQL: `{jql}`")
+
+    results = st.session_state.get("_jira_search_results", [])
+    if not results:
+        st.caption("No stories matched. Try a different project key or keyword.")
+    else:
+        st.markdown(f"### Results ({len(results)})")
+        for row in results:
+            with st.container(border=True):
+                rc1, rc2 = st.columns([4, 1])
+                with rc1:
+                    st.markdown(
+                        f"**{row['key']}** &nbsp; "
+                        f"<span style='background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:6px;font-size:0.75rem'>"
+                        f"{row.get('issue_type') or 'Issue'}</span> &nbsp; "
+                        f"<span style='color:#22d3ee;font-size:0.75rem'>{row.get('status', '')}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(row.get("summary") or "(no summary)")
+                with rc2:
+                    if st.button("View", key=f"jira_view_{row['key']}", use_container_width=True):
+                        st.session_state["_jira_selected_key"] = row["key"]
+                        st.rerun()
+
+    selected_key = st.session_state.get("_jira_selected_key", "")
+    if selected_key:
+        st.markdown("---")
+        st.markdown(f"### {selected_key}")
+        from jira_bridge import fetch_issue, build_story_context, is_epic_issue_type
+
+        with st.spinner(f"Loading {selected_key} from Jira…"):
+            issue = fetch_issue(settings, selected_key)
+
+        if issue.get("error"):
+            st.error(issue["error"])
+        else:
+            st.markdown(f"**{issue.get('summary', '')}**")
+            meta_bits = [b for b in (issue.get("issue_type"), issue.get("status")) if b]
+            if meta_bits:
+                st.caption(" · ".join(meta_bits))
+
+            if issue.get("description_text"):
+                with st.expander("Description", expanded=True):
+                    st.markdown(issue["description_text"])
+            if issue.get("comments_text"):
+                with st.expander("Comments"):
+                    st.markdown(issue["comments_text"])
+            if issue.get("attachment_names"):
+                with st.expander(f"Attachments ({len(issue['attachment_names'])})"):
+                    for name in issue["attachment_names"]:
+                        st.markdown(f"- {name}")
+
+            if is_epic_issue_type(issue.get("issue_type")):
+                st.info("This is an **Epic**. Load its child stories below.")
+                if st.button("📂 Load child stories", key="jira_load_epic_children_btn"):
+                    from jira_bridge import fetch_epic_children
+
+                    with st.spinner("Loading Epic children…"):
+                        epic = fetch_epic_children(settings, selected_key)
+                    if epic.get("error"):
+                        st.error(epic["error"])
+                    else:
+                        st.session_state["_jira_search_results"] = epic.get("children", [])
+                        st.session_state.pop("_jira_selected_key", None)
+                        st.rerun()
+
+            uc1, uc2 = st.columns([1, 1])
+            with uc1:
+                if st.button("📥 Use in AI Test Agent", type="primary", key="jira_use_story_btn", use_container_width=True):
+                    context = build_story_context(issue)
+                    st.session_state["_pending_prompt"] = (
+                        f"{context}\n\n---\n\n"
+                        "Write a Robot Framework test that verifies the acceptance criteria in the "
+                        "user story above."
+                    )
+                    st.session_state["_jira_story_banner"] = {
+                        "key": issue.get("key", ""),
+                        "summary": issue.get("summary", ""),
+                    }
+                    st.session_state["nav_page"] = "test_builder"
+                    st.session_state.pop("_jira_selected_key", None)
+                    st.toast(f"Loaded {issue.get('key', '')} into the AI Test Agent prompt.")
+                    st.rerun()
+            with uc2:
+                if st.button("Close", key="jira_close_story_btn", use_container_width=True):
+                    st.session_state.pop("_jira_selected_key", None)
+                    st.rerun()
+
+
 def _render_footer() -> None:
     """Global footer bar at the bottom of the page."""
     st.markdown(
@@ -2387,6 +2737,7 @@ def _render_footer() -> None:
 _NAV_PAGES = [
     ("test_builder",     "Home"),
     ("projects",         "Projects"),
+    ("jira_stories",     "Jira Stories"),
     ("---",              "---"),
     ("sfdx_tools",       "SF DX Tools"),
     ("locator_scanner",  "Locator Scanner"),
@@ -2462,6 +2813,9 @@ def main_ui() -> None:
 
     elif page == "projects":
         _render_projects_page(sandbox_url, username, password)
+
+    elif page == "jira_stories":
+        _render_jira_stories_page()
 
     elif page == "sfdx_tools":
         _render_sfdx_page()

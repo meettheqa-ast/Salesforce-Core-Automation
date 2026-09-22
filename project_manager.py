@@ -91,7 +91,14 @@ def _default_persona_block() -> dict[str, dict[str, str]]:
     return {"personas": {DEFAULT_PERSONA: _empty_cred_block()}}
 
 
-_JIRA_KEYS: list[str] = ["jira_base_url", "jira_api_token", "jira_project_key"]
+_JIRA_KEYS: list[str] = [
+    "jira_base_url", "jira_api_token", "jira_project_key",
+    # Jira Cloud REST API uses HTTP Basic auth (email + API token). Added
+    # alongside the original three keys so the "Sync results to Jira/Zephyr"
+    # (Bearer-token) flow and the newer "Browse Jira user stories" (Basic
+    # auth) flow can both read/write the same project-level Jira block.
+    "jira_email",
+]
 
 
 def _empty_jira_block() -> dict[str, str]:
@@ -446,12 +453,20 @@ def write_jira_config(
     jira_base_url: str = "",
     jira_api_token: str = "",
     jira_project_key: str = "",
+    jira_email: str = "",
 ) -> Path:
-    """Persist Jira/Zephyr settings at the project root level."""
+    """Persist Jira/Zephyr settings at the project root level.
+
+    ``jira_email`` is the Atlassian account email used for Jira Cloud HTTP
+    Basic auth (email + API token) when browsing/importing user stories.
+    Leave it blank to fall back to Bearer-token auth (Jira Server/Data
+    Center PAT, or Zephyr Scale), matching the pre-existing results-sync flow.
+    """
     raw = _load_raw_config(project_name)
     raw["jira_base_url"] = (jira_base_url or "").strip()
     raw["jira_api_token"] = jira_api_token or ""
     raw["jira_project_key"] = (jira_project_key or "").strip()
+    raw["jira_email"] = (jira_email or "").strip()
     return _write_full_config(project_name, raw)
 
 
