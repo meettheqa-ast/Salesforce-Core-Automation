@@ -77,6 +77,7 @@ def _init_sf_credential_session_keys() -> None:
     """Ensure Streamlit widget keys for Salesforce credentials exist before first render."""
     for k in (
         "sf_sandbox_url", "sf_username", "sf_password", "sf_security_token", "slack_webhook_url",
+        "sf_cli_org_alias",
         "jira_base_url", "jira_email", "jira_api_token", "jira_project_key",
     ):
         if k not in st.session_state:
@@ -87,6 +88,8 @@ def _init_sf_credential_session_keys() -> None:
         st.session_state["active_persona"] = "System Admin"
     if "edit_creds_mode" not in st.session_state:
         st.session_state["edit_creds_mode"] = False
+    if "sf_manual_login" not in st.session_state:
+        st.session_state["sf_manual_login"] = False
 
 
 def _apply_project_credentials_to_session() -> None:
@@ -110,6 +113,8 @@ def _apply_project_credentials_to_session() -> None:
         st.session_state["sf_password"] = cfg.get("password") or ""
         st.session_state["sf_security_token"] = (cfg.get("security_token") or "").strip()
         st.session_state["slack_webhook_url"] = (cfg.get("slack_webhook_url") or "").strip()
+        st.session_state["sf_cli_org_alias"] = (cfg.get("sf_cli_org_alias") or "").strip()
+        st.session_state["sf_manual_login"] = bool(cfg.get("sf_manual_login"))
         jira_cfg = _pm.read_jira_config(current)
         st.session_state["jira_base_url"] = jira_cfg.get("jira_base_url") or ""
         st.session_state["jira_api_token"] = jira_cfg.get("jira_api_token") or ""
@@ -420,6 +425,47 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                 disabled=readonly,
             )
 
+        st.text_input(
+            "SF CLI org alias (optional — bypasses login form + MFA/SSO)",
+            placeholder="e.g. qa-sandbox",
+            help=(
+                "Authenticate once with `sf org login web --alias <alias>` (real MFA/SSO, "
+                "driven by you). Test runs then bootstrap the browser session via "
+                "frontdoor.jsp using that CLI session — no login form, no MFA prompt. "
+                "Leave blank to keep using username/password login only. "
+                "See docs/sfdx-login-setup.md."
+            ),
+            key="sf_cli_org_alias",
+            disabled=readonly,
+        )
+        if not readonly and st.session_state.get("sf_cli_org_alias", "").strip():
+            if st.button("🔌 Test CLI Session", key="test_sf_cli_session_btn"):
+                try:
+                    from sf_session_bootstrap import SfCliAuthError, get_org_session
+
+                    session = get_org_session(st.session_state["sf_cli_org_alias"].strip())
+                    st.success(f"CLI session OK — instance {session['instanceUrl']}")
+                except SfCliAuthError as exc:
+                    st.warning(str(exc))
+                except FileNotFoundError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not check CLI session: {exc}")
+
+        st.checkbox(
+            "Manual login (I'll log in myself — any credentials, MFA, SSO)",
+            help=(
+                "Skips both the CLI OAuth session and username/password autofill "
+                "entirely: the browser just opens the login page and pauses for "
+                "you to log in yourself, then the run continues automatically "
+                "once Salesforce loads. Requires a non-headless run so you can "
+                "see and use the browser. Takes precedence over the CLI org "
+                "alias above."
+            ),
+            key="sf_manual_login",
+            disabled=readonly,
+        )
+
         # DEMO: Slack webhook hidden for clean demo
 
         if is_project_mode and editing:
@@ -496,6 +542,8 @@ def _render_workspace_header() -> tuple[str, str, str, str]:
                             st.session_state.get("slack_webhook_url", ""),
                             environment=_env,
                             persona=_persona,
+                            sf_cli_org_alias=st.session_state.get("sf_cli_org_alias", ""),
+                            sf_manual_login=st.session_state.get("sf_manual_login", False),
                         )
                         _pm.write_jira_config(
                             _active,
@@ -2165,6 +2213,46 @@ def _render_projects_page(
                 disabled=not editing,
             )
 
+        st.text_input(
+            "SF CLI org alias (optional — bypasses login form + MFA/SSO)",
+            placeholder="e.g. qa-sandbox",
+            help=(
+                "Authenticate once with `sf org login web --alias <alias>` (real MFA/SSO, "
+                "driven by you). Test runs then bootstrap the browser session via "
+                "frontdoor.jsp using that CLI session — no login form, no MFA prompt. "
+                "Leave blank to keep using username/password login only. "
+                "See docs/sfdx-login-setup.md."
+            ),
+            key="sf_cli_org_alias",
+            disabled=not editing,
+        )
+        if editing and st.session_state.get("sf_cli_org_alias", "").strip():
+            if st.button("🔌 Test CLI Session", key="proj_test_sf_cli_session_btn"):
+                try:
+                    from sf_session_bootstrap import SfCliAuthError, get_org_session
+                    session = get_org_session(st.session_state["sf_cli_org_alias"].strip())
+                    st.success(f"CLI session OK — instance {session['instanceUrl']}")
+                except SfCliAuthError as exc:
+                    st.warning(str(exc))
+                except FileNotFoundError as exc:
+                    st.error(str(exc))
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not check CLI session: {exc}")
+
+        st.checkbox(
+            "Manual login (I'll log in myself — any credentials, MFA, SSO)",
+            help=(
+                "Skips both the CLI OAuth session and username/password autofill "
+                "entirely: the browser just opens the login page and pauses for "
+                "you to log in yourself, then the run continues automatically "
+                "once Salesforce loads. Requires a non-headless run so you can "
+                "see and use the browser. Takes precedence over the CLI org "
+                "alias above."
+            ),
+            key="sf_manual_login",
+            disabled=not editing,
+        )
+
         if not editing:
             if st.button("Edit Credentials", key="proj_edit_creds_btn"):
                 st.session_state["edit_creds_mode"] = True
@@ -2181,6 +2269,8 @@ def _render_projects_page(
                         st.session_state.get("sf_security_token", ""),
                         environment=act_env,
                         persona=_persona,
+                        sf_cli_org_alias=st.session_state.get("sf_cli_org_alias", ""),
+                        sf_manual_login=st.session_state.get("sf_manual_login", False),
                     )
                     st.session_state["edit_creds_mode"] = False
                     st.session_state.pop("_credentials_bound_key", None)

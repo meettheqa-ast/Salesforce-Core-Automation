@@ -72,6 +72,7 @@ def acquire_session(
     username: str,
     password: str,
     persona_id: str | None = None,
+    org_alias: str | None = None,
 ) -> SessionHandle:
     """Synchronous facade over ``pw_mcp_bridge.get_or_init_session``.
 
@@ -81,6 +82,10 @@ def acquire_session(
     * Defensive credential validation -- empty creds short-circuit so
       we don't spin up a browser just to fail the login form.
     * Returns a typed ``SessionHandle`` instead of a bare 2-tuple.
+
+    ``org_alias``, when set, opts into CLI OAuth frontdoor.jsp login
+    (bypasses the form + MFA/SSO) on a cache miss; omit it to keep the
+    existing username/password-only behavior.
     """
     if not sandbox_url or not username or not password:
         raise ValueError(
@@ -103,6 +108,7 @@ def acquire_session(
         username=username,
         password=password,
         persona_id=persona_id,
+        org_alias=org_alias,
     )
     dt_ms = int((time.monotonic() - t0) * 1000)
     logger.info(

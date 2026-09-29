@@ -36,6 +36,19 @@ _CREDENTIAL_KEYS: list[str] = [
     # into Persona.default_app on sync; injected at run time as
     # ${salesAutomationAppName} so PO keywords land in the right Salesforce app.
     "default_app",
+    # Salesforce CLI org alias (authenticated once via `sf org login web`).
+    # Not a secret itself -- the real bearer credential lives in the local
+    # `sf` CLI auth store -- so it's stored in plaintext like sandbox_url.
+    # When set, login bootstraps via frontdoor.jsp (bypasses the form and
+    # any MFA/SSO prompt) instead of username/password. See
+    # sf_session_bootstrap.py / docs/sfdx-login-setup.md.
+    "sf_cli_org_alias",
+    # Opt-in manual login: skip both password autofill and the frontdoor.jsp
+    # bootstrap entirely, just open the login page and pause for a human to
+    # log in themselves (incl. any MFA/SSO), then continue automatically once
+    # the Lightning app shell appears. Stored as "true" or "" (falsy). Needs
+    # a non-headless run so the human can actually see and use the browser.
+    "sf_manual_login",
 ]
 
 # Fields whose values are encrypted at rest in config.json. Marker-prefixed so
@@ -480,12 +493,24 @@ def write_project_credentials(
     environment: str = "Dev",
     persona: str = DEFAULT_PERSONA,
     default_app: str = "",
+    sf_cli_org_alias: str = "",
+    sf_manual_login: bool = False,
 ) -> Path:
     """Write credentials for a single *environment* / *persona*.
 
     `default_app` is the Salesforce app this persona should land in by
     default. Stored alongside the credentials but NOT encrypted (it's just
     a user-facing string). Empty string means "use the global default".
+
+    `sf_cli_org_alias` opts this persona into CLI OAuth frontdoor.jsp login
+    (see sf_session_bootstrap.py). Empty string means "use username/password
+    login only" (today's default behavior).
+
+    `sf_manual_login`, when True, opts this persona into fully manual login:
+    the browser just opens the login page and waits for a human to log in
+    (any credentials, MFA, SSO) before the test continues. Takes precedence
+    over both the CLI OAuth path and username/password autofill. Requires a
+    non-headless run.
     """
     _PLACEHOLDER_STRINGS = {
         "https://yourorg--sbx.sandbox.my.salesforce.com/",
@@ -512,6 +537,8 @@ def write_project_credentials(
         "security_token": _maybe_encrypt(_clean(security_token)),
         "slack_webhook_url": _clean(slack_webhook_url),
         "default_app": (default_app or "").strip(),
+        "sf_cli_org_alias": (sf_cli_org_alias or "").strip(),
+        "sf_manual_login": "true" if sf_manual_login else "",
     }
     return _write_full_config(project_name, raw)
 
