@@ -8,19 +8,28 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 logger = logging.getLogger(__name__)
 
 
-def _login_mode_variables() -> list[str]:
-    """Mirror runs._login_mode_overrides for ScriptRunner subprocesses."""
-    mode = (os.getenv("ROBOT_LOGIN_MODE") or "auto").strip().lower() or "auto"
-    if mode not in ("auto", "frontdoor", "ui"):
-        mode = "auto"
-    extras = ["--variable", f"LOGIN_MODE:{mode}"]
+def _frontdoor_variables() -> list[str]:
+    """Mirror runs._frontdoor_variable_override for ScriptRunner subprocesses:
+    resolve a CLI OAuth frontdoor.jsp session (bypasses MFA/SSO) via
+    sf_session_bootstrap and inject it as ``--variable sandboxFrontdoorUrl:<url>``.
+    Never fatal -- any missing alias / CLI / expired auth just skips the override.
+    """
     alias = (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
-    if alias:
-        extras.extend(["--variable", f"SF_DX_ORG_ALIAS:{alias}"])
-    return extras
+    if not alias:
+        return []
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from sf_session_bootstrap import get_frontdoor_url
+        url = get_frontdoor_url(alias)
+    except Exception as exc:
+        logger.warning("CLI OAuth frontdoor login unavailable for alias '%s': %s", alias, exc)
+        return []
+    return ["--variable", f"sandboxFrontdoorUrl:{url}"]
 
 
 class ScriptRunner:
@@ -56,7 +65,7 @@ class ScriptRunner:
         ]
         if headless:
             cmd.extend(["--variable", "headless:true"])
-        cmd.extend(_login_mode_variables())
+        cmd.extend(_frontdoor_variables())
 
         cmd.append(test_path)
 

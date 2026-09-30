@@ -28,30 +28,24 @@ cd frontend && npm install && npm run dev
 
 ## Salesforce login (MFA / fingerprint)
 
-Salesforce’s multi-step login (username → password → MFA) breaks classic same-page Selenium fills. Portal **Run** uses CumulusCI-style **frontdoor** login by default:
+Salesforce's multi-step login (username → password → MFA) breaks classic same-page Selenium fills. `Login To Sandbox` (Resources/Common/GlobalKeywords.robot) tries three strategies, in order, before falling back to the UI form:
 
-1. On the machine that runs Robot (same host as the API), authenticate once:
+1. **Manual login** — opens the login page and pauses for a human to log in themselves (any credentials, MFA, SSO, passkey), then continues once Lightning loads. Set via the "Manual login" option in the legacy Streamlit app, or the `${sandboxManualLogin}` suite variable. Requires a non-headless run.
+2. **CLI OAuth frontdoor** — CumulusCI-style bypass. Authenticate once on the machine that runs Robot:
 
    ```bash
-   sf org login web --alias DEFAULT_TARGET_ORG
+   sf org login web --alias my-sandbox
    ```
 
-   Complete fingerprint / MFA in that browser. The CLI stores the session.
+   Complete fingerprint / MFA in that browser; the CLI stores the session. Set `SF_DX_ORG_ALIAS=my-sandbox` (`.env` / backend env) so the portal's **Run** button resolves a fresh `frontdoor.jsp` session for every run via `sf_session_bootstrap.py` (see `docs/sfdx-login-setup.md`). No login form, no MFA/SSO prompt, because Salesforce already trusts the CLI's access token. Re-run `sf org login web` when the token expires.
+3. **UI form (fallback / default)** — fills username → password, auto-detecting Salesforce's classic same-page form vs. the modern split identity → Next → password flow. Headed Watch mode can pause up to 10 minutes for manual MFA/OTP/passkey completion.
 
-2. Optional: set `SF_DX_ORG_ALIAS` if you use a different alias (same as Org Inspector).
-
-3. Portal / Robot inject `LOGIN_MODE=auto`:
-   - **frontdoor first** — opens Lightning via `/secur/frontdoor.jsp?sid=<CLI accessToken>` (no login form)
-   - **UI fallback** — multi-step username → Next → password; headed Watch mode can pause for MFA
-
-4. When the CLI token expires, run `sf org login web` again.
-
-Overrides:
+Override for a single run: pass `login_mode=ui` (Generate page does this automatically when your prompt names a specific test user's username **and** password) to force the UI form and skip the CLI frontdoor bypass — otherwise the run would silently log in as whichever identity the local `sf` CLI is authenticated as, instead of the named test user.
 
 | Variable / env | Values | Effect |
 |----------------|--------|--------|
-| `LOGIN_MODE` / `ROBOT_LOGIN_MODE` | `auto` (default), `frontdoor`, `ui` | Force strategy |
-| `SF_DX_ORG_ALIAS` | CLI org alias | Which authenticated org to use |
+| `SF_DX_ORG_ALIAS` | CLI org alias | Which `sf`-authenticated org the portal's Run button uses for the frontdoor bypass |
+| `login_mode` (Run request) | `ui` | Force UI form for this run, skipping the frontdoor bypass |
 
 ## Tech Stack
 

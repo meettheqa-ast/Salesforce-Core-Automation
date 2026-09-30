@@ -353,7 +353,7 @@ def _build_bulk_robot_cmd(
     if _effective_headless(True):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
-    cmd.extend(_login_mode_overrides())
+    cmd.extend(_frontdoor_variable_override())
     cmd.extend(_persona_robot_overrides(default_app))
     cmd.append(str(test_path))
     return cmd
@@ -984,9 +984,11 @@ class ExecuteRequest(BaseModel):
     exclude_tags: str = ""
     # Optional Salesforce app to land in (mapped to ${salesAutomationAppName}).
     default_app: str = ""
-    # Optional Robot LOGIN_MODE override: auto | frontdoor | ui.
-    # Used when the Generate prompt embeds a test-user password so we must
-    # not silently login via CLI frontdoor as a different identity.
+    # Optional login override: set to "ui" to force the username/password UI
+    # form and skip the CLI OAuth frontdoor.jsp bootstrap (see
+    # _frontdoor_variable_override). Used when the Generate prompt embeds a
+    # specific test user's credentials, so the run logs in as THAT user
+    # instead of whichever identity the local `sf` CLI is authenticated as.
     login_mode: str | None = None
 
 
@@ -1085,7 +1087,7 @@ def execute_robot(
     if _effective_headless(body.headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
-    cmd.extend(_login_mode_overrides(body.login_mode))
+    cmd.extend(_frontdoor_variable_override(body.login_mode))
     cmd.extend(_persona_robot_overrides(body.default_app))
     if body.include_tags:
         for tag in [t.strip() for t in body.include_tags.split(",") if t.strip()]:
@@ -1203,20 +1205,37 @@ def _container_browser_overrides() -> list[str]:
     return ["--variable", f"CONTAINER_BROWSER_BINARY:{binary}"]
 
 
-def _login_mode_overrides(forced: str | None = None) -> list[str]:
-    """Inject ``LOGIN_MODE`` (+ optional ``SF_DX_ORG_ALIAS``) for Robot login.
+def _frontdoor_variable_override(login_mode: str | None = None) -> list[str]:
+    """Resolve a CLI OAuth frontdoor.jsp session and inject it as
+    ``--variable sandboxFrontdoorUrl:<url>`` so `Login To Sandbox`
+    (Resources/Common/GlobalKeywords.robot) can bypass the login form and
+    any MFA/SSO challenge for portal-driven runs, the same way
+    `run_test.write_envdata` does for direct CLI runs. `--variable`
+    always outranks a suite-scope value, so this works regardless of
+    whether EnvData.robot already has (or lacks) a frontdoor URL.
 
-    Priority: caller ``forced`` → env ``ROBOT_LOGIN_MODE`` → ``auto``.
-    Allowed values: ``auto`` | ``frontdoor`` | ``ui``.
+    ``login_mode="ui"`` explicitly opts out: used when the Generate prompt
+    named a specific test user's credentials, so the run must actually log
+    in as THAT user via the UI form instead of silently landing as whatever
+    identity the local `sf` CLI happens to be authenticated as.
+
+    Never fatal: any missing alias / missing CLI / expired auth just means
+    no override is emitted and `Login To Sandbox` falls through to its
+    normal username/password UI path.
     """
-    mode = (forced or os.getenv("ROBOT_LOGIN_MODE") or "auto").strip().lower() or "auto"
-    if mode not in ("auto", "frontdoor", "ui"):
-        mode = "auto"
-    extras = ["--variable", f"LOGIN_MODE:{mode}"]
+    if (login_mode or "").strip().lower() == "ui":
+        return []
     alias = (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
-    if alias:
-        extras.extend(["--variable", f"SF_DX_ORG_ALIAS:{alias}"])
-    return extras
+    if not alias:
+        return []
+    sys.path.insert(0, str(REPO_ROOT))
+    try:
+        from sf_session_bootstrap import get_frontdoor_url
+        url = get_frontdoor_url(alias)
+    except Exception as exc:  # SfCliAuthError, FileNotFoundError, etc. -- never fatal.
+        logger.warning("CLI OAuth frontdoor login unavailable for alias '%s': %s", alias, exc)
+        return []
+    return ["--variable", f"sandboxFrontdoorUrl:{url}"]
 
 
 def _persona_robot_overrides(default_app: str | None) -> list[str]:
@@ -1268,7 +1287,7 @@ def _build_robot_cmd(
     if _effective_headless(headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
-    cmd.extend(_login_mode_overrides(login_mode))
+    cmd.extend(_frontdoor_variable_override(login_mode))
     cmd.extend(_persona_robot_overrides(default_app))
     for tag in [t.strip() for t in include_tags.split(",") if t.strip()]:
         cmd.extend(["--include", tag])
@@ -1288,7 +1307,7 @@ def execute_robot_stream(
     include_tags: str = Query(""),
     exclude_tags: str = Query(""),
     default_app: str = Query("", description="Optional ${salesAutomationAppName} override."),
-    login_mode: str | None = Query(None, description="Optional LOGIN_MODE: auto|frontdoor|ui"),
+    login_mode: str | None = Query(None, description="Set to 'ui' to force username/password login and skip the CLI OAuth frontdoor bypass."),
 ):
     """Stream Robot stdout line-by-line as Server-Sent Events.
 

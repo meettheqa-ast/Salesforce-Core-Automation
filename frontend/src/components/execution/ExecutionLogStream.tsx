@@ -14,7 +14,9 @@ interface RunRequestData {
   /** Persona's default Salesforce app, forwarded to the runner so PO
    *  keywords land in the right app via ${salesAutomationAppName}. */
   default_app?: string;
-  /** Optional Robot LOGIN_MODE override (auto|frontdoor|ui). */
+  /** Set to "ui" to force username/password login and skip the CLI OAuth
+   *  frontdoor bypass (used when the prompt names a specific test user's
+   *  credentials). */
   login_mode?: string;
 }
 

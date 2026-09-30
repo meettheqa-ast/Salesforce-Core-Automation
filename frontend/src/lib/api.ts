@@ -1188,7 +1188,9 @@ export const api = {
       /** Persona's default Salesforce app. Backend maps to
        *  ${salesAutomationAppName} so PO keywords pick the right app. */
       default_app?: string;
-      /** Optional Robot LOGIN_MODE override (auto|frontdoor|ui). */
+      /** Set to "ui" to force username/password login and skip the CLI
+       *  OAuth frontdoor bypass (used when the prompt names a specific
+       *  test user's credentials). */
       login_mode?: string;
     }) => {
       const q = new URLSearchParams({

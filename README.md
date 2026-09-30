@@ -17,6 +17,7 @@
 | **GitHub script storage + CI** | Push approved `.robot` suites into a connected repo and let GitHub Actions run them on a cron or via `workflow_dispatch`. See [`docs/github-integration.md`](docs/github-integration.md). |
 | **Scheduled runs (hybrid)** | Cron-trigger any sprint, story, test case, or tag. Choose `local` (in-process APScheduler) or `github_actions` (cron lives in the repo workflow) per schedule. See [`docs/scheduled-runs.md`](docs/scheduled-runs.md). |
 | **Project workspace** | Named projects under `Saved_Projects/` hold tests, data, credentials (local), and **project-scoped** run history for analytics. |
+| **CLI OAuth login (bypasses MFA/SSO)** | Authenticate once with `sf org login web`, then automated runs bootstrap the browser session via `frontdoor.jsp` — no login form, no MFA/SSO prompt. Opt-in per project via the "SF CLI org alias" field; falls back to username/password automatically. Don't want the CLI? Enable **Manual login** instead — the browser opens the login page and waits for you to log in yourself (needs a non-headless run). See [`docs/sfdx-login-setup.md`](docs/sfdx-login-setup.md). |
 | **In-app results** | After each run, the UI summarizes **pass/fail per test case** from `output.xml` and surfaces failure screenshots—no need to open HTML reports first. |
 
 ---

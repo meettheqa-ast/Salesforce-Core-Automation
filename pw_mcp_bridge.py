@@ -399,10 +399,17 @@ async def _create_context_async(
     password: str,
     persona_id: str | None,
     storage_state_path: Path,
+    org_alias: str | None = None,
 ) -> Any:
     """Build a fresh BrowserContext, loading storageState if available
     and not too old. Performs SF login when storageState is missing or
     stale.
+
+    When ``org_alias`` is set, tries a CLI OAuth frontdoor.jsp session
+    bootstrap first (bypasses the login form and any MFA/SSO prompt),
+    falling back to the username/password form-fill if that's not
+    configured or fails. Either way, a fresh storageState is captured
+    afterward so most subsequent sessions skip login entirely.
     """
     ensure_pw_runtime()
     storage_state: dict | None = None
@@ -431,15 +438,52 @@ async def _create_context_async(
 
     # If we didn't have valid storageState, do a full SF login now.
     if storage_state is None:
-        await _do_salesforce_login(context, sandbox_url, username, password)
-        # Persist storageState for next time. Best-effort: filesystem
-        # errors here shouldn't fail the whole session.
+        used_frontdoor = False
+        if org_alias:
+            used_frontdoor = await _try_frontdoor_login(context, org_alias)
+        if not used_frontdoor:
+            await _do_salesforce_login(context, sandbox_url, username, password)
+        # Persist storageState for next time (covers both the frontdoor and
+        # password-fallback paths). Best-effort: filesystem errors here
+        # shouldn't fail the whole session.
         try:
             await context.storage_state(path=str(storage_state_path))
         except Exception as exc:
             _logger.warning("pw-mcp storageState save failed: %s", exc)
 
     return context
+
+
+async def _try_frontdoor_login(context: Any, org_alias: str) -> bool:
+    """Attempt a CLI OAuth frontdoor.jsp login. Returns False (never raises)
+    on any failure so the caller can fall back to username/password.
+    """
+    try:
+        from sf_session_bootstrap import SfCliAuthError, get_frontdoor_url, is_configured
+    except ImportError as exc:
+        _logger.warning("pw-mcp frontdoor login unavailable (import failed): %s", exc)
+        return False
+
+    if not is_configured(org_alias):
+        return False
+
+    try:
+        url = get_frontdoor_url(org_alias)
+    except SfCliAuthError as exc:
+        _logger.warning("pw-mcp frontdoor login unavailable: %s", exc)
+        return False
+
+    page = await context.new_page()
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=_DEFAULT_OP_TIMEOUT_MS)
+        await page.wait_for_selector(
+            "div.appLauncher, .slds-icon-waffle, one-app-launcher-header",
+            timeout=_DEFAULT_OP_TIMEOUT_MS,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001 - any navigation/timeout failure just falls back
+        _logger.warning("pw-mcp frontdoor navigation failed for alias '%s': %s", org_alias, exc)
+        return False
 
 
 async def _do_salesforce_login(context: Any, sandbox_url: str, username: str, password: str) -> None:
@@ -480,6 +524,7 @@ def get_or_init_session(
     username: str,
     password: str,
     persona_id: str | None = None,
+    org_alias: str | None = None,
 ) -> tuple[Any, bool]:
     """Return ``(BrowserContext, cache_hit)``.
 
@@ -487,6 +532,10 @@ def get_or_init_session(
     creates a fresh BrowserContext, optionally seeded from on-disk
     storageState. Subsequent calls within ``_SESSION_TTL_S`` return the
     same cached context.
+
+    ``org_alias``, when set, enables the CLI OAuth frontdoor.jsp login
+    bootstrap on a cache miss (see ``_try_frontdoor_login``); leave it
+    unset/None to keep today's username/password-only behavior.
 
     Mirrors ``mcp_bridge.get_or_init_session`` precisely.
     """
@@ -507,7 +556,9 @@ def get_or_init_session(
     # Cache miss or stale. Build a new context.
     storage_state_path = _storage_path(key)
     context = run_async(
-        _create_context_async(sandbox_url, username, password, persona_id, storage_state_path),
+        _create_context_async(
+            sandbox_url, username, password, persona_id, storage_state_path, org_alias=org_alias,
+        ),
         timeout=60.0,
     )
     cached = _CachedSession(

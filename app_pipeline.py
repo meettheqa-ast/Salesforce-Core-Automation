@@ -252,6 +252,8 @@ def run_temp_generated_suite(
             "Tests/Generated/temp_test.robot",
             run_name=run_name,
             headless=headless,
+            org_alias=st.session_state.get("sf_cli_org_alias", ""),
+            manual_login=st.session_state.get("sf_manual_login", False),
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
@@ -622,6 +624,8 @@ def run_existing_test(
             robot_path,
             run_name=run_name,
             headless=headless,
+            org_alias=st.session_state.get("sf_cli_org_alias", ""),
+            manual_login=st.session_state.get("sf_manual_login", False),
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
@@ -709,6 +713,8 @@ def run_project_entire_suite(
             include_tags=inc_list,
             exclude_tags=exc_list,
             variables=tdm_vars,
+            org_alias=st.session_state.get("sf_cli_org_alias", ""),
+            manual_login=st.session_state.get("sf_manual_login", False),
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not prepare Robot run: {exc}")
