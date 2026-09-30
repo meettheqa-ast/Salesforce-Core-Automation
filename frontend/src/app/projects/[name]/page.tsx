@@ -17,6 +17,7 @@ import { notifyTreeRefresh } from "@/lib/useTreeRefresh";
 import ConfirmDeleteModal, { type ConfirmDeleteMode, type DeleteBlocker } from "@/components/lists/ConfirmDeleteModal";
 import SelectionToolbar, { type SelectionToolbarMode } from "@/components/lists/SelectionToolbar";
 import ProjectActivitySection from "./_sections/ProjectActivitySection";
+import SoqlInspectorDrawer from "@/components/projects/SoqlInspectorDrawer";
 
 /** Filter state for the test-cases panel. Mirrors a `?filter=<id>` URL
  *  param so a click-through from the project list page lands here on
@@ -628,6 +629,11 @@ export default function ProjectDetailPage() {
                 >
                   Delete
                 </button>
+                {/* Contextual SOQL drawer -- Dev Tools IA refactor Phase 6.
+                    Lets the user verify their org connection works
+                    without leaving the project home. Backend SOQL still
+                    runs through sf_dx_bridge (same as Org Inspector). */}
+                <SoqlInspectorDrawer sandboxUrl={creds.sandbox_url} />
               </div>
             </div>
 

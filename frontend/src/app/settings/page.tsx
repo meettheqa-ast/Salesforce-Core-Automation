@@ -7,6 +7,7 @@ import AnimatedCard from "@/components/cards/AnimatedCard";
 import { api } from "@/lib/api";
 import { PageHeader, PageScaffold } from "@/components/layout/PageScaffold";
 import StatusHub from "@/components/settings/StatusHub";
+import LocatorHealthCard from "@/components/settings/LocatorHealthCard";
 
 const PROVIDER_PREF_KEY = "ai_qa_portal.preferred_llm_provider";
 
@@ -196,7 +197,7 @@ export default function SettingsPage() {
         </AnimatedCard>
 
         {/* Keyword Catalog */}
-        <AnimatedCard glow="pink" delay={0.2}>
+        <AnimatedCard glow="pink" delay={0.15}>
           <h3 className="text-sm font-bold text-white mb-4">Keyword Catalog</h3>
           <p className="text-xs text-slate-400 mb-4">Regenerate the keyword catalog from Robot Framework resource files.</p>
           <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={handleRebuildCatalog}
@@ -209,6 +210,14 @@ export default function SettingsPage() {
             </p>
           )}
         </AnimatedCard>
+
+        {/* Locator Health -- Dev Tools IA refactor (Phase 5).
+            Locator scanning lived in Admin > Dev Tools where only admins
+            saw it. Surfaced here so QA leads spot stale selectors after
+            every Salesforce release without hunting through Admin. The
+            card reads the LAST scan summary; running the actual scan
+            still happens on the full scanner at /locators. */}
+        <LocatorHealthCard />
 
         {/* SF DX Status -- hidden along with the SF DX nav tab. Re-enable when ready.
         <AnimatedCard glow="purple" delay={0.3}>

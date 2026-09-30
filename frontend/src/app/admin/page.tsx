@@ -12,13 +12,19 @@ const TILES = [
   { href: "/admin/audit", title: "Audit log", desc: "Append-only trail of who did what, when.", icon: "📜", color: "pink" as const },
 ];
 
-// Dev / engineering tools. These pages existed but were orphaned from
-// every nav surface (the audit flagged /sfdx and /locators as having
-// no inbound links). Anchoring them here gives admins a discoverable
-// path without polluting the main sidebar for everyday users.
+// Dev / engineering tools.
+//
+// Dev Tools IA refactor (Phase 3): "SOQL & schema tools" renamed to
+// "Org Inspector" and pointed at the canonical /org-inspector route.
+// The /sfdx route still works (it's now a redirect shim) but new
+// links should point at the canonical URL.
+//
+// Locator scanner was lifted out of Admin and now lives under
+// Settings -> Infrastructure -> Locator Health (it surfaces a
+// summary card + Open full scanner deep-link to /locators). The
+// /locators page itself is preserved for the deep-dive workflow.
 const DEV_TILES = [
-  { href: "/sfdx", title: "SOQL & schema tools", desc: "Run ad-hoc SOQL queries and inspect Salesforce object schemas.", icon: "🛢️", color: "cyan" as const },
-  { href: "/locators", title: "Locator scanner", desc: "Scan Robot tests and report Playwright locator coverage.", icon: "🔍", color: "purple" as const },
+  { href: "/org-inspector", title: "Org Inspector", desc: "Run ad-hoc SOQL queries and inspect Salesforce object schemas.", icon: "🛢️", color: "cyan" as const },
 ];
 
 export default function AdminLandingPage() {

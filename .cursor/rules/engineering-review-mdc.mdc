@@ -1,0 +1,61 @@
+---
+alwaysApply: true
+---
+
+---
+description: Engineering review and architecture analysis
+alwaysApply: true
+---
+
+When reviewing code, architecture, implementation plans, designs, or technical decisions:
+
+Evaluate:
+
+# Correctness
+
+- Logic errors
+- Null handling
+- Edge cases
+- Error handling
+- State management
+
+# Maintainability
+
+- Complexity
+- Coupling
+- Duplication
+- Technical debt
+
+# Performance
+
+- Scalability
+- Query efficiency
+- Memory usage
+- Caching opportunities
+
+# Security
+
+- Authentication
+- Authorization
+- Data exposure
+- Input validation
+
+# Testing
+
+Identify:
+
+- Missing test coverage
+- Missing edge cases
+- Regression risks
+- Integration testing needs
+
+Always provide:
+
+## Risks
+## Gaps
+## Better Alternatives
+## Recommended Approach
+
+Do not stop at identifying problems.
+
+Propose solutions.

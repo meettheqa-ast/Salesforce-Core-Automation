@@ -15,7 +15,9 @@ import StepwisePipeline, {
   type PipelinePhase,
   type PipelineStep,
 } from "@/components/generate/StepwisePipeline";
+import SchemaInspectorDrawer from "@/components/generate/SchemaInspectorDrawer";
 import { api, prepareAuth } from "@/lib/api";
+import { extractCredentialsFromPrompt } from "@/lib/promptCredentials";
 import { PageHeader, PageScaffold, PageSection } from "@/components/layout/PageScaffold";
 
 type ExecMode = "background" | "watch";
@@ -32,6 +34,8 @@ type RunRequest = {
    *  SalesPO.Open New Lead From Sales App land in the right app
    *  (e.g. "Pentair Sales") instead of the generic "Sales" default. */
   default_app?: string;
+  /** When the prompt embeds a test user, force UI login (not CLI frontdoor). */
+  login_mode?: string;
 };
 
 const AUTO_DATA_HINT =
@@ -60,7 +64,7 @@ export default function GeneratePage() {
   // demo. Background headless mode is still available via the toggle for
   // long bulk runs / CI-like usage.
   const [execMode, setExecMode] = useState<ExecMode>("watch");
-  const [genMode, setGenMode] = useState<GenMode>("stepwise");
+  const [genMode, setGenMode] = useState<GenMode>("quick");
   const [prompt, setPrompt] = useState("");
   const [testName, setTestName] = useState("");
   const [autoData, setAutoData] = useState(true);
@@ -196,7 +200,7 @@ export default function GeneratePage() {
   useEffect(() => {
     void Promise.resolve().then(() => {
       setExecMode(loadPref<ExecMode>("gen.execMode", "watch"));
-      setGenMode(loadPref<GenMode>("gen.genMode", "stepwise"));
+      setGenMode(loadPref<GenMode>("gen.genMode", "quick"));
     });
   }, []);
 
@@ -259,17 +263,29 @@ export default function GeneratePage() {
     setLocatorShadow(false);
   };
 
+  const resolveCreds = (rawPrompt: string) => {
+    const fromPrompt = extractCredentialsFromPrompt(rawPrompt);
+    return {
+      sandboxUrl: creds?.sandboxUrl ?? "",
+      username: fromPrompt?.username ?? creds?.username ?? "",
+      password: fromPrompt?.password ?? creds?.password ?? "",
+      defaultApp: creds?.defaultApp ?? "",
+      fromPrompt: Boolean(fromPrompt),
+    };
+  };
+
   const runQuickGenerate = async (rawPrompt: string) => {
+    const effective = resolveCreds(rawPrompt);
     const payload = {
       prompt: buildPrompt(rawPrompt),
-      sandbox_url: creds?.sandboxUrl ?? "",
-      username: creds?.username ?? "",
-      password: creds?.password ?? "",
+      sandbox_url: effective.sandboxUrl,
+      username: effective.username,
+      password: effective.password,
       // Persona's default app -- threaded through so the LLM injects
       // ${salesAutomationAppName} = "<this>" and the generated script
       // lands in the right Salesforce app (Pentair Sales etc.) instead
       // of the global "Sales" default.
-      default_app: creds?.defaultApp ?? "",
+      default_app: effective.defaultApp,
       generation_mode: "quick",
       test_name: testName.trim() || undefined,
       headless,
@@ -383,12 +399,13 @@ export default function GeneratePage() {
   };
 
   const runStepwiseStream = async (rawPrompt: string) => {
+    const effective = resolveCreds(rawPrompt);
     const payload = {
       prompt: buildPrompt(rawPrompt),
-      sandbox_url: creds?.sandboxUrl ?? "",
-      username: creds?.username ?? "",
-      password: creds?.password ?? "",
-      default_app: creds?.defaultApp ?? "",
+      sandbox_url: effective.sandboxUrl,
+      username: effective.username,
+      password: effective.password,
+      default_app: effective.defaultApp,
       generation_mode: "mcp_stepwise",
       test_name: testName.trim() || undefined,
       headless,
@@ -585,13 +602,16 @@ export default function GeneratePage() {
       setError("Generate a script and configure a workspace login first.");
       return;
     }
+    const effective = resolveCreds(prompt);
     setRunRequest({
       test_path: testPath,
-      sandbox_url: creds.sandboxUrl,
-      username: creds.username,
-      password: creds.password,
+      sandbox_url: effective.sandboxUrl || creds.sandboxUrl,
+      username: effective.username,
+      password: effective.password,
       headless,
-      default_app: creds.defaultApp || undefined,
+      default_app: effective.defaultApp || undefined,
+      // Prompt-named test users must not be skipped by CLI frontdoor.
+      ...(effective.fromPrompt ? { login_mode: "ui" } : {}),
     });
   };
 
@@ -794,19 +814,42 @@ export default function GeneratePage() {
 
       {/* Prompt + Generate */}
       <PageSection title="Prompt" description="Describe the expected Salesforce flow and desired assertions.">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-2 gap-3">
           <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Prompt</span>
-          {!credsReady && (
-            <span className="text-[10px] text-amber-300">Pick a workspace login above to enable Run after generate.</span>
-          )}
+          <div className="flex items-center gap-3">
+            {!credsReady && (
+              <span className="text-[10px] text-amber-300">Pick a workspace login above to enable Run after generate.</span>
+            )}
+            {/* Contextual schema inspector -- Dev Tools IA refactor
+                Phase 6. Brings the Org Inspector schema lookup into
+                the place the user is composing the prompt so they can
+                verify field API names without a context switch. */}
+            <SchemaInspectorDrawer
+              prompt={prompt}
+              creds={
+                creds
+                  ? {
+                      sandboxUrl: creds.sandboxUrl,
+                      username: creds.username,
+                      password: creds.password,
+                    }
+                  : null
+              }
+            />
+          </div>
         </div>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Describe your test in plain English. E.g. Create a Lead named Demo User in Astound TIP."
+          placeholder="Describe your test in plain English. E.g. Create a Lead named Demo User in Astound TIP. Username: user@example.com Password: secret"
           rows={4}
           className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500 font-mono"
         />
+        {extractCredentialsFromPrompt(prompt) && (
+          <p className="mt-2 text-[11px] text-cyan-300/90">
+            Using credentials from prompt (overrides workspace login). Run will use UI login for that user.
+          </p>
+        )}
         <div className="flex justify-end mt-2">
           <button
             type="button"

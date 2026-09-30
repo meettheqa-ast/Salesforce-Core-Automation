@@ -4,6 +4,7 @@ Library     String
 Library     Dialogs
 Library     Collections
 Library     FakerLibrary
+Library     ../../Libraries/SalesforceSessionLibrary.py
 # EnvData must load before GlobalVariables / PlatformData so runtime URL & login
 # (written by run_test.py / Streamlit) win over repo defaults. Robot keeps first scalar definition.
 Resource    ../../Resources/TestData/EnvData.robot
@@ -15,6 +16,10 @@ Resource    ../../Resources/TestData/Platform/PlatformData.robot
 *** Variables ***
 # When true, login waits for you to finish MFA/OTP in the browser (Watch mode). Overridden by robot -v.
 ${MFA_PAUSE_FOR_MANUAL_COMPLETION}=    ${FALSE}
+# Login strategy: auto (frontdoor then UI), frontdoor (CLI token only), ui (multi-step form).
+${LOGIN_MODE}=    auto
+# Optional CLI org alias override (else SF_DX_ORG_ALIAS env / DEFAULT_TARGET_ORG).
+${SF_DX_ORG_ALIAS}=    ${EMPTY}
 
 *** Keywords ***
 Begin Web Test
@@ -50,22 +55,70 @@ End Web Test
     Close All Browsers
 
 Login To Sandbox
-    [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.
+    [Documentation]    Logs into Salesforce and waits for the Lightning app shell.
+    ...    Default LOGIN_MODE=auto prefers CumulusCI-style frontdoor.jsp using a
+    ...    Salesforce CLI session (``sf org login web`` once for MFA/fingerprint),
+    ...    then falls back to the multi-step username → password UI form.
+    ...    Set LOGIN_MODE=frontdoor to require CLI auth, or LOGIN_MODE=ui to force
+    ...    the form. MFA_PAUSE_FOR_MANUAL_COMPLETION applies only to the UI path.
+    [Tags]    login
+    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
+    ${mode_raw}=    Get Variable Value    ${LOGIN_MODE}    auto
+    ${mode}=    Convert To Lower Case    ${mode_raw}
+    ${mode}=    Strip String    ${mode}
+    IF    '${mode}' != 'auto' and '${mode}' != 'frontdoor' and '${mode}' != 'ui'
+        Fail    Unknown LOGIN_MODE '${mode_raw}'. Use auto, frontdoor, or ui.
+    END
+    IF    '${mode}' == 'frontdoor' or '${mode}' == 'auto'
+        ${cli_ok}=    Cli Org Is Authenticated
+        IF    ${cli_ok}
+            ${frontdoor_ok}=    Run Keyword And Return Status    Login To Sandbox Via Frontdoor
+            IF    ${frontdoor_ok}
+                RETURN
+            END
+            IF    '${mode}' == 'frontdoor'
+                Fail    Frontdoor login did not reach Lightning. Re-authenticate: sf org login web --alias <alias> (or set SF_DX_ORG_ALIAS).
+            END
+            Log    Frontdoor login failed; falling back to multi-step UI form.    level=WARN
+        ELSE IF    '${mode}' == 'frontdoor'
+            Fail    LOGIN_MODE=frontdoor but Salesforce CLI org is not authenticated. Run: sf org login web --alias <alias>
+        END
+    END
+    Login To Sandbox Via UI Form    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}
+
+Login To Sandbox Via Frontdoor
+    [Documentation]    Jump into Lightning using the SF CLI access token (frontdoor.jsp). No login form.
+    [Tags]    login
+    ${url}=    Get Frontdoor Url
+    Go To    ${url}
+    Dismiss Post-Login Prompts
+    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    45s
+    Dismiss Post-Login Prompts
+
+Login To Sandbox Via UI Form
+    [Documentation]    Multi-step Salesforce login: username → Next (when needed) → password → Log In.
+    ...    Supports classic same-page forms and the modern identity-split flow. Optional MFA pause.
     [Tags]    login
     [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
     Go To    ${instanceURL}
     Wait Until Element Is Visible    ${sandboxUserName}    timeout=15s
     Input Text    ${sandboxUserName}    ${instanceUsername}
+    ${pwd_visible}=    Run Keyword And Return Status    Element Should Be Visible    ${sandboxPassword}
+    IF    not ${pwd_visible}
+        Click Element    ${sandboxLoginNextButton}
+        Wait Until Element Is Visible    ${sandboxPassword}    timeout=20s
+    END
     Input Text    ${sandboxPassword}    ${instancePassword}
     Click Element    ${sandboxLoginButton}
     Dismiss Post-Login Prompts
-    ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    30s
+    # Allow time for multi-step MFA / passkey enrollment before failing.
+    ${ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    5 minutes
     IF    not $ok and $allow_mfa_manual_pause
-        Pause Execution    Complete MFA / OTP in the browser window, then click OK here to continue the test.
+        Pause Execution    Complete MFA / passkey / fingerprint / OTP in the browser window, then click OK here to continue the test.
         Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
         Dismiss Post-Login Prompts
     ELSE IF    not $ok
-        Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Run in Watch mode so the app can pause for manual OTP. (2) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (3) Use a sandbox integration user exempt from MFA if policy allows. (4) For TOTP secrets, extend automation to submit the verification code—see your security team.
+        Fail    Login did not reach Salesforce (often MFA/passkey still pending or wrong credentials). Options: (1) Prefer LOGIN_MODE=auto/frontdoor after ``sf org login web``. (2) Run in Watch mode so the app can pause for manual OTP. (3) Ask your admin for a Trusted IP range. (4) Use a sandbox integration user exempt from MFA if policy allows.
     END
 
 Dismiss Post-Login Prompts

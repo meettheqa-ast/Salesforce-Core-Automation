@@ -353,6 +353,7 @@ def _build_bulk_robot_cmd(
     if _effective_headless(True):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_login_mode_overrides())
     cmd.extend(_persona_robot_overrides(default_app))
     cmd.append(str(test_path))
     return cmd
@@ -983,6 +984,10 @@ class ExecuteRequest(BaseModel):
     exclude_tags: str = ""
     # Optional Salesforce app to land in (mapped to ${salesAutomationAppName}).
     default_app: str = ""
+    # Optional Robot LOGIN_MODE override: auto | frontdoor | ui.
+    # Used when the Generate prompt embeds a test-user password so we must
+    # not silently login via CLI frontdoor as a different identity.
+    login_mode: str | None = None
 
 
 class ExecuteResponse(BaseModel):
@@ -1080,6 +1085,7 @@ def execute_robot(
     if _effective_headless(body.headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_login_mode_overrides(body.login_mode))
     cmd.extend(_persona_robot_overrides(body.default_app))
     if body.include_tags:
         for tag in [t.strip() for t in body.include_tags.split(",") if t.strip()]:
@@ -1197,6 +1203,22 @@ def _container_browser_overrides() -> list[str]:
     return ["--variable", f"CONTAINER_BROWSER_BINARY:{binary}"]
 
 
+def _login_mode_overrides(forced: str | None = None) -> list[str]:
+    """Inject ``LOGIN_MODE`` (+ optional ``SF_DX_ORG_ALIAS``) for Robot login.
+
+    Priority: caller ``forced`` → env ``ROBOT_LOGIN_MODE`` → ``auto``.
+    Allowed values: ``auto`` | ``frontdoor`` | ``ui``.
+    """
+    mode = (forced or os.getenv("ROBOT_LOGIN_MODE") or "auto").strip().lower() or "auto"
+    if mode not in ("auto", "frontdoor", "ui"):
+        mode = "auto"
+    extras = ["--variable", f"LOGIN_MODE:{mode}"]
+    alias = (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
+    if alias:
+        extras.extend(["--variable", f"SF_DX_ORG_ALIAS:{alias}"])
+    return extras
+
+
 def _persona_robot_overrides(default_app: str | None) -> list[str]:
     """Extra `--variable` args derived from persona metadata.
 
@@ -1234,6 +1256,7 @@ def _build_robot_cmd(
     include_tags: str = "",
     exclude_tags: str = "",
     default_app: str = "",
+    login_mode: str | None = None,
 ) -> list[str]:
     cmd = [
         sys.executable, "-m", "robot",
@@ -1245,6 +1268,7 @@ def _build_robot_cmd(
     if _effective_headless(headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
+    cmd.extend(_login_mode_overrides(login_mode))
     cmd.extend(_persona_robot_overrides(default_app))
     for tag in [t.strip() for t in include_tags.split(",") if t.strip()]:
         cmd.extend(["--include", tag])
@@ -1264,6 +1288,7 @@ def execute_robot_stream(
     include_tags: str = Query(""),
     exclude_tags: str = Query(""),
     default_app: str = Query("", description="Optional ${salesAutomationAppName} override."),
+    login_mode: str | None = Query(None, description="Optional LOGIN_MODE: auto|frontdoor|ui"),
 ):
     """Stream Robot stdout line-by-line as Server-Sent Events.
 
@@ -1288,6 +1313,7 @@ def execute_robot_stream(
     cmd = _build_robot_cmd(
         tp, out_dir, sandbox_url, username, password, headless, include_tags, exclude_tags,
         default_app=default_app,
+        login_mode=login_mode,
     )
 
     def event_stream():

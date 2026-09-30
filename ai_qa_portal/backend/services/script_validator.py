@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import logging
 import re
+import tempfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from difflib import get_close_matches
@@ -259,12 +260,39 @@ def _read_resource_universe(
     return out_vars, out_keywords
 
 
+def _expand_robot_path_vars(raw: str, suite_path: Path) -> str:
+    """Expand the Robot built-in path tokens that commonly appear in
+    ``Resource`` / ``Library`` imports.
+
+    Generators (and many hand-authored suites) emit absolute Windows paths
+    using ``${/}`` as the separator, e.g.
+    ``C:${/}Users${/}...${/}Resources${/}Common${/}GlobalKeywords.robot``.
+    A literal ``Path(...).is_file()`` check on that string always fails
+    even when the file exists — which produced false ``missing_resource``
+    errors and disabled the Run button. Expand the tokens Robot itself
+    would expand at runtime before looking on disk.
+    """
+    out = raw
+    out = out.replace("${CURDIR}", str(suite_path.parent))
+    out = out.replace("${EXECDIR}", str(REPO_ROOT))
+    out = out.replace("${TEMPDIR}", tempfile.gettempdir())
+    # Prefer forward slashes: pathlib accepts them on Windows and they
+    # match how most suites / the REPO_ROOT helper write paths.
+    out = out.replace("${/}", "/")
+    # In Resource paths we only see ${:} as a drive-letter colon
+    # ("C${:}${/}Users${/}..."). Robot's PATHSEP meaning of ${:} is
+    # irrelevant for single-file resolution.
+    out = out.replace("${:}", ":")
+    return out
+
+
 def _resolve_resource_path(raw: str, suite_path: Path) -> Path | None:
     """Apply Robot's path resolution rules in the simplest form: try the
-    path as given (relative to the suite, then absolute), with the
-    ``${CURDIR}`` token rewritten to the suite directory. Return ``None``
-    when nothing resolves on disk."""
-    candidate = raw.replace("${CURDIR}", str(suite_path.parent))
+    path as given (relative to the suite, then absolute), with Robot
+    path tokens (``${CURDIR}``, ``${/}``, ``${:}``, ``${EXECDIR}``,
+    ``${TEMPDIR}``) expanded first. Return ``None`` when nothing
+    resolves on disk."""
+    candidate = _expand_robot_path_vars(raw, suite_path)
     p = Path(candidate)
     if not p.is_absolute():
         p = (suite_path.parent / p).resolve(strict=False)

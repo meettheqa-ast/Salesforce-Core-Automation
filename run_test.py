@@ -151,6 +151,8 @@ def build_robot_run(
         cmd.extend(["-v", "headless:true"])
     else:
         cmd.extend(["-v", "MFA_PAUSE_FOR_MANUAL_COMPLETION:true"])
+    # Prefer CLI frontdoor login (sf org login web) then multi-step UI fallback.
+    cmd.extend(["-v", "LOGIN_MODE:auto"])
     cmd.append(str(test_target))
     cmd.extend(extra)
     return cmd, out_dir

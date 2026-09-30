@@ -34,6 +34,7 @@ from ai_qa_portal.backend.services.db_models.generation import (
     GenerationStatus,
 )
 from ai_qa_portal.backend.services.generation_worker import JobCancelled, broker, submit_generation_job
+from ai_qa_portal.backend.services.prompt_credentials import extract_credentials_from_prompt
 
 router = APIRouter(
     prefix="/api/generate",
@@ -41,6 +42,21 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 logger = logging.getLogger("ai_qa_portal.generate")
+
+
+def _apply_prompt_credential_override(body: GenerateRequest) -> GenerateRequest:
+    """If the prompt names both username and password, they win over workspace login."""
+    override = extract_credentials_from_prompt(body.prompt or "")
+    if not override:
+        return body
+    username, password = override
+    body.username = username
+    body.password = password
+    logger.info(
+        "Prompt credential override applied for user %s (password redacted)",
+        username,
+    )
+    return body
 
 
 def _leaf_exceptions(exc: BaseException) -> list[BaseException]:
@@ -319,6 +335,7 @@ def generate_robot_suite(body: GenerateRequest):
     shadow mode log + surface in the response but do not block; in
     load-bearing mode they trigger a fix-prompt retry the same way AST
     or dryrun failures do."""
+    body = _apply_prompt_credential_override(body)
     try:
         from ai_bridge import (
             generate_test_from_prompt_validated,
@@ -684,6 +701,7 @@ def generate_mcp_stepwise(body: GenerateRequest):
     silent contract drift that made the non-stream path silently
     unreliable for external integrations.
     """
+    body = _apply_prompt_credential_override(body)
     notes: list[str] = []
     final_payload: dict | None = None
     final_error: str | None = None
@@ -1320,6 +1338,7 @@ def _iter_stepwise_events(
 
 
 def _create_generation_job(body: GenerateRequest, current_user: User) -> str:
+    body = _apply_prompt_credential_override(body)
     with SessionLocal() as session:
         row = GenerationJob(
             owner_user_id=current_user.id,
@@ -1351,7 +1370,7 @@ def _run_generation_job(job_id: str) -> None:
         session.commit()
         payload = dict(job.request_payload or {})
 
-    body = GenerateRequest(**payload)
+    body = _apply_prompt_credential_override(GenerateRequest(**payload))
 
     def _cancel_check() -> bool:
         with SessionLocal() as cancel_session:

@@ -194,6 +194,35 @@ def test_missing_resource_import_is_flagged(write_suite):
     )
 
 
+def test_resource_path_with_robot_sep_var_resolves(write_suite):
+    """Absolute Resource imports that use Robot's ``${/}`` separator
+    (common LLM output on Windows) must resolve when the file exists —
+    otherwise the UI falsely disables Run with missing_resource."""
+    sep = "${/}"
+    # as_posix first so we only replace real separators (not chars inside ${/}).
+    robot_abs = REPO_ROOT.as_posix().replace("/", sep)
+    gk = f"{robot_abs}{sep}Resources{sep}Common{sep}GlobalKeywords.robot"
+    spo = f"{robot_abs}{sep}Resources{sep}PO{sep}Platform{sep}SalesPO.robot"
+    suite = write_suite(f"""\
+        *** Settings ***
+        Resource    {gk}
+        Resource    {spo}
+        Test Setup       Begin Web Test
+        Test Teardown    End Web Test
+
+        *** Test Cases ***
+        Trivial
+            [Tags]    smoke
+            Log    Hello
+    """)
+    report = sv.validate(suite)
+    missing = [e for e in report.errors if e.kind == "missing_resource"]
+    assert not missing, (
+        "Resource paths with ${/} must resolve on disk. Got: "
+        + "; ".join(e.symbol for e in missing)
+    )
+
+
 def test_build_fix_prompt_mentions_each_error(write_suite):
     """The fix-prompt rendering must name each undefined symbol so the
     LLM can act on it without rereading the script."""

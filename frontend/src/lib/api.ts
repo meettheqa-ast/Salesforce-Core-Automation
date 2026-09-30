@@ -1188,6 +1188,8 @@ export const api = {
       /** Persona's default Salesforce app. Backend maps to
        *  ${salesAutomationAppName} so PO keywords pick the right app. */
       default_app?: string;
+      /** Optional Robot LOGIN_MODE override (auto|frontdoor|ui). */
+      login_mode?: string;
     }) => {
       const q = new URLSearchParams({
         test_path: data.test_path,
@@ -1197,6 +1199,7 @@ export const api = {
         headless: String(data.headless ?? true),
       });
       if (data.default_app) q.set("default_app", data.default_app);
+      if (data.login_mode) q.set("login_mode", data.login_mode);
       return withAuthQuery(`${API_BASE}/api/runs/execute/stream?${q.toString()}`);
     },
     latest: (limit = 50) =>
@@ -1300,11 +1303,26 @@ export const api = {
   locators: {
     scan: (data: any) => apiFetch<any>("/api/locators/scan", { method: "POST", body: JSON.stringify(data) }),
     list: () => apiFetch<any>("/api/locators/list"),
+    /** Read the most recent locator scan summary so the Settings ->
+     *  Infrastructure -> Locator Health card can render without
+     *  forcing a re-scan on every open. Returns a NEVER_RUN shape
+     *  before any scan has been recorded. Backed by a row in the
+     *  unified events table (action='locator.scanned'). */
+    status: () => apiFetch<LocatorStatusResponse>("/api/locators/status"),
   },
   salesforce: {
     soql: (query: string) => apiFetch<any>("/api/salesforce/soql", { method: "POST", body: JSON.stringify({ query }) }),
     dxStatus: () => apiFetch<any>("/api/salesforce/dx/status"),
     describeFields: (obj: string) => apiFetch<any>(`/api/salesforce/dx/objects/${obj}/fields`),
+    /** Inject Salesforce schema context for a free-text prompt --
+     *  used by the contextual schema inspector drawer on /generate.
+     *  Endpoint exists in the backend but had no Next.js caller
+     *  until the Dev Tools IA refactor. */
+    schemaContext: (body: { prompt: string; sandbox_url: string; username: string; password: string }) =>
+      apiFetch<SchemaContextResponse>("/api/salesforce/schema/context", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
   users: {
     /** Search the same-domain user directory for the Add Member combobox.
@@ -1891,6 +1909,33 @@ export interface ImportBatchSummary {
 export interface ImportBatchDetail extends ImportBatchSummary {
   /** Full failed-rows array (only present on the detail endpoint). */
   failed_rows: ImportFailedRow[];
+}
+
+// ---- Locator health + schema inspection (Dev Tools IA refactor) ----
+
+/** GET /api/locators/status response. Powers the Settings ->
+ *  Infrastructure -> Locator Health card. NEVER_RUN means no
+ *  `locator.scanned` event has landed yet (fresh deploy / first
+ *  use). PASS / STALE / FAIL derived from the latest event. */
+export type LocatorScanStatus = "PASS" | "STALE" | "FAIL" | "NEVER_RUN";
+
+export interface LocatorStatusResponse {
+  last_scan_at: string | null;
+  last_scan_status: LocatorScanStatus;
+  healthy_count: number;
+  stale_count: number;
+  failed_count: number;
+  sandbox_url: string | null;
+  actor_user_id: string | null;
+  scan_error: string | null;
+}
+
+/** POST /api/salesforce/schema/context response. The contextual
+ *  schema-inspector drawer on /generate renders these objects +
+ *  context block alongside the user's prompt. */
+export interface SchemaContextResponse {
+  objects: string[];
+  context: string;
 }
 
 // ---- Cross-entity search (Phase 2 IA audit) ----

@@ -14,6 +14,8 @@ interface RunRequestData {
   /** Persona's default Salesforce app, forwarded to the runner so PO
    *  keywords land in the right app via ${salesAutomationAppName}. */
   default_app?: string;
+  /** Optional Robot LOGIN_MODE override (auto|frontdoor|ui). */
+  login_mode?: string;
 }
 
 interface RunResult {

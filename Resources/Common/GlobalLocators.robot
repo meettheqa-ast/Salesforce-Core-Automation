@@ -2,6 +2,9 @@
 ${sandboxUserName}=                                     id:username
 ${sandboxPassword}=                                     id:password
 ${sandboxLoginButton}=                                  id:Login
+# Identity-first login (username page): Salesforce reuses #Login as "Next";
+# also match explicit Next / Continue submit buttons on the split flow.
+${sandboxLoginNextButton}=                              css:input#Login, button#Login, button[type='submit'], input[type='submit']
 ${sandboxLaunch360Logo}=                                xpath://div[@class='slds-global-header__item']//div[@class='slds-global-header__logo']
 
 # Post-login interstitial prompts (phone registration, email verification, etc.)
