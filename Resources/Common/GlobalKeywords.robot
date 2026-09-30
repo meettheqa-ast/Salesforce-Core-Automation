@@ -50,9 +50,46 @@ End Web Test
     Close All Browsers
 
 Login To Sandbox
-    [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead.
+    [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead. ALTERNATIVELY, set ${frontdoorUrl} (written into EnvData.robot as ${sandboxFrontdoorUrl} by run_test.py when an SF CLI org alias is configured) to bypass the login form — and MFA/SSO — entirely via a `frontdoor.jsp` session bootstrapped from a one-time `sf org login web` auth. See sf_session_bootstrap.py / docs/sfdx-login-setup.md. A THIRD option, ${manualLogin} (written as ${sandboxManualLogin} when the "Manual login" checkbox is enabled), skips both the CLI session AND username/password autofill entirely: the keyword just opens the login page and pauses for a human to log in completely themselves (any credentials, MFA, SSO), then continues once the Lightning app shell appears. Manual login takes precedence over both other paths when set. Requires a non-headless run so a human can actually see and use the browser.
     [Tags]    login
-    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}
+    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}    ${frontdoorUrl}=${EMPTY}    ${manualLogin}=${EMPTY}
+    IF    '${manualLogin}' == '${EMPTY}'
+        # Not passed explicitly -- fall back to whatever EnvData.robot
+        # resolved, if anything. Get Variable Value tolerates the variable
+        # being entirely undefined, same reasoning as ${frontdoorUrl} below.
+        ${manualLogin}=    Get Variable Value    ${sandboxManualLogin}    ${EMPTY}
+    END
+    ${manualLogin_lc}=    Convert To Lower Case    ${manualLogin}
+    ${manualLogin_lc}=    Strip String    ${manualLogin_lc}
+    IF    '${manualLogin_lc}' == 'true'
+        Set Selenium Timeout    30s
+        Go To    ${instanceURL}
+        Pause Execution    Manual login mode: log in to Salesforce yourself in the browser window (any credentials, MFA, SSO), then click OK here to continue.
+        Set Selenium Timeout    5s
+        Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
+        Dismiss Post-Login Prompts
+        RETURN
+    END
+    IF    '${frontdoorUrl}' == '${EMPTY}'
+        # Not passed explicitly by the caller -- fall back to whatever
+        # EnvData.robot (written by run_test.py) resolved, if anything.
+        # Get Variable Value tolerates the variable being entirely undefined
+        # (e.g. EnvData.robot predates this feature, or robot was invoked
+        # directly without run_test.py), unlike a plain ${sandboxFrontdoorUrl}
+        # reference which would fail suite parsing.
+        ${frontdoorUrl}=    Get Variable Value    ${sandboxFrontdoorUrl}    ${EMPTY}
+    END
+    IF    '${frontdoorUrl}' != '${EMPTY}'
+        Set Selenium Timeout    30s
+        Go To    ${frontdoorUrl}
+        Dismiss Post-Login Prompts
+        ${frontdoor_ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    15s
+        Set Selenium Timeout    5s
+        IF    ${frontdoor_ok}
+            RETURN
+        END
+        Log    CLI OAuth frontdoor session login failed or the access token expired; falling back to username/password login.    WARN
+    END
     Go To    ${instanceURL}
     Wait Until Element Is Visible    ${sandboxUserName}    timeout=15s
     Input Text    ${sandboxUserName}    ${instanceUsername}
@@ -65,7 +102,7 @@ Login To Sandbox
         Wait Until Element Is Visible    ${sandboxLaunch360Logo}    10 minutes
         Dismiss Post-Login Prompts
     ELSE IF    not $ok
-        Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Run in Watch mode so the app can pause for manual OTP. (2) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (3) Use a sandbox integration user exempt from MFA if policy allows. (4) For TOTP secrets, extend automation to submit the verification code—see your security team.
+        Fail    Login did not reach Salesforce (often MFA/OTP still pending or wrong credentials). Options: (1) Set up CLI OAuth session login (sf org login web) so this keyword can bypass MFA/SSO via frontdoor.jsp — see docs/sfdx-login-setup.md. (2) Enable "Manual login" so the browser just opens the login page and waits for you to log in yourself. (3) Run in Watch mode so the app can pause for manual OTP. (4) Ask your admin for a Trusted IP range for your network so MFA is not prompted. (5) Use a sandbox integration user exempt from MFA if policy allows.
     END
 
 Dismiss Post-Login Prompts
