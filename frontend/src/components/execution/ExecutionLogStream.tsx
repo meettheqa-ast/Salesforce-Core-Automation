@@ -18,6 +18,11 @@ interface RunRequestData {
    *  frontdoor bypass (used when the prompt names a specific test user's
    *  credentials). */
   login_mode?: string;
+  /** Explicit CLI OAuth org alias for this run; falls back to the backend's
+   *  SF_DX_ORG_ALIAS env var when omitted. */
+  org_alias?: string;
+  /** Skip all autofill and pause for a human to log in manually. */
+  manual_login?: boolean;
 }
 
 interface RunResult {

@@ -990,6 +990,12 @@ class ExecuteRequest(BaseModel):
     # specific test user's credentials, so the run logs in as THAT user
     # instead of whichever identity the local `sf` CLI is authenticated as.
     login_mode: str | None = None
+    # CLI OAuth frontdoor.jsp bypass: explicit per-request alias. Falls back
+    # to the SF_DX_ORG_ALIAS env var (see _frontdoor_variable_override) when
+    # not supplied, so existing callers keep working unchanged.
+    org_alias: str | None = None
+    # Skip all autofill and pause for a human to log in manually (MFA/SSO).
+    manual_login: bool = False
 
 
 class ExecuteResponse(BaseModel):
@@ -1048,7 +1054,10 @@ def execute_robot(
     sys.path.insert(0, str(REPO_ROOT))
     from run_test import write_envdata
 
-    write_envdata(body.sandbox_url, body.username, body.password)
+    write_envdata(
+        body.sandbox_url, body.username, body.password,
+        org_alias=body.org_alias or "", manual_login=body.manual_login,
+    )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = RESULTS_ROOT / f"ui_{ts}"
@@ -1087,7 +1096,8 @@ def execute_robot(
     if _effective_headless(body.headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
-    cmd.extend(_frontdoor_variable_override(body.login_mode))
+    cmd.extend(_frontdoor_variable_override(body.login_mode, body.org_alias))
+    cmd.extend(_manual_login_variable_override(body.manual_login))
     cmd.extend(_persona_robot_overrides(body.default_app))
     if body.include_tags:
         for tag in [t.strip() for t in body.include_tags.split(",") if t.strip()]:
@@ -1205,7 +1215,7 @@ def _container_browser_overrides() -> list[str]:
     return ["--variable", f"CONTAINER_BROWSER_BINARY:{binary}"]
 
 
-def _frontdoor_variable_override(login_mode: str | None = None) -> list[str]:
+def _frontdoor_variable_override(login_mode: str | None = None, org_alias: str | None = None) -> list[str]:
     """Resolve a CLI OAuth frontdoor.jsp session and inject it as
     ``--variable sandboxFrontdoorUrl:<url>`` so `Login To Sandbox`
     (Resources/Common/GlobalKeywords.robot) can bypass the login form and
@@ -1225,7 +1235,7 @@ def _frontdoor_variable_override(login_mode: str | None = None) -> list[str]:
     """
     if (login_mode or "").strip().lower() == "ui":
         return []
-    alias = (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
+    alias = (org_alias or "").strip() or (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
     if not alias:
         return []
     sys.path.insert(0, str(REPO_ROOT))
@@ -1236,6 +1246,14 @@ def _frontdoor_variable_override(login_mode: str | None = None) -> list[str]:
         logger.warning("CLI OAuth frontdoor login unavailable for alias '%s': %s", alias, exc)
         return []
     return ["--variable", f"sandboxFrontdoorUrl:{url}"]
+
+
+def _manual_login_variable_override(manual_login: bool) -> list[str]:
+    """Injects ``--variable sandboxManualLogin:true`` so `Login To Sandbox`
+    skips all autofill and pauses for a human to complete login (any
+    credentials, MFA, SSO). Takes precedence over the frontdoor override in
+    the keyword itself."""
+    return ["--variable", "sandboxManualLogin:true"] if manual_login else []
 
 
 def _persona_robot_overrides(default_app: str | None) -> list[str]:
@@ -1276,6 +1294,8 @@ def _build_robot_cmd(
     exclude_tags: str = "",
     default_app: str = "",
     login_mode: str | None = None,
+    org_alias: str | None = None,
+    manual_login: bool = False,
 ) -> list[str]:
     cmd = [
         sys.executable, "-m", "robot",
@@ -1287,7 +1307,8 @@ def _build_robot_cmd(
     if _effective_headless(headless):
         cmd.extend(["--variable", "headless:true"])
     cmd.extend(_container_browser_overrides())
-    cmd.extend(_frontdoor_variable_override(login_mode))
+    cmd.extend(_frontdoor_variable_override(login_mode, org_alias))
+    cmd.extend(_manual_login_variable_override(manual_login))
     cmd.extend(_persona_robot_overrides(default_app))
     for tag in [t.strip() for t in include_tags.split(",") if t.strip()]:
         cmd.extend(["--include", tag])
@@ -1308,6 +1329,8 @@ def execute_robot_stream(
     exclude_tags: str = Query(""),
     default_app: str = Query("", description="Optional ${salesAutomationAppName} override."),
     login_mode: str | None = Query(None, description="Set to 'ui' to force username/password login and skip the CLI OAuth frontdoor bypass."),
+    org_alias: str | None = Query(None, description="Explicit CLI OAuth org alias; falls back to SF_DX_ORG_ALIAS env var when omitted."),
+    manual_login: bool = Query(False, description="Skip all autofill and pause for a human to log in manually (MFA/SSO)."),
 ):
     """Stream Robot stdout line-by-line as Server-Sent Events.
 
@@ -1324,7 +1347,10 @@ def execute_robot_stream(
     sys.path.insert(0, str(REPO_ROOT))
     from run_test import write_envdata
 
-    write_envdata(sandbox_url, username, password)
+    write_envdata(
+        sandbox_url, username, password,
+        org_alias=org_alias or "", manual_login=manual_login,
+    )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = RESULTS_ROOT / f"ui_{ts}"
@@ -1333,6 +1359,8 @@ def execute_robot_stream(
         tp, out_dir, sandbox_url, username, password, headless, include_tags, exclude_tags,
         default_app=default_app,
         login_mode=login_mode,
+        org_alias=org_alias,
+        manual_login=manual_login,
     )
 
     def event_stream():

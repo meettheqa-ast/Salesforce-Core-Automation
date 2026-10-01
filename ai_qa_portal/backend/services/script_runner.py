@@ -13,13 +13,15 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 logger = logging.getLogger(__name__)
 
 
-def _frontdoor_variables() -> list[str]:
+def _frontdoor_variables(org_alias: str | None = None) -> list[str]:
     """Mirror runs._frontdoor_variable_override for ScriptRunner subprocesses:
     resolve a CLI OAuth frontdoor.jsp session (bypasses MFA/SSO) via
     sf_session_bootstrap and inject it as ``--variable sandboxFrontdoorUrl:<url>``.
-    Never fatal -- any missing alias / CLI / expired auth just skips the override.
+    Uses an explicit alias when supplied, else falls back to the
+    SF_DX_ORG_ALIAS env var. Never fatal -- any missing alias / CLI / expired
+    auth just skips the override.
     """
-    alias = (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
+    alias = (org_alias or "").strip() or (os.getenv("SF_DX_ORG_ALIAS") or "").strip()
     if not alias:
         return []
     sys.path.insert(0, str(REPO_ROOT))
@@ -30,6 +32,12 @@ def _frontdoor_variables() -> list[str]:
         logger.warning("CLI OAuth frontdoor login unavailable for alias '%s': %s", alias, exc)
         return []
     return ["--variable", f"sandboxFrontdoorUrl:{url}"]
+
+
+def _manual_login_variable(manual_login: bool) -> list[str]:
+    """Injects ``--variable sandboxManualLogin:true`` so `Login To Sandbox`
+    pauses for a human to complete login manually."""
+    return ["--variable", "sandboxManualLogin:true"] if manual_login else []
 
 
 class ScriptRunner:
@@ -45,6 +53,8 @@ class ScriptRunner:
         login_url: str,
         *,
         headless: bool = True,
+        org_alias: str | None = None,
+        manual_login: bool = False,
     ) -> tuple[UUID, Path]:
         """Launch Robot Framework in a subprocess and return (run_id, log_path) immediately.
 
@@ -65,7 +75,8 @@ class ScriptRunner:
         ]
         if headless:
             cmd.extend(["--variable", "headless:true"])
-        cmd.extend(_frontdoor_variables())
+        cmd.extend(_frontdoor_variables(org_alias))
+        cmd.extend(_manual_login_variable(manual_login))
 
         cmd.append(test_path)
 
