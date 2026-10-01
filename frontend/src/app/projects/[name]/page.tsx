@@ -53,6 +53,11 @@ type CredFields = {
    *  ${salesAutomationAppName} at run time so PO keywords pick the right
    *  app without test changes. Empty string falls back to the global "Sales". */
   default_app: string;
+  /** CLI OAuth frontdoor.jsp bypass: `sf org login web --alias <alias>`
+   *  once, then reuse the session instead of the login form. */
+  sf_cli_org_alias: string;
+  /** Skip all autofill and pause for a human to log in manually. */
+  sf_manual_login: boolean;
 };
 
 const EMPTY_CREDS: CredFields = {
@@ -62,6 +67,8 @@ const EMPTY_CREDS: CredFields = {
   security_token: "",
   slack_webhook_url: "",
   default_app: "",
+  sf_cli_org_alias: "",
+  sf_manual_login: false,
 };
 
 type TestRow = { name: string; path: string; modified: string };
@@ -109,6 +116,7 @@ export default function ProjectDetailPage() {
   const [revealPassword, setRevealPassword] = useState(false);
   const [credLoading, setCredLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [testingCli, setTestingCli] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const [tests, setTests] = useState<TestRow[]>([]);
@@ -191,15 +199,41 @@ export default function ProjectDetailPage() {
     window.setTimeout(() => setStatusMsg(null), 3000);
   }, []);
 
+  // Same localStorage keys the Generate page's WorkspaceBar reads/writes, so
+  // whichever env/persona you're editing credentials for here is exactly the
+  // one WorkspaceBar defaults to when you navigate to Generate -- otherwise
+  // the two pages can silently pick different personas and an alias saved
+  // here looks like it "disappeared" on the other page.
+  // Also keep the project itself in sync -- WorkspaceBar defaults its
+  // project dropdown to whatever was last used anywhere in the app, which
+  // may not be the project whose credentials you're editing right now.
+  useEffect(() => {
+    try { window.localStorage.setItem("ws.project", name); } catch {}
+  }, [name]);
+
+  const rememberEnv = useCallback((env: string) => {
+    try { window.localStorage.setItem(`ws.env:${name}`, env); } catch {}
+  }, [name]);
+  const rememberPersona = useCallback((env: string, persona: string) => {
+    try { window.localStorage.setItem(`ws.persona:${name}:${env}`, persona); } catch {}
+  }, [name]);
+
   const loadEnvironments = useCallback(async () => {
     try {
       const envs = await api.projects.environments(name);
       setEnvironments(envs);
-      setSelectedEnv((cur) => (cur && envs.includes(cur) ? cur : envs[0] || ""));
+      setSelectedEnv((cur) => {
+        if (cur && envs.includes(cur)) return cur;
+        let last: string | null = null;
+        try { last = window.localStorage.getItem(`ws.env:${name}`); } catch {}
+        const next = (last && envs.includes(last)) ? last : envs[0] || "";
+        if (next) rememberEnv(next);
+        return next;
+      });
     } catch {
       setEnvironments([]);
     }
-  }, [name]);
+  }, [name, rememberEnv]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -287,13 +321,20 @@ export default function ProjectDetailPage() {
       .then((list) => {
         const items = list.length ? list : [DEFAULT_PERSONA];
         setPersonas(items);
-        setSelectedPersona((cur) => (cur && items.includes(cur) ? cur : items[0]));
+        setSelectedPersona((cur) => {
+          if (cur && items.includes(cur)) return cur;
+          let last: string | null = null;
+          try { last = window.localStorage.getItem(`ws.persona:${name}:${selectedEnv}`); } catch {}
+          const next = (last && items.includes(last)) ? last : items[0];
+          rememberPersona(selectedEnv, next);
+          return next;
+        });
       })
       .catch(() => {
         setPersonas([DEFAULT_PERSONA]);
         setSelectedPersona(DEFAULT_PERSONA);
       });
-  }, [name, selectedEnv]);
+  }, [name, selectedEnv, rememberPersona]);
 
   useEffect(() => {
     if (!selectedEnv || !selectedPersona) {
@@ -313,6 +354,8 @@ export default function ProjectDetailPage() {
             security_token: cfg.security_token || "",
             slack_webhook_url: cfg.slack_webhook_url || "",
             default_app: cfg.default_app || "",
+            sf_cli_org_alias: cfg.sf_cli_org_alias || "",
+            sf_manual_login: cfg.sf_manual_login === "true",
           })
         )
         .catch(() => setCreds(EMPTY_CREDS))
@@ -344,6 +387,19 @@ export default function ProjectDetailPage() {
       flash("err", e instanceof Error ? e.message : "Save failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const testCliSession = async () => {
+    if (!creds.sf_cli_org_alias.trim()) return;
+    setTestingCli(true);
+    try {
+      const res = await api.projects.testCliSession(name, creds.sf_cli_org_alias.trim());
+      flash("ok", `CLI session OK — instance ${res.instance_url}`);
+    } catch (e: unknown) {
+      flash("err", e instanceof Error ? e.message : "CLI session check failed");
+    } finally {
+      setTestingCli(false);
     }
   };
 
@@ -555,7 +611,7 @@ export default function ProjectDetailPage() {
                 >
                   <button
                     type="button"
-                    onClick={() => setSelectedEnv(env)}
+                    onClick={() => { setSelectedEnv(env); rememberEnv(env); }}
                     className={`flex-1 text-left text-sm ${active ? "text-purple-200" : "text-slate-300"}`}
                   >
                     {env}
@@ -604,7 +660,7 @@ export default function ProjectDetailPage() {
                 <GlassSelect
                   className="min-w-[10rem]"
                   value={selectedPersona}
-                  onChange={setSelectedPersona}
+                  onChange={(p) => { setSelectedPersona(p); if (selectedEnv) rememberPersona(selectedEnv, p); }}
                   disabled={!selectedEnv || personas.length === 0}
                   placeholder="Persona…"
                   options={personas.map((p) => ({ value: p, label: p }))}
@@ -737,6 +793,48 @@ export default function ProjectDetailPage() {
                     Leave blank to use the project default (&quot;Sales&quot;).
                   </p>
                 </Field>
+                <Field
+                  label="SF CLI org alias (optional — bypasses login form + MFA/SSO)"
+                  action={
+                    <button
+                      type="button"
+                      onClick={testCliSession}
+                      disabled={testingCli || credLoading || !creds.sf_cli_org_alias.trim()}
+                      className="text-[10px] uppercase tracking-wider text-purple-300 hover:text-purple-200 disabled:opacity-40"
+                    >
+                      {testingCli ? "Testing…" : "Test CLI Session"}
+                    </button>
+                  }
+                >
+                  <input
+                    value={creds.sf_cli_org_alias}
+                    onChange={(e) => setCreds({ ...creds, sf_cli_org_alias: e.target.value })}
+                    disabled={credLoading}
+                    placeholder="e.g. qa-sandbox"
+                    autoComplete="off"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none focus:border-purple-500"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Run <code className="text-slate-400">sf org login web --alias {"<alias>"}</code> once locally,
+                    then runs reuse that session instead of the username/password form.
+                  </p>
+                </Field>
+                <label className="flex items-start gap-2 text-sm text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={creds.sf_manual_login}
+                    onChange={(e) => setCreds({ ...creds, sf_manual_login: e.target.checked })}
+                    disabled={credLoading}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Manual login (I&apos;ll log in myself — any credentials, MFA, SSO)
+                    <span className="block text-[11px] text-slate-500">
+                      Skips all autofill and pauses the run for you to complete login by hand. Requires a
+                      non-headless run.
+                    </span>
+                  </span>
+                </label>
                 <div className="flex justify-end">
                   <motion.button
                     whileTap={{ scale: 0.97 }}

@@ -18,6 +18,10 @@ export type WorkspaceCreds = {
    *  to the generate endpoints so the LLM can frame the script around the
    *  right app instead of falling back to the global "Sales" default. */
   defaultApp: string;
+  /** CLI OAuth frontdoor.jsp bypass alias, when the persona has one configured. */
+  orgAlias: string;
+  /** Persona is set to skip autofill and pause for a human to log in manually. */
+  manualLogin: boolean;
 };
 
 interface WorkspaceBarProps {
@@ -37,6 +41,8 @@ export default function WorkspaceBar({ onChange }: WorkspaceBarProps) {
   const [sandboxUrl, setSandboxUrl] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [orgAlias, setOrgAlias] = useState("");
+  const [manualLogin, setManualLogin] = useState(false);
 
   // Initial project list
   useEffect(() => {
@@ -115,25 +121,32 @@ export default function WorkspaceBar({ onChange }: WorkspaceBarProps) {
       // -> environments.<env>.personas.<name>.default_app). Carry it on
       // every onChange emit so consumers don't have to re-fetch.
       const da = cfg.default_app || "";
+      const alias = cfg.sf_cli_org_alias || "";
+      const manual = cfg.sf_manual_login === "true";
       setUsername(u);
       setPassword(p);
       setSandboxUrl(s);
+      setOrgAlias(alias);
+      setManualLogin(manual);
       onChangeRef.current({
         sandboxUrl: s, username: u, password: p,
         project, environment, persona,
         defaultApp: da,
+        orgAlias: alias, manualLogin: manual,
       });
     }).catch(() => {
       setUsername(""); setPassword(""); setSandboxUrl("");
+      setOrgAlias(""); setManualLogin(false);
       onChangeRef.current({
         sandboxUrl: "", username: "", password: "",
         project, environment, persona,
         defaultApp: "",
+        orgAlias: "", manualLogin: false,
       });
     });
   }, [project, environment, persona]);
 
-  const ready = Boolean(sandboxUrl && username && password);
+  const ready = Boolean(sandboxUrl && (manualLogin || orgAlias || (username && password)));
 
   return (
     <motion.div

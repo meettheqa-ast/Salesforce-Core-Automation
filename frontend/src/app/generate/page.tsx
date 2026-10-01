@@ -36,6 +36,10 @@ type RunRequest = {
   default_app?: string;
   /** When the prompt embeds a test user, force UI login (not CLI frontdoor). */
   login_mode?: string;
+  /** CLI OAuth frontdoor.jsp bypass alias, when the persona has one configured. */
+  org_alias?: string;
+  /** Skip all autofill and pause for a human to log in manually. */
+  manual_login?: boolean;
 };
 
 const AUTO_DATA_HINT =
@@ -270,6 +274,8 @@ export default function GeneratePage() {
       username: fromPrompt?.username ?? creds?.username ?? "",
       password: fromPrompt?.password ?? creds?.password ?? "",
       defaultApp: creds?.defaultApp ?? "",
+      orgAlias: creds?.orgAlias ?? "",
+      manualLogin: creds?.manualLogin ?? false,
       fromPrompt: Boolean(fromPrompt),
     };
   };
@@ -603,15 +609,21 @@ export default function GeneratePage() {
       return;
     }
     const effective = resolveCreds(prompt);
+    // A prompt-named test user must actually log in as THAT user via the UI
+    // form, so it takes precedence over any persona-level CLI alias/manual
+    // login -- those only apply when the prompt didn't name credentials.
+    const useCliAuth = !effective.fromPrompt;
     setRunRequest({
       test_path: testPath,
       sandbox_url: effective.sandboxUrl || creds.sandboxUrl,
       username: effective.username,
       password: effective.password,
-      headless,
+      // Manual login needs a real, visible browser -- can't run headless.
+      headless: useCliAuth && effective.manualLogin ? false : headless,
       default_app: effective.defaultApp || undefined,
-      // Prompt-named test users must not be skipped by CLI frontdoor.
       ...(effective.fromPrompt ? { login_mode: "ui" } : {}),
+      ...(useCliAuth && effective.orgAlias ? { org_alias: effective.orgAlias } : {}),
+      ...(useCliAuth && effective.manualLogin ? { manual_login: true } : {}),
     });
   };
 

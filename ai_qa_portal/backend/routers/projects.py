@@ -44,6 +44,15 @@ class CredentialsPayload(BaseModel):
     # Persona.default_app on sync; injected at run time as
     # ${salesAutomationAppName}. Empty string keeps the project-wide default.
     default_app: str = ""
+    # CLI OAuth frontdoor.jsp bypass: `sf org login web --alias <alias>` once,
+    # then reuse the session on every run instead of the login form.
+    sf_cli_org_alias: str = ""
+    # Skip all autofill and pause for a human to log in manually (MFA/SSO).
+    sf_manual_login: bool = False
+
+
+class TestCliSessionPayload(BaseModel):
+    alias: str
 
 router = APIRouter(
     prefix="/api/projects",
@@ -439,6 +448,33 @@ def list_personas_for_environment(
     return project_manager.list_personas(project_name, environment)
 
 
+@router.post("/{project_name}/test-cli-session")
+def test_cli_session(
+    project_name: str,
+    body: TestCliSessionPayload,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Verify a CLI OAuth alias is authenticated, mirroring the Streamlit
+    "Test CLI Session" button so the frontend can surface the same check."""
+    _ensure_can_access_project(project_name, current_user, db)
+    alias = (body.alias or "").strip()
+    if not alias:
+        raise HTTPException(400, "Org alias is required")
+    import sys
+    from pathlib import Path as _Path
+    repo_root = _Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(repo_root))
+    from sf_session_bootstrap import SfCliAuthError, get_org_session
+    try:
+        session = get_org_session(alias)
+    except SfCliAuthError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "instance_url": session["instanceUrl"]}
+
+
 @router.put("/{project_name}/credentials")
 def save_credentials(
     project_name: str,
@@ -460,6 +496,8 @@ def save_credentials(
         environment=env,
         persona=persona,
         default_app=body.default_app or "",
+        sf_cli_org_alias=body.sf_cli_org_alias or "",
+        sf_manual_login=bool(body.sf_manual_login),
     )
     # If a portal-side Persona row already exists for this env+persona, keep
     # it in sync so the bulk runner picks the right ${salesAutomationAppName}

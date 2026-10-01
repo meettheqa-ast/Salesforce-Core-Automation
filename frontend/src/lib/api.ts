@@ -578,11 +578,21 @@ export const api = {
         slack_webhook_url?: string;
         /** Optional ${salesAutomationAppName} override for this persona. */
         default_app?: string;
+        /** CLI OAuth frontdoor.jsp bypass: `sf org login web --alias <alias>`
+         *  once, then reuse the session instead of the login form. */
+        sf_cli_org_alias?: string;
+        /** Skip all autofill and pause for a human to log in manually. */
+        sf_manual_login?: boolean;
       }
     ) =>
       apiFetch<{ environment: string; persona: string; status: string }>(
         `/api/projects/${encodeURIComponent(name)}/credentials`,
         { method: "PUT", body: JSON.stringify(payload) }
+      ),
+    testCliSession: (name: string, alias: string) =>
+      apiFetch<{ ok: boolean; instance_url?: string }>(
+        `/api/projects/${encodeURIComponent(name)}/test-cli-session`,
+        { method: "POST", body: JSON.stringify({ alias }) }
       ),
     deleteEnvironment: (name: string, env: string) =>
       apiFetch<void>(
@@ -1192,6 +1202,11 @@ export const api = {
        *  OAuth frontdoor bypass (used when the prompt names a specific
        *  test user's credentials). */
       login_mode?: string;
+      /** Explicit CLI OAuth org alias for this run; falls back to the
+       *  backend's SF_DX_ORG_ALIAS env var when omitted. */
+      org_alias?: string;
+      /** Skip all autofill and pause for a human to log in manually. */
+      manual_login?: boolean;
     }) => {
       const q = new URLSearchParams({
         test_path: data.test_path,
@@ -1202,6 +1217,8 @@ export const api = {
       });
       if (data.default_app) q.set("default_app", data.default_app);
       if (data.login_mode) q.set("login_mode", data.login_mode);
+      if (data.org_alias) q.set("org_alias", data.org_alias);
+      if (data.manual_login) q.set("manual_login", String(data.manual_login));
       return withAuthQuery(`${API_BASE}/api/runs/execute/stream?${q.toString()}`);
     },
     latest: (limit = 50) =>

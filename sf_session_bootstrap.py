@@ -119,6 +119,13 @@ def get_org_session(alias: str, *, instance_url: str | None = None, timeout: flo
         raise SfCliAuthError("No Salesforce CLI org alias configured.")
 
     sf = _sf_path()
+    # On `sf` CLI >= 2.1xx, `org display --json` (even with --verbose)
+    # always redacts accessToken as the literal string "[REDACTED] Use
+    # 'sf org auth show-access-token' to view" -- that command is now the
+    # only supported way to get the real token back out. `org display`
+    # is still used here for its own sake: it validates the alias has
+    # usable auth and gives us instanceUrl with the same error-message
+    # shape callers already expect.
     cmd = [sf, "org", "display", "--json", "--target-org", alias]
     try:
         completed = subprocess.run(
@@ -159,11 +166,44 @@ def get_org_session(alias: str, *, instance_url: str | None = None, timeout: flo
     resolved_instance_url = result.get("instanceUrl") or instance_url
     if not access_token or not resolved_instance_url:
         raise SfCliAuthError(_login_hint(alias, instance_url))
+    if "REDACTED" in access_token:
+        access_token = _fetch_access_token(sf, alias, timeout=timeout)
 
     host = urlsplit(resolved_instance_url).netloc or "?"
     _logger.info("sf-session-bootstrap resolved org alias '%s' (host=%s)", alias, host)
 
     return {"accessToken": access_token, "instanceUrl": resolved_instance_url}
+
+
+def _fetch_access_token(sf: str, alias: str, *, timeout: float) -> str:
+    """Fetch the real access token via the dedicated command required on
+    `sf` CLI versions that always redact it from ``org display`` output.
+    ``--json`` skips the interactive confirmation prompt (per `sf`'s own
+    docs), so this is safe to run non-interactively from a subprocess."""
+    cmd = [sf, "org", "auth", "show-access-token", "--target-org", alias, "--json"]
+    try:
+        completed = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, shell=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SfCliAuthError(
+            f"Salesforce CLI did not respond within {timeout}s fetching the "
+            f"access token for org alias '{alias}'."
+        ) from exc
+
+    try:
+        payload = json.loads(completed.stdout) if completed.stdout.strip() else None
+    except ValueError:
+        payload = None
+
+    token = (payload or {}).get("result", {}).get("accessToken") if payload else None
+    if completed.returncode != 0 or not token or "REDACTED" in token:
+        raise SfCliAuthError(
+            f"Salesforce CLI could not return an access token for org alias "
+            f"'{alias}'. Try running `sf org auth show-access-token "
+            f"--target-org {alias}` yourself to see the underlying error."
+        )
+    return token
 
 
 def build_frontdoor_url(instance_url: str, access_token: str) -> str:
