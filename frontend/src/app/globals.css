@@ -87,17 +87,13 @@ body {
   50% { background-position: 100% 50%; }
 }
 
-/* Animated gradient background */
+/* Static gradient background. Used to run an infinite 15s
+   background-position animation (`bg-shift`) on <body> -- i.e. a
+   full-viewport repaint loop running forever on every single page,
+   whether anything was interacting with it or not. Fixed to one frame
+   of that gradient instead; visually similar, zero ongoing paint cost. */
 .bg-gradient-animated {
   background: linear-gradient(135deg, #0a0e1a 0%, #1a1040 25%, #0a1628 50%, #0f0a20 75%, #0a0e1a 100%);
-  background-size: 400% 400%;
-  animation: bg-shift 15s ease infinite;
-}
-@keyframes bg-shift {
-  0%, 100% { background-position: 0% 50%; }
-  25% { background-position: 100% 0%; }
-  50% { background-position: 100% 100%; }
-  75% { background-position: 0% 100%; }
 }
 
 /* Pulse animation */

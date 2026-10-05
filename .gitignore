@@ -20,6 +20,12 @@ _local_data/
 # multi-line commits on Windows (PowerShell doesn't support heredoc).
 .commit_msg.tmp
 
+# Local dev-server stdout redirects (uvicorn --reload / next dev), created
+# when launching both services via `*> file.log 2>&1` in PowerShell. Pure
+# machine-local run output, never useful to another dev or in CI.
+backend_dev.log
+frontend_dev.log
+
 # Tooling caches
 .pytest_cache/
 .ruff_cache/

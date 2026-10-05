@@ -100,7 +100,7 @@ LLM_PROVIDERS: dict[str, tuple[str, str, str]] = {
     "ollama":      ("OLLAMA_BASE_URL",     "OLLAMA_MODEL",      "qwen2.5-coder:7b"),
     "gemini":      ("GEMINI_API_KEY",      "GEMINI_MODEL",      "gemini-2.5-flash"),
     "openai":      ("OPENAI_API_KEY",      "OPENAI_MODEL",      "gpt-4o"),
-    "groq":        ("GROQ_API_KEY",        "GROQ_MODEL",        "llama-3.3-70b-versatile"),
+    "groq":        ("GROQ_API_KEY",        "GROQ_MODEL",        "openai/gpt-oss-120b"),
     "mistral":     ("MISTRAL_API_KEY",     "MISTRAL_MODEL",     "mistral-small-latest"),
     "together":    ("TOGETHER_API_KEY",    "TOGETHER_MODEL",    "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
     "openrouter":  ("OPENROUTER_API_KEY",  "OPENROUTER_MODEL",  "meta-llama/llama-3.3-70b-instruct"),
@@ -115,7 +115,7 @@ LLM_PROVIDERS: dict[str, tuple[str, str, str]] = {
     #     requires CURSOR_AGENT_REPO).
     # When CURSOR_API_KEY is set, ``_default_primary_provider()``
     # promotes Cursor to first place in the failover chain.
-    "cursor":      ("CURSOR_API_KEY",      "CURSOR_MODEL",      "composer-2"),
+    "cursor":      ("CURSOR_API_KEY",      "CURSOR_MODEL",      "composer-2.5"),
 }
 
 PROVIDER_LABELS: dict[str, str] = {

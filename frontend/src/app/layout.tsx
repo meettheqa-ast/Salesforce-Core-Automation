@@ -8,6 +8,7 @@ import WorkspaceSubHeader from "@/components/layout/WorkspaceSubHeader";
 import SessionProviderWrapper from "@/components/auth/SessionProviderWrapper";
 import ToastProvider from "@/components/ui/ToastProvider";
 import ThemeApplier from "@/components/layout/ThemeApplier";
+import MotionConfigProvider from "@/components/providers/MotionConfigProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className="dark">
       <body className={`${inter.variable} font-sans bg-gradient-animated min-h-screen antialiased`}>
         <SessionProviderWrapper>
+          <MotionConfigProvider>
           <ToastProvider>
             {/* Mounts at the root so every page picks up the user's
                 theme preference from localStorage on first render.
@@ -49,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </div>
             </div>
           </ToastProvider>
+          </MotionConfigProvider>
         </SessionProviderWrapper>
       </body>
     </html>
