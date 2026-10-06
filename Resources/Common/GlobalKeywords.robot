@@ -5,6 +5,7 @@ Library     Dialogs
 Library     Collections
 Library     FakerLibrary
 Library     ../../Libraries/ChromeProfilePoolLibrary.py
+Library     ../../Libraries/SfFrontdoorLibrary.py
 # EnvData must load before GlobalVariables / PlatformData so runtime URL & login
 # (written by run_test.py / Streamlit) win over repo defaults. Robot keeps first scalar definition.
 Resource    ../../Resources/TestData/EnvData.robot
@@ -16,6 +17,15 @@ Resource    ../../Resources/TestData/Platform/PlatformData.robot
 *** Variables ***
 # When true, login waits for you to finish MFA/OTP in the browser (Watch mode). Overridden by robot -v.
 ${MFA_PAUSE_FOR_MANUAL_COMPLETION}=    ${FALSE}
+# Fallback app-launcher name for ``Launch App``. Generated test cases call
+# ``Launch App    ${salesAutomationAppName}`` directly without importing a
+# PO resource (e.g. SalesPO.robot) that would otherwise define this, so it
+# must have a default here too or the suite fails with "Variable not
+# found" before ever reaching the browser. Per-run overrides still win:
+# the portal's _persona_robot_overrides() passes
+# ``--variable salesAutomationAppName:<persona app>``, and Robot CLI
+# -v/--variable always takes precedence over a Variables-table default.
+${salesAutomationAppName}=    Sales
 
 *** Keywords ***
 Begin Web Test
@@ -87,7 +97,7 @@ End Web Test
 Login To Sandbox
     [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. Supports Salesforce's classic same-page username+password form as well as the modern identity-split flow (username → Next → password), auto-detecting which one is presented. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP/passkey in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead. ALTERNATIVELY, set ${frontdoorUrl} (written into EnvData.robot as ${sandboxFrontdoorUrl} by run_test.py when an SF CLI org alias is configured) to bypass the login form — and MFA/SSO — entirely via a `frontdoor.jsp` session bootstrapped from a one-time `sf org login web` auth. See sf_session_bootstrap.py / docs/sfdx-login-setup.md. A THIRD option, ${manualLogin} (written as ${sandboxManualLogin} when the "Manual login" checkbox is enabled), skips both the CLI session AND username/password autofill entirely: the keyword just opens the login page and pauses for a human to log in completely themselves (any credentials, MFA, SSO), then continues once the Lightning app shell appears. Manual login takes precedence over both other paths when set. Requires a non-headless run so a human can actually see and use the browser.
     [Tags]    login
-    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}    ${frontdoorUrl}=${EMPTY}    ${manualLogin}=${EMPTY}
+    [Arguments]    ${instanceURL}    ${instanceUsername}    ${instancePassword}    ${allow_mfa_manual_pause}=${MFA_PAUSE_FOR_MANUAL_COMPLETION}    ${frontdoorUrl}=${EMPTY}    ${manualLogin}=${EMPTY}    ${orgAlias}=${EMPTY}
     IF    '${manualLogin}' == '${EMPTY}'
         # Not passed explicitly -- fall back to whatever EnvData.robot
         # resolved, if anything. Get Variable Value tolerates the variable
@@ -113,6 +123,24 @@ Login To Sandbox
         # directly without run_test.py), unlike a plain ${sandboxFrontdoorUrl}
         # reference which would fail suite parsing.
         ${frontdoorUrl}=    Get Variable Value    ${sandboxFrontdoorUrl}    ${EMPTY}
+    END
+    IF    '${orgAlias}' == '${EMPTY}'
+        ${orgAlias}=    Get Variable Value    ${sandboxOrgAlias}    ${EMPTY}
+    END
+    IF    $orgAlias
+        # The ${frontdoorUrl} above (whether passed in or resolved from
+        # EnvData.robot) was minted once, before this run even started. In a
+        # long multi-test-case batch that token can go stale by the time a
+        # LATER test case gets here -- Salesforce then bounces straight back
+        # to the login form ("access token expired"), even though the CLI's
+        # underlying OAuth grant is still perfectly valid. Re-resolving a
+        # brand-new token right before THIS login closes that gap. Never
+        # fatal: an empty return here just means keep using whatever
+        # ${frontdoorUrl} we already had (old behaviour, unchanged).
+        ${fresh_frontdoor}=    Get Fresh Frontdoor Url    ${orgAlias}
+        IF    $fresh_frontdoor
+            ${frontdoorUrl}=    Set Variable    ${fresh_frontdoor}
+        END
     END
     IF    '${frontdoorUrl}' != '${EMPTY}'
         Set Selenium Timeout    30s

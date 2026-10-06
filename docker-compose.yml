@@ -45,6 +45,10 @@ services:
       SAVED_PROJECTS_DIR: /data/Saved_Projects
       RFMCP_HOST: 127.0.0.1
       RFMCP_PORT: "8765"
+      # Persistent Chrome profile pool (device-trust cookies for Salesforce
+      # MFA/passkey) -- must live on the mounted volume, not the container's
+      # ephemeral home dir, or it's wiped on every container restart.
+      CHROME_PROFILE_POOL_DIR: /data/chrome-profiles
       # Talk to the postgres service over the compose network. When you
       # run `docker compose up`, this overrides whatever DATABASE_URL is
       # set to in .env so the container hits the bundled Postgres rather

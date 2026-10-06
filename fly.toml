@@ -21,6 +21,10 @@ primary_region = "bom"
   OUTPUT_DIR = "/data/ai_qa_portal_outputs"
   RESULTS_DIR = "/data/Results"
   SAVED_PROJECTS_DIR = "/data/Saved_Projects"
+  # Persistent Chrome profile pool (device-trust cookies for Salesforce
+  # MFA/passkey) -- must live on the mounted volume, not the machine's
+  # ephemeral home dir, or it's wiped on every restart/redeploy.
+  CHROME_PROFILE_POOL_DIR = "/data/chrome-profiles"
 
 [[mounts]]
   source = "data"

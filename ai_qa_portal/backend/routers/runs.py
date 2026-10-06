@@ -30,16 +30,24 @@ from ..services.auth import get_current_user
 from ..services.credential_service import CredentialService
 from ..services.db import (
     RunRecord,
+    SessionLocal,
     User,
     get_db,
     list_memberships_for_user,
 )
+from ..services.event_stream import emit_event
 from ..services.failure_diagnoser import (
     NeedsHumanDiagnosis,
     diagnose_run,
 )
 from ..services.failure_diagnoser import (
     format_for_prompt as format_diag_for_prompt,
+)
+from ..services.locator_catalog_writer import (
+    apply_locator_promotion,
+    extract_locator_fix,
+    find_related_locator,
+    read_global_locators,
 )
 from ..services.nav_resolver import NavTargetResolver, TargetType, format_resolved_targets_block
 from ..services.org_metadata import OrgMetadataService
@@ -521,10 +529,16 @@ def _bulk_event_stream(
             "attempt": attempt,
         }
 
-    def _heal_after_failure(tc: TestCase, last_attempt_result: dict) -> bool:
-        """Run the heal pipeline on a freshly-failed test. Returns True
-        when the script was rewritten and we should retry, False to give
-        up. Emits healing / healed / heal_failed events for the UI."""
+    def _heal_after_failure(
+        tc: TestCase, last_attempt_result: dict
+    ) -> tuple[bool, tuple[str, str] | None]:
+        """Run the heal pipeline on a freshly-failed test. Returns
+        (rewrote_script, pending_locator_fix) -- rewrote_script is True
+        when the script was rewritten and we should retry; pending_locator_fix
+        is an optional (var_name, new_value) suggestion for widening a
+        shared GlobalLocators.robot entry, to be promoted by the caller
+        only if the retry actually passes. Emits healing / healed /
+        heal_failed events for the UI."""
         run_dir = Path(last_attempt_result.get("output_dir") or "")
         queue.put({
             "event": "healing",
@@ -540,7 +554,7 @@ def _bulk_event_stream(
                 "tc_id": str(tc.id),
                 "reason": "no actionable diagnosis from output.xml",
             })
-            return False
+            return False, None
 
         # Phase B5/C: before asking the LLM to heal a navigation failure
         # blind, ground the failing target in real org metadata. If even
@@ -580,7 +594,7 @@ def _bulk_event_stream(
                         original_diag=diag,
                     )
                     queue.put({"event": "needs_human", **needs_human.to_dict()})
-                    return False
+                    return False, None
                 resolved_targets_block = format_resolved_targets_block([resolved])
 
         if not tc.script_path:
@@ -589,7 +603,7 @@ def _bulk_event_stream(
                 "tc_id": str(tc.id),
                 "reason": "test case has no saved script_path to rewrite",
             })
-            return False
+            return False, None
 
         script_abs = (REPO_ROOT / tc.script_path).resolve()
         if not script_abs.is_file():
@@ -598,11 +612,32 @@ def _bulk_event_stream(
                 "tc_id": str(tc.id),
                 "reason": f"saved script missing: {tc.script_path}",
             })
-            return False
+            return False, None
 
         try:
             current_script = script_abs.read_text(encoding="utf-8")
             steps_block = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(tc.steps))
+
+            locator_fix_block = ""
+            related_var = None
+            first_arg = diag.first_failure.arguments[0] if diag.first_failure.arguments else ""
+            if first_arg and re.match(r"^(xpath|css|id|name|class|link)[:=]", first_arg.strip()):
+                related_var = find_related_locator(first_arg, read_global_locators())
+            if related_var:
+                related_value = read_global_locators().get(related_var, {}).get("value", "")
+                locator_fix_block = (
+                    f"\n## Shared locator hint\n\n"
+                    f"This failing locator appears related to the shared variable "
+                    f"`${{{related_var}}}` in GlobalLocators.robot "
+                    f"(current value: `{related_value}`). If your fix generalizes "
+                    f"beyond this one test, after the ```robot fence also emit a block:\n\n"
+                    f"---LOCATOR-FIX---\n{related_var}\n"
+                    f"<full new value, all alternatives | -joined, including the "
+                    f"existing ones above>\n---END-LOCATOR-FIX---\n\n"
+                    f"Only include this if you're confident the fix is reusable "
+                    f"beyond this one test; omit it otherwise.\n"
+                )
+
             user_body = (
                 f"## Original test case\n\n"
                 f"Title: {tc.title}\n"
@@ -614,6 +649,7 @@ def _bulk_event_stream(
                 f"```robot\n{current_script}\n```\n\n"
                 f"## Diagnosis from the failed run\n\n"
                 f"{format_diag_for_prompt(diag)}\n"
+                f"{locator_fix_block}"
             )
             user_prompt = _assembler.build_user_prompt_with_catalog(
                 user_body,
@@ -641,7 +677,9 @@ def _bulk_event_stream(
                     "tc_id": str(tc.id),
                     "reason": "healer LLM returned no usable Robot source",
                 })
-                return False
+                return False, None
+
+            pending_locator_fix = extract_locator_fix(raw)
 
             tmp_path = script_abs.with_suffix(script_abs.suffix + ".heal.tmp")
             tmp_path.write_text(new_script + "\n", encoding="utf-8")
@@ -659,7 +697,7 @@ def _bulk_event_stream(
                 "tc_id": str(tc.id),
                 "reason": f"heal pipeline crashed: {exc}",
             })
-            return False
+            return False, None
 
         queue.put({
             "event": "healed",
@@ -667,7 +705,47 @@ def _bulk_event_stream(
             "tc_title": tc.title,
             "fixed_keyword": diag.first_failure.keyword_name,
         })
-        return True
+        return True, pending_locator_fix
+
+    def _promote_locator_fix(tc: TestCase, run_dir: str, var_name: str, new_value: str) -> None:
+        """Best-effort: widen a shared locator in GlobalLocators.robot now
+        that the heal that proposed it has empirically passed, and record
+        an audit event. Never raises -- a failure here must not affect the
+        run result the user is waiting on."""
+        try:
+            promoted = apply_locator_promotion(var_name, new_value)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning("locator promotion crashed for %s: %s", var_name, exc)
+            return
+        if not promoted:
+            return
+        queue.put({
+            "event": "locator_promoted",
+            "tc_id": str(tc.id),
+            "var_name": var_name,
+            "added": new_value,
+        })
+        try:
+            db = SessionLocal()
+            try:
+                emit_event(
+                    db,
+                    kind="infra",
+                    action="locator.promoted",
+                    target_type="locator_library",
+                    target_id="GlobalLocators.robot",
+                    summary=f"Widened ${{{var_name}}} after a successful auto-heal retry",
+                    metadata={
+                        "var_name": var_name,
+                        "added_alternative": new_value,
+                        "run_folder": run_dir,
+                        "test_case_id": str(tc.id),
+                    },
+                )
+            finally:
+                db.close()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning("locator.promoted audit event failed for %s: %s", var_name, exc)
 
     def _run_with_optional_heal(tc: TestCase) -> None:
         """Outer worker loop: one attempt + up to N heal-and-retry rounds.
@@ -679,10 +757,14 @@ def _bulk_event_stream(
             and result["status"] == "FAIL"
             and attempt <= max_heal_attempts
         ):
-            if not _heal_after_failure(tc, result):
+            rewrote, pending_locator_fix = _heal_after_failure(tc, result)
+            if not rewrote:
                 break
             attempt += 1
             result = _run_attempt(tc, attempt)
+            if result["status"] == "PASS" and pending_locator_fix:
+                run_dir = str(result.get("output_dir") or "")
+                _promote_locator_fix(tc, run_dir, *pending_locator_fix)
         queue.put({"event": "done", **result})
 
     executor = ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="bulk-run")

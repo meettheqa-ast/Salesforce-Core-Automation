@@ -95,15 +95,20 @@ WORKDIR /app
 COPY . /app
 
 # Pre-create writable mount points so the container also works without a volume.
-RUN mkdir -p /data/Results /data/Saved_Projects /data/ai_qa_portal_data /data/ai_qa_portal_outputs
+RUN mkdir -p /data/Results /data/Saved_Projects /data/ai_qa_portal_data /data/ai_qa_portal_outputs /data/chrome-profiles
 
 # --- Runtime env -----------------------------------------------------------
+# CHROME_PROFILE_POOL_DIR must live under the persistent /data volume, not the
+# container's home dir (wiped on every restart/redeploy) -- otherwise
+# Salesforce's "remember this device" cookie never survives past the current
+# container instance and every deploy forces a fresh MFA/passkey challenge.
 ENV RFMCP_HOST=127.0.0.1 \
     RFMCP_PORT=8765 \
     DATA_DIR=/data/ai_qa_portal_data \
     OUTPUT_DIR=/data/ai_qa_portal_outputs \
     RESULTS_DIR=/data/Results \
-    SAVED_PROJECTS_DIR=/data/Saved_Projects
+    SAVED_PROJECTS_DIR=/data/Saved_Projects \
+    CHROME_PROFILE_POOL_DIR=/data/chrome-profiles
 
 EXPOSE 8000
 

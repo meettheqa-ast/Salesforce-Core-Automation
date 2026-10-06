@@ -194,6 +194,21 @@ export default function BulkExecutionStream({ streamUrl, onClose, healContext }:
         );
       } catch { /* ignore */ }
     });
+    es.addEventListener("locator_promoted", (ev) => {
+      try {
+        const d = JSON.parse((ev as MessageEvent).data);
+        setCases((prev) =>
+          prev.map((c) =>
+            c.tc_id === d.tc_id
+              ? {
+                  ...c,
+                  heal_note: `Widened shared locator \${${d.var_name}} for future tests`,
+                }
+              : c,
+          ),
+        );
+      } catch { /* ignore */ }
+    });
     es.addEventListener("heal_failed", (ev) => {
       try {
         const d = JSON.parse((ev as MessageEvent).data);

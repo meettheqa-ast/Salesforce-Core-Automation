@@ -135,7 +135,7 @@ ${dynamicFormInformationSectionLocator}=                xpath://h3[contains(@cla
 # Locator for Empty Message Container that appears when no record is found through search.
 ${emptyContainerListViewLocator}=                       xpath://div[contains(@class,'emptyContent')]
 ${listViewDropdownLocator}=                             xpath://button[@title="Select a List View: <record-type>"]
-${listViewDropdownOptionLocator}=                       xpath://div[@role="dialog" and @aria-hidden="false"]//li/a/span[text()="<dropdown-value>"]
+${listViewDropdownOptionLocator}=                       xpath://div[@role="dialog" and @aria-hidden="false"]//li/a/span[text()="<dropdown-value>"] | //div[contains(@class,"slds-dropdown") and not(contains(@class,"slds-hide"))]//li/a/span[text()="<dropdown-value>"] | //lightning-base-combobox-item//span[@title="<dropdown-value>"] | //*[@role="option"][contains(normalize-space(.),"<dropdown-value>")]
 ${listViewSearchSpinner}=                               css:div.slds-spinner_container.slds-grid
 
 # Locators to change path option
