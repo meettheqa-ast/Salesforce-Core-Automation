@@ -17,6 +17,15 @@ ${appInLauncherLocator}=                                xpath://one-app-launcher
 ${itemInLauncherLocator}=                               xpath://one-app-launcher-menu-item[. = '<item-name>']
 ${activeAppLocator}=                                    xpath://span[@title='<app-name>']
 
+# Setup gear icon + Quick Find (admin-only targets: custom metadata, permission sets, named credentials, etc.)
+${setupGearButton}=                                     xpath://a[@title='Setup'] | //button[@title='Setup'] | //one-app-nav-bar-item-root//a[contains(@href,'/lightning/setup/')]
+${setupQuickFindInput}=                                 xpath://input[@placeholder='Quick Find' or @placeholder='Search Setup']
+${setupQuickFindResultLink}=                            xpath://a[contains(@class,'setupTrayLink') or contains(@class,'navLink')][contains(normalize-space(.), '<item-name>')] | //a[normalize-space(.)='<item-name>']
+
+# Global top-nav search (distinct from in-modal lookup fields -- searches records/content org-wide)
+${globalNavSearchBox}=                                  xpath://input[@placeholder='Search...'][contains(@class,'slds-input') or contains(@id,'phSearchInput')] | //div[contains(@class,'branding-actions') or contains(@class,'global-actions')]//input[@placeholder='Search...']
+${globalNavSearchResult}=                               xpath://a[contains(@class,'itemLabel') or contains(@class,'outputLookupLink')][contains(normalize-space(.), '<item-name>')]
+
 # Tab of App Launcher
 ${tabInAppLocator}=                                     xpath://one-app-nav-bar-item-root[a[@title='<tab-name>']]
 # ${tabInAppLocator}=    xpath://one-app-nav-bar-item-root[@data-id="<tab-name>"]

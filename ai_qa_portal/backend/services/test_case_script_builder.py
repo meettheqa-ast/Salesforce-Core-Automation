@@ -1,15 +1,43 @@
 from __future__ import annotations
 
 import logging
+import re
 import tempfile
 from pathlib import Path
 
+from ..config import REPO_ROOT
 from ..models.org import SalesforceOrg
 from ..models.persona import Persona
 from ..models.test_case import TestCase
 from ..prompts import assembler
 
 logger = logging.getLogger("ai_qa_portal.test_case_script_builder")
+
+# The LLM is given bare catalog paths like "Resources/Common/GlobalKeywords.robot"
+# (see app_catalog.py) and has to guess how many "../" segments reach them from
+# wherever the suite ends up on disk. That guess is routinely wrong: the
+# validation loop dry-runs the script from a flat scratch tempfile, so a
+# shallow "../../Resources/..." import passes there, but the real save
+# location for story-generated scripts is 5 levels deep
+# (Saved_Projects/<project>/Tests/Generated/story_<id>/case_<id>.robot),
+# which needs 5. Rather than keep guessing depth, rewrite any Resource
+# import that targets the shared Resources/ tree to an absolute,
+# REPO_ROOT-based path -- correct regardless of how deeply the final file
+# is nested.
+_RESOURCE_IMPORT_RE = re.compile(
+    r"^(?P<prefix>\s*Resource\s+)(?P<path>(?:\.\./)*Resources/\S+)\s*$",
+    re.MULTILINE,
+)
+
+
+def _absolutize_resource_imports(robot_source: str) -> str:
+    repo_root_posix = REPO_ROOT.as_posix()
+
+    def _fix(match: re.Match[str]) -> str:
+        rel = match.group("path").split("Resources/", 1)[1]
+        return f"{match.group('prefix')}{repo_root_posix}/Resources/{rel}"
+
+    return _RESOURCE_IMPORT_RE.sub(_fix, robot_source)
 
 
 class TestCaseScriptBuilder:
@@ -98,6 +126,32 @@ class TestCaseScriptBuilder:
             except Exception as exc:  # noqa: BLE001 -- RAG miss is non-fatal
                 logger.warning("RAG retrieval skipped for build: %s", exc)
 
+        targets_block = ""
+        if org is not None and persona is not None:
+            try:
+                from .nav_resolver import NavTargetResolver, format_resolved_targets_block
+                from .nav_resolver.extraction import extract_candidate_target_names
+                from .org_metadata import OrgMetadataService
+
+                candidate_names = extract_candidate_target_names(tc.title, tc.steps)
+                if candidate_names:
+                    from ..config import settings
+                    from .credential_service import CredentialService
+
+                    cred_svc = CredentialService(settings.fernet_key or None)
+                    password = cred_svc.decrypt(persona.encrypted_password)
+                    resolver = NavTargetResolver(OrgMetadataService())
+                    resolved = resolver.resolve_many(
+                        candidate_names,
+                        org_key=str(org.id),
+                        sandbox_url=org.login_url,
+                        username=persona.username,
+                        password=password,
+                    )
+                    targets_block = format_resolved_targets_block(resolved)
+            except Exception as exc:  # noqa: BLE001 -- grounding miss is non-fatal
+                logger.warning("Navigation target resolution skipped for build: %s", exc)
+
         # Resolve via the registry so org / project / user overrides for
         # the builder role land here too. Provenance is captured for
         # callers that want it (currently logged for traceability).
@@ -112,6 +166,7 @@ class TestCaseScriptBuilder:
             include_full_catalog=True,
             default_app=persona_default_app,
             rag_context=rag_block,
+            resolved_targets_block=targets_block,
         )
         if assembled.template_id:
             logger.info(
@@ -120,7 +175,7 @@ class TestCaseScriptBuilder:
             )
 
         if not validate:
-            return call_llm(system_prompt, user_prompt)
+            return _absolutize_resource_imports(call_llm(system_prompt, user_prompt))
 
         # Validation loop. The TestCase builder writes through a tempfile
         # because callers store the returned text wherever they want;
@@ -157,6 +212,7 @@ class TestCaseScriptBuilder:
                 cleaned = strip_llm_robot_garbage(cleaned)
                 cleaned = strip_hallucinated_csv_variables_from_suite(cleaned)
                 cleaned = fix_misplaced_setup_teardown(cleaned)
+                cleaned = _absolutize_resource_imports(cleaned)
                 return cleaned
 
             result = run_with_validation(

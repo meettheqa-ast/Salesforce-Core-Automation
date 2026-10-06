@@ -86,6 +86,12 @@ ${{sandboxSecurityToken}}=    {token}
 # CLI OAuth frontdoor session (bypasses login form + MFA/SSO). Empty when
 # org_alias isn't configured or the CLI session couldn't be resolved.
 ${{sandboxFrontdoorUrl}}=    {frontdoor_url}
+# Org alias for re-resolving a FRESH frontdoor session right before each
+# test case's login (see Login To Sandbox / SfFrontdoorLibrary), instead of
+# only ever using the one above -- which was fetched once here, before any
+# test ran, and can go stale by the time a later test case in a long
+# multi-test run actually logs in.
+${{sandboxOrgAlias}}=    {escape_robot_scalar(org_alias)}
 # Fully manual login: open the login page and pause for a human to log in
 # themselves (any credentials, MFA, SSO). Takes precedence over the
 # frontdoor session above and password autofill. "true" or empty.

@@ -73,6 +73,35 @@ const DEFAULT_TIMEOUT_MS =
 // few-shot examples), so 4MB is generous but bounded.
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
+// @cursor/sdk derives its local agent SQLite store path from a hash of
+// this directory's *name*, nested under:
+//   <homedir>/.cursor/projects/<slugified-cwd>/sdk-agent-store/<hash>/
+//   agents/agent-<64-hex-id>/store.db
+// That's ~250 fixed characters before the slug even starts. When this
+// sidecar's own cwd is a long, deeply-nested path (as project folders
+// under long "Downloads/..." trees tend to be), the slug pushes the
+// total well past Windows' 260-char MAX_PATH, and the native SQLite
+// binding fails with SQLITE_CANTOPEN -- not a permissions or
+// concurrency issue, just a path that's too long to open. We never use
+// cwd for file access (settingSources: [] below, completion-only use),
+// so pointing it at a short, dedicated directory instead of the real
+// (long) project path sidesteps the limit entirely.
+const SHORT_CWD = path.join(process.env.SystemDrive || "C:", "cursor-sdk-ws");
+try {
+  fs.mkdirSync(SHORT_CWD, { recursive: true });
+  // The SDK derives its workspace slug from the real OS process cwd, not
+  // from the `local.cwd` prompt option below (verified empirically: the
+  // slug stayed tied to the sidecar's launch directory even after that
+  // option was set). chdir() is the only lever that actually moves it.
+  process.chdir(SHORT_CWD);
+} catch (err) {
+  console.error(JSON.stringify({
+    level: "warn",
+    msg: "Could not switch to short cwd for Cursor SDK local agent; long paths may hit SQLITE_CANTOPEN",
+    error: err && err.message,
+  }));
+}
+
 if (!API_KEY) {
   console.error(JSON.stringify({
     level: "fatal",
@@ -205,7 +234,7 @@ async function runComplete({ system, user, model, timeoutMs }) {
     // settingSources: [] so the agent never loads project/user/team
     // settings -- we want a clean LLM call, not an editor session.
     local: {
-      cwd: process.cwd(),
+      cwd: fs.existsSync(SHORT_CWD) ? SHORT_CWD : process.cwd(),
       settingSources: [],
     },
   };
@@ -290,11 +319,22 @@ async function handleComplete(req, res) {
     return;
   }
 
-  // result.status: "finished" | "error" | "cancelled"
+  // result.status: "finished" | "error" | "cancelled". The SDK gives no
+  // further detail on "error" (confirmed empirically: RunResult has no
+  // message field for this state), but repeated direct testing shows
+  // it's an intermittent failure on Cursor's own backend -- roughly 1
+  // in 3 calls with an identical prompt/model/key fail this way, the
+  // rest succeed normally. Treat it as retryable so the Python bridge
+  // (and, forced-provider callers especially, since they skip
+  // ai_bridge's failover chain entirely) can retry instead of
+  // surfacing a hard failure for what's usually a one-off blip.
+  // "cancelled" is left non-retryable: that's a deliberate stop, not a
+  // transient fault.
   if (!result || result.status !== "finished") {
+    const status = result && result.status;
     sendJson(res, 500, {
-      error: `agent did not finish (status=${result && result.status})`,
-      retryable: false,
+      error: `agent did not finish (status=${status})`,
+      retryable: status === "error",
       runId: (result && result.id) || null,
     });
     return;

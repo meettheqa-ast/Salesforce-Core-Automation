@@ -30,6 +30,7 @@ class OrgMetadataService:
         self._lock = threading.Lock()
         self._describe_cache: dict[tuple[str, str], _CacheEntry] = {}
         self._validation_cache: dict[tuple[str, str], _CacheEntry] = {}
+        self._nav_cache: dict[tuple[str, str], _CacheEntry] = {}
 
     def describe_object(
         self,
@@ -143,6 +144,158 @@ class OrgMetadataService:
                 expires_at=now + _TTL_SECONDS,
             )
         return rules
+
+    def _cached_soql_list(
+        self,
+        cache_name: str,
+        org_key: str,
+        query: str,
+        row_mapper,
+    ) -> list[dict[str, Any]]:
+        """Run a SOQL query via sf_dx_bridge and cache the mapped rows,
+        following the exact TTL-cache shape used by ``validation_rules``.
+        Returns ``[]`` (uncached) on any failure so callers degrade
+        gracefully instead of raising."""
+        cache_key = (cache_name, (org_key or "").strip().lower())
+        now = time.monotonic()
+        with self._lock:
+            hit = self._nav_cache.get(cache_key)
+            if hit and hit.expires_at > now:
+                return list(hit.value.get("rows") or [])
+
+        rows: list[dict[str, Any]] = []
+        try:
+            import sf_dx_bridge
+
+            raw = sf_dx_bridge.run_soql_query(query)
+            records = ((raw or {}).get("result") or {}).get("records") or []
+            rows = [row_mapper(r) for r in records]
+        except Exception as exc:
+            logger.debug("%s query failed: %s", cache_name, exc)
+            rows = []
+
+        with self._lock:
+            self._nav_cache[cache_key] = _CacheEntry(value={"rows": rows}, expires_at=now + _TTL_SECONDS)
+        return rows
+
+    def list_tabs(self, *, org_key: str = "") -> list[dict[str, Any]]:
+        """Every tab defined in the org (custom + standard), regardless of
+        whether it's pinned in any app's nav bar."""
+        query = "SELECT Label, DurableId, SobjectName FROM TabDefinition"
+        return self._cached_soql_list(
+            "tabs",
+            org_key,
+            query,
+            lambda r: {
+                "label": str(r.get("Label") or ""),
+                "api_name": str(r.get("DurableId") or ""),
+                "sobject": str(r.get("SobjectName") or ""),
+            },
+        )
+
+    def list_app_menu_items(self, *, org_key: str = "") -> list[dict[str, Any]]:
+        """App Launcher entries -- apps AND standalone items (the things
+        ``Launch App`` / ``Open Item`` search for)."""
+        query = "SELECT Label, Name, ApplicationId, Type FROM AppMenuItem"
+        return self._cached_soql_list(
+            "app_menu_items",
+            org_key,
+            query,
+            lambda r: {
+                "label": str(r.get("Label") or ""),
+                "api_name": str(r.get("Name") or ""),
+                "type": str(r.get("Type") or ""),
+            },
+        )
+
+    def list_quick_actions(self, *, org_key: str = "") -> list[dict[str, Any]]:
+        query = "SELECT MasterLabel, DeveloperName, SobjectType FROM QuickActionDefinition"
+        return self._cached_soql_list(
+            "quick_actions",
+            org_key,
+            query,
+            lambda r: {
+                "label": str(r.get("MasterLabel") or ""),
+                "api_name": str(r.get("DeveloperName") or ""),
+                "sobject": str(r.get("SobjectType") or ""),
+            },
+        )
+
+    def list_flows(self, *, org_key: str = "") -> list[dict[str, Any]]:
+        query = "SELECT Label, ApiName FROM FlowDefinitionView WHERE IsActive = true"
+        return self._cached_soql_list(
+            "flows",
+            org_key,
+            query,
+            lambda r: {
+                "label": str(r.get("Label") or ""),
+                "api_name": str(r.get("ApiName") or ""),
+            },
+        )
+
+    def list_reports(self, *, org_key: str = "") -> list[dict[str, Any]]:
+        query = "SELECT Name, Id, FolderName FROM Report"
+        return self._cached_soql_list(
+            "reports",
+            org_key,
+            query,
+            lambda r: {
+                "label": str(r.get("Name") or ""),
+                "api_name": str(r.get("Id") or ""),
+                "folder": str(r.get("FolderName") or ""),
+            },
+        )
+
+    def list_related_lists(
+        self,
+        object_name: str,
+        *,
+        org_key: str = "",
+        sandbox_url: str = "",
+        username: str = "",
+        password: str = "",
+        security_token: str = "",
+    ) -> list[dict[str, Any]]:
+        """Child relationships (related lists) on an object's layout, e.g.
+        Account -> Opportunities/Cases/Contacts. Requires a live
+        simple_salesforce describe -- SOQL/Tooling has no equivalent."""
+        cache_key = ("related_lists", f"{(org_key or '').strip().lower()}:{(object_name or '').strip().lower()}")
+        now = time.monotonic()
+        with self._lock:
+            hit = self._nav_cache.get(cache_key)
+            if hit and hit.expires_at > now:
+                return list(hit.value.get("rows") or [])
+
+        rows: list[dict[str, Any]] = []
+        if sandbox_url and username and password:
+            try:
+                from simple_salesforce import Salesforce
+
+                sf = Salesforce(
+                    username=username.strip(),
+                    password=password.strip(),
+                    security_token=(security_token or "").strip(),
+                    domain="test",
+                )
+                desc = getattr(sf, object_name).describe()
+                for rel in desc.get("childRelationships", []) or []:
+                    label = str(rel.get("relationshipName") or rel.get("childSObject") or "")
+                    if not label:
+                        continue
+                    rows.append(
+                        {
+                            "label": label,
+                            "child_object": str(rel.get("childSObject") or ""),
+                            "field": str(rel.get("field") or ""),
+                        }
+                    )
+            except Exception as exc:
+                logger.debug("list_related_lists failed for %s: %s", object_name, exc)
+                rows = []
+
+        with self._lock:
+            self._nav_cache[cache_key] = _CacheEntry(value={"rows": rows}, expires_at=now + _TTL_SECONDS)
+        return rows
 
     def resolve_field_api_name(
         self,

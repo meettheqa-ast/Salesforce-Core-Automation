@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import AnimatedCard from "@/components/cards/AnimatedCard";
 import StatusDonut, { DONUT_COLORS } from "@/components/charts/StatusDonut";
 import CreateProjectModal from "@/components/projects/CreateProjectModal";
@@ -310,10 +311,24 @@ function ProjectTile({
         { id: "stale", label: "Stale", count: stats.by_status.stale, color: DONUT_COLORS.stale },
       ]
     : [];
+  const router = useRouter();
+  const href = `/projects/${encodeURIComponent(name)}`;
 
   return (
     <div className="relative group">
-      <Link href={`/projects/${encodeURIComponent(name)}`}>
+      {/* Not a <Link> -- the status chips below are real <a> tags, and an
+          <a> cannot contain another <a> (invalid DOM, hydration error). */}
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={() => router.push(href)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            router.push(href);
+          }
+        }}
+      >
         <AnimatedCard glow="purple" className="cursor-pointer">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
@@ -379,7 +394,7 @@ function ProjectTile({
             </div>
           )}
         </AnimatedCard>
-      </Link>
+      </div>
       {canDelete && (
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}

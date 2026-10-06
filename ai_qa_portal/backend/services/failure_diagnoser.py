@@ -72,6 +72,36 @@ class RunDiagnosis:
         }
 
 
+@dataclass
+class NeedsHumanDiagnosis:
+    """Emitted instead of retrying when even org-metadata grounding found
+    no confident match for a navigation target -- the target most likely
+    doesn't exist (wrong story wording, not a real tab/object/action in
+    this org), so another LLM heal attempt would just guess again."""
+
+    run_id: str
+    test_case_id: str
+    requested_name: str
+    searched: list[str] = field(default_factory=list)
+    near_matches: list[dict] = field(default_factory=list)
+    original_diag: RunDiagnosis | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "run_id": self.run_id,
+            "test_case_id": self.test_case_id,
+            "requested_name": self.requested_name,
+            "searched": list(self.searched),
+            "near_matches": list(self.near_matches),
+            "message": (
+                f"'{self.requested_name}' could not be located after deterministic "
+                f"in-browser search and org metadata lookup. Nearest matches: "
+                + (", ".join(m.get("name", "") for m in self.near_matches) or "none")
+                + "."
+            ),
+        }
+
+
 def _kw_status(kw_el: ET.Element) -> tuple[str, str]:
     """Return (status, message) for a Robot output.xml <kw> element."""
     status_el = kw_el.find("status")

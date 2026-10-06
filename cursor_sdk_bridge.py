@@ -53,6 +53,11 @@ _DEFAULT_HOST = "127.0.0.1"
 _STARTUP_TIMEOUT_S = 20
 _POLL_INTERVAL_S = 0.5
 _DEFAULT_REQUEST_TIMEOUT_S = 180
+# Observed failure rate for Cursor's intermittent status=error is ~1-in-3,
+# with occasional back-to-back failures. 4 attempts keeps the chance of
+# exhausting the budget low (~1-in-80 for 4 independent flakes) without
+# making a genuinely broken request retry forever.
+_MAX_ATTEMPTS = 4
 
 # Ports we know belong to other services in this repo. The sidecar
 # must not collide with the FastAPI backend (8000) or RF-MCP (8765).
@@ -275,11 +280,33 @@ def _subprocess_env() -> dict[str, str]:
     The sidecar reads ``CURSOR_API_KEY`` / ``CURSOR_MODEL`` /
     ``CURSOR_SDK_PORT`` / ``CURSOR_SDK_TIMEOUT_S`` from its own env so
     the Python backend's env config flows through naturally.
+
+    ``@cursor/sdk``'s local agent store (the SQLite file behind
+    ``SQLITE_CANTOPEN``) is NOT configurable via any public SDK option --
+    it's hardcoded to ``<homedir()>/.cursor/projects/<slug>/sdk-agent-store/
+    <hash>/agents/<id>/store.db``. When a real Cursor IDE install is also
+    running on this machine, both processes fight over the same file under
+    the user's real home directory. The only lever we have is Node's own
+    ``os.homedir()`` resolution, which on every platform reads the
+    ``HOME``/``USERPROFILE`` env var first. Pointing those at a dedicated,
+    sidecar-only directory (``CURSOR_DATA_DIR``) makes the SDK's hardcoded
+    path land somewhere nobody else touches, without needing to patch the
+    vendored SDK bundle.
     """
     env = os.environ.copy()
     host, port = _host_port()
     env.setdefault("CURSOR_SDK_HOST", host)
     env["CURSOR_SDK_PORT"] = str(port)
+
+    data_dir = (env.get("CURSOR_DATA_DIR") or "").strip()
+    if data_dir:
+        home_dir = str(Path(data_dir).resolve())
+        os.makedirs(home_dir, exist_ok=True)
+        env["HOME"] = home_dir
+        env["USERPROFILE"] = home_dir
+        env["HOMEDRIVE"] = os.path.splitdrive(home_dir)[0] or env.get("HOMEDRIVE", "")
+        env["HOMEPATH"] = os.path.splitdrive(home_dir)[1] or home_dir
+
     return env
 
 
@@ -435,12 +462,48 @@ def call_cursor_sdk(
     the failover classifier in ``ai_bridge`` can decide whether to
     move on to the next provider or abort.
 
+    Retryable failures are retried in-process (fixed number of attempts,
+    growing backoff) before raising. This matters most when the caller
+    forced ``provider="cursor"`` explicitly -- that path in
+    ``ai_bridge.call_llm`` skips the failover chain's own retry/cooldown
+    logic entirely, so without a retry here a transient ``status=error``
+    from Cursor's backend (observed empirically to be intermittent, at
+    roughly a 1-in-3 rate, including occasional back-to-back failures)
+    would hard-fail the whole request instead of quietly recovering.
+    ``_MAX_ATTEMPTS`` is sized so that even two consecutive flakes (seen
+    in practice) still leave a chance to succeed, without piling up an
+    unbounded retry storm.
+
     Image inputs are intentionally NOT exposed here yet -- the sidecar
     contract doesn't include them, so accepting them at this layer
     would silently drop the data. When ``Agent.prompt({images: ...})``
     is wired through the sidecar we'll add an explicit ``image_bytes``
     kwarg + corresponding payload field.
     """
+    last_exc: CursorSdkError | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            return _call_cursor_sdk_once(system, user, model, timeout_s=timeout_s)
+        except CursorSdkError as exc:
+            last_exc = exc
+            if not exc.retryable or attempt == _MAX_ATTEMPTS - 1:
+                raise
+            _logger.warning(
+                "Cursor SDK call failed retryably (%s); retrying (attempt %d/%d).",
+                exc, attempt + 2, _MAX_ATTEMPTS,
+            )
+            time.sleep(1.0 * (attempt + 1))
+    assert last_exc is not None  # pragma: no cover -- loop always returns or raises
+    raise last_exc
+
+
+def _call_cursor_sdk_once(
+    system: str,
+    user: str,
+    model: str | None,
+    *,
+    timeout_s: float,
+) -> str:
     try:
         import requests
     except ImportError as exc:

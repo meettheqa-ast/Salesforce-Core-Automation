@@ -35,11 +35,14 @@ from ..services.db import (
     list_memberships_for_user,
 )
 from ..services.failure_diagnoser import (
+    NeedsHumanDiagnosis,
     diagnose_run,
 )
 from ..services.failure_diagnoser import (
     format_for_prompt as format_diag_for_prompt,
 )
+from ..services.nav_resolver import NavTargetResolver, TargetType, format_resolved_targets_block
+from ..services.org_metadata import OrgMetadataService
 from ..services.persona_resolver import PersonaResolver
 from ..services.robot_results import (
     parse_output_xml as _shared_parse_output_xml,
@@ -53,6 +56,12 @@ from ..storage.json_file_backend import JsonFileBackend
 
 RESULTS_ROOT = Path(settings.results_dir)
 RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
+
+# Keywords whose first argument names a nav-bar/App-Launcher target. Matched
+# against the *bare* keyword name since user/resource keywords (unlike
+# library keywords) carry no `library` attribute in output.xml, so
+# `KeywordFailure.keyword_name` is usually just e.g. "Select App Tab".
+_NAV_KEYWORDS = {"Select App Tab", "Open Item", "Launch App"}
 
 # Phase 1 isolation note: runs are stored as filesystem folders keyed only by
 # timestamp. We require auth on every endpoint but do NOT filter run history by
@@ -532,6 +541,48 @@ def _bulk_event_stream(
                 "reason": "no actionable diagnosis from output.xml",
             })
             return False
+
+        # Phase B5/C: before asking the LLM to heal a navigation failure
+        # blind, ground the failing target in real org metadata. If even
+        # that finds nothing close, don't burn a heal attempt re-prompting
+        # the same under-informed LLM -- fail fast with a diagnosis a
+        # human can act on (Phase C).
+        resolved_targets_block = ""
+        fk = diag.first_failure.keyword_name
+        bare_kw = fk.split(".")[-1] if fk else ""
+        if bare_kw in _NAV_KEYWORDS and diag.first_failure.arguments:
+            target_name = diag.first_failure.arguments[0]
+            try:
+                resolver = NavTargetResolver(OrgMetadataService())
+                resolved = resolver.resolve(
+                    target_name,
+                    org_key=str(org_model.id),
+                    sandbox_url=sandbox_url,
+                    username=username,
+                    password=password,
+                )
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                resolved = None
+                logger.debug("nav target resolution failed during heal: %s", exc)
+
+            if resolved is not None:
+                if resolved.type == TargetType.UNKNOWN and not resolved.candidates:
+                    needs_human = NeedsHumanDiagnosis(
+                        run_id=run_dir.name,
+                        test_case_id=str(tc.id),
+                        requested_name=target_name,
+                        searched=[
+                            "nav bar", "overflow menu", "App Launcher",
+                            "Setup Quick Find", "Global Search",
+                            "org metadata: Tabs/AppMenuItems/QuickActions/Flows/Reports",
+                        ],
+                        near_matches=[],
+                        original_diag=diag,
+                    )
+                    queue.put({"event": "needs_human", **needs_human.to_dict()})
+                    return False
+                resolved_targets_block = format_resolved_targets_block([resolved])
+
         if not tc.script_path:
             queue.put({
                 "event": "heal_failed",
@@ -564,7 +615,11 @@ def _bulk_event_stream(
                 f"## Diagnosis from the failed run\n\n"
                 f"{format_diag_for_prompt(diag)}\n"
             )
-            user_prompt = _assembler.build_user_prompt_with_catalog(user_body, include_full_catalog=True)
+            user_prompt = _assembler.build_user_prompt_with_catalog(
+                user_body,
+                include_full_catalog=True,
+                resolved_targets_block=resolved_targets_block,
+            )
             system_prompt = _assembler.build_system_prompt("healer")
 
             screenshot_bytes: bytes | None = None
@@ -577,8 +632,9 @@ def _bulk_event_stream(
                     screenshot_bytes = None
 
             from ai_bridge import call_llm, extract_robot_code  # late import
+            from ..services.test_case_script_builder import _absolutize_resource_imports
             raw = call_llm(system_prompt, user_prompt, image_bytes=screenshot_bytes)
-            new_script = extract_robot_code(raw).rstrip()
+            new_script = _absolutize_resource_imports(extract_robot_code(raw).rstrip())
             if not new_script:
                 queue.put({
                     "event": "heal_failed",
@@ -1245,7 +1301,13 @@ def _frontdoor_variable_override(login_mode: str | None = None, org_alias: str |
     except Exception as exc:  # SfCliAuthError, FileNotFoundError, etc. -- never fatal.
         logger.warning("CLI OAuth frontdoor login unavailable for alias '%s': %s", alias, exc)
         return []
-    return ["--variable", f"sandboxFrontdoorUrl:{url}"]
+    # Also pass the alias itself (not just this one resolved URL) so
+    # Login To Sandbox can re-resolve a FRESH session right before each
+    # individual test case's login via SfFrontdoorLibrary, instead of only
+    # ever reusing the URL resolved here once before any test in the run
+    # has started -- which can go stale by the time a later test case in a
+    # long multi-test batch actually gets to it.
+    return ["--variable", f"sandboxFrontdoorUrl:{url}", "--variable", f"sandboxOrgAlias:{alias}"]
 
 
 def _manual_login_variable_override(manual_login: bool) -> list[str]:

@@ -4,6 +4,7 @@ Library     String
 Library     Dialogs
 Library     Collections
 Library     FakerLibrary
+Library     ../../Libraries/ChromeProfilePoolLibrary.py
 # EnvData must load before GlobalVariables / PlatformData so runtime URL & login
 # (written by run_test.py / Streamlit) win over repo defaults. Robot keeps first scalar definition.
 Resource    ../../Resources/TestData/EnvData.robot
@@ -24,19 +25,49 @@ Begin Web Test
     ${headless_lc}=    Convert To Lower Case    ${headless_raw}
     ${headless_lc}=    Strip String    ${headless_lc}
     ${browser_bin}=    Get Variable Value    ${CONTAINER_BROWSER_BINARY}    ${EMPTY}
+    # A persistent --user-data-dir lets Salesforce's "remember this device"
+    # cookie survive across runs, so a passkey/Windows-Hello MFA challenge
+    # only has to be approved by a human once per slot instead of every run
+    # (frontdoor.jsp's CLI-OAuth bypass skips the login *form*, not an org's
+    # adaptive-MFA re-verification of an unrecognized browser). A small pool
+    # (ChromeProfilePoolLibrary) is used instead of one shared profile
+    # because Chrome refuses to open a profile dir that's already locked by
+    # another running instance, and bulk runs execute several tests in
+    # parallel. Best-effort: if every slot is already in use, fall back to a
+    # throwaway profile rather than failing the whole run.
+    ${pool_status}    ${profile_dir}=    Run Keyword And Ignore Error    Acquire Chrome Profile Dir
+    # $pool_status / $profile_dir (no quotes, no ${}) so Robot passes the
+    # actual string object into the expression evaluator instead of
+    # splicing its text into the expression source -- a Windows path like
+    # C:\Users\... spliced into a quoted '${profile_dir}' string gets its
+    # backslashes misread as Python escape sequences (\U starts a unicode
+    # escape) and throws a SyntaxError before the path is ever used.
+    IF    $pool_status != 'PASS'
+        Log    Chrome profile pool unavailable (${profile_dir}); using a throwaway profile for this run -- any passkey/MFA prompt will need to be approved again.    WARN
+        ${profile_dir}=    Set Variable    ${EMPTY}
+    END
+    Set Suite Variable    ${CHROME_PROFILE_DIR}    ${profile_dir}
+    ${profile_arg}=    Set Variable If    $profile_dir    ;add_argument(r"--user-data-dir=${profile_dir}")    ${EMPTY}
     IF    '${headless_lc}' == 'true'
         IF    '${browser_bin}' != '${EMPTY}'
             # Containerized run: point Selenium at the Debian chromium binary
             # and add --no-sandbox / --disable-dev-shm-usage. Without these,
             # Chrome inside the container immediately crashes with
             # "session not created: Chrome instance exited".
-            Open Browser    about:blank    chrome    options=binary_location=r'${browser_bin}';add_argument("--headless=new");add_argument("--no-sandbox");add_argument("--disable-dev-shm-usage");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
+            Open Browser    about:blank    chrome    options=binary_location=r'${browser_bin}';add_argument("--headless=new");add_argument("--no-sandbox");add_argument("--disable-dev-shm-usage");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications");add_argument("--disable-features=WebAuthenticationConditionalUI,PasswordManagerOnboarding")${profile_arg}
         ELSE
-            Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications")
+            Open Browser    about:blank    chrome    options=add_argument("--headless=new");add_argument("--disable-gpu");add_argument("--window-size=1920,1080");add_argument("--disable-notifications");add_argument("--disable-features=WebAuthenticationConditionalUI,PasswordManagerOnboarding")${profile_arg}
         END
         Set Window Size    1920    1080
     ELSE
-        Open Browser    about:blank    chrome    options=add_argument("--disable-notifications")
+        # --disable-features=WebAuthenticationConditionalUI stops Chrome from
+        # popping the native "Windows Security -- Choose a passkey" dialog
+        # the moment a login field gets focus on a domain with a saved/synced
+        # passkey (e.g. the frontdoor-login fallback focusing the username
+        # field). That dialog is a real OS window, not page content --
+        # Selenium can't click through it, so it just hangs the run until a
+        # human cancels it manually.
+        Open Browser    about:blank    chrome    options=add_argument("--disable-notifications");add_argument("--disable-features=WebAuthenticationConditionalUI,PasswordManagerOnboarding")${profile_arg}
         Maximize Browser Window
     END
 #    set window position    x=0    y=0
@@ -48,6 +79,10 @@ End Web Test
     [Documentation]    The End Web Test step concludes the testing session by closing all browser instances, ensuring proper cleanup of the testing environment.
     [Tags]    teardown
     Close All Browsers
+    ${profile_dir}=    Get Variable Value    ${CHROME_PROFILE_DIR}    ${EMPTY}
+    IF    $profile_dir
+        Run Keyword And Ignore Error    Release Chrome Profile Dir    ${profile_dir}
+    END
 
 Login To Sandbox
     [Documentation]    Logs into the sandbox, automatically dismissing any post-login interstitial prompts (phone registration, email verification, "Remind Me Later", etc.) before waiting for the Lightning app shell. Supports Salesforce's classic same-page username+password form as well as the modern identity-split flow (username → Next → password), auto-detecting which one is presented. If the org enforces MFA/OTP, a password-only flow never reaches the Lightning header until verification finishes. Set suite variable MFA_PAUSE_FOR_MANUAL_COMPLETION to ${TRUE} (Streamlit Watch mode does this automatically) to show a dialog: complete OTP/passkey in the browser, then click OK; the keyword then waits up to 10 minutes for the app shell. Headless/CI runs keep MFA_PAUSE false and fail fast if MFA is required—use Trusted IP, a policy exception, or a non-MFA test user instead. ALTERNATIVELY, set ${frontdoorUrl} (written into EnvData.robot as ${sandboxFrontdoorUrl} by run_test.py when an SF CLI org alias is configured) to bypass the login form — and MFA/SSO — entirely via a `frontdoor.jsp` session bootstrapped from a one-time `sf org login web` auth. See sf_session_bootstrap.py / docs/sfdx-login-setup.md. A THIRD option, ${manualLogin} (written as ${sandboxManualLogin} when the "Manual login" checkbox is enabled), skips both the CLI session AND username/password autofill entirely: the keyword just opens the login page and pauses for a human to log in completely themselves (any credentials, MFA, SSO), then continues once the Lightning app shell appears. Manual login takes precedence over both other paths when set. Requires a non-headless run so a human can actually see and use the browser.
@@ -83,12 +118,25 @@ Login To Sandbox
         Set Selenium Timeout    30s
         Go To    ${frontdoorUrl}
         Dismiss Post-Login Prompts
-        ${frontdoor_ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    15s
+        # A genuinely invalid/expired session token redirects straight back
+        # to the login form; a valid session just needs time for the
+        # Lightning app shell to finish loading -- the exact same thing the
+        # username/password path below is given 5 minutes for. The old flat
+        # 15s wait here was firing this WARN (and falling back) purely
+        # because slower orgs hadn't finished rendering yet, not because
+        # the token was actually bad. 45s gives real slow-loads a fair
+        # shot without turning a truly dead token into a long hang.
+        ${frontdoor_ok}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${sandboxLaunch360Logo}    45s
         Set Selenium Timeout    5s
         IF    ${frontdoor_ok}
             RETURN
         END
-        Log    CLI OAuth frontdoor session login failed or the access token expired; falling back to username/password login.    WARN
+        ${bounced_to_login}=    Run Keyword And Return Status    Element Should Be Visible    ${sandboxUserName}
+        IF    ${bounced_to_login}
+            Log    CLI OAuth frontdoor session login failed or the access token expired; falling back to username/password login.    WARN
+        ELSE
+            Log    CLI OAuth frontdoor session started but the Lightning app shell did not finish loading within 45s; falling back to username/password login.    WARN
+        END
     END
     Go To    ${instanceURL}
     Wait Until Element Is Visible    ${sandboxUserName}    timeout=15s
@@ -156,10 +204,37 @@ Launch App
 
 Select App Tab
     [Documentation]    Selects a tab and verifies activation. Uses the expanded ``activeTabLocator`` (breadcrumbs, page header, aria-selected). If the strict locator check fails, falls back to verifying the tab link's ``aria-current`` or that the page URL contains the object name.
+    ...
+    ...    Resilience: not every tab is pinned in the visible nav bar --
+    ...    it varies per app and per story, and generated tests can't
+    ...    predict that layout. Before giving up, this checks the
+    ...    "More" overflow dropdown, then falls back to the App
+    ...    Launcher (``Open Item``). If every avenue fails, the failure
+    ...    message lists the tabs that WERE visible, so whoever reads it
+    ...    next (human or an LLM heal pass) has concrete ground truth
+    ...    instead of a blind timeout message.
     [Tags]    navigation
     [Arguments]    ${tabName}
     ${tabInApp}=    Replace String    ${tabInAppLocator}    <tab-name>    ${tabName}
-    Wait Until Element Is Visible    ${tabInApp}    timeout=10s
+    ${directHit}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${tabInApp}    timeout=10s
+    IF    not ${directHit}
+        ${moreBtn}=    Set Variable    xpath://one-app-nav-bar-item-overflow//a | //button[.//span[text()='More']]
+        ${moreVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${moreBtn}    timeout=3s
+        IF    ${moreVisible}
+            Click Element    ${moreBtn}
+            ${directHit}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${tabInApp}    timeout=5s
+        END
+    END
+    IF    not ${directHit}
+        ${viaLauncher}=    Run Keyword And Return Status    Open Item    ${tabName}
+        IF    ${viaLauncher}    RETURN
+        ${viaSetup}=    Run Keyword And Return Status    Open Setup Quick Find    ${tabName}
+        IF    ${viaSetup}    RETURN
+        ${viaGlobalSearch}=    Run Keyword And Return Status    Search Global Nav    ${tabName}
+        IF    ${viaGlobalSearch}    RETURN
+        ${visibleTabs}=    Get Visible Nav Tab Names
+        Fail    Tab or item '${tabName}' was not found in the nav bar, the "More" overflow menu, the App Launcher, Setup Quick Find, or the global search bar. Tabs currently visible in this app: ${visibleTabs}. The story's wording likely doesn't match this org's actual tab/object label -- confirm the correct name.
+    END
     Click Element    ${tabInApp}
     ${activeTab}=    Replace String    ${activeTabLocator}    <tab-name>    ${tabName}
     ${verified}=    Run Keyword And Return Status    Wait Until Page Contains Element    ${activeTab}    timeout=8s
@@ -173,6 +248,55 @@ Select App Tab
             Fail    Tab '${tabName}' could not be verified as active after clicking.
         END
     END
+
+Get Visible Nav Tab Names
+    [Documentation]    Returns a comma-separated list of the tab titles currently visible in this app's nav bar. Used to produce actionable failure messages when a target tab can't be located anywhere (nav bar, overflow, or App Launcher) -- naming the tabs that DO exist is far more useful for diagnosis than a bare timeout.
+    [Tags]    navigation
+    ${elements}=    Get WebElements    xpath://one-app-nav-bar-item-root/a
+    @{titles}=    Create List
+    FOR    ${el}    IN    @{elements}
+        ${outcome}=    Run Keyword And Ignore Error    Get Element Attribute    ${el}    title
+        IF    '${outcome}[0]' == 'PASS'
+            Append To List    ${titles}    ${outcome}[1]
+        END
+    END
+    IF    not ${titles}
+        RETURN    (none found)
+    END
+    ${joined}=    Catenate    SEPARATOR=,     @{titles}
+    RETURN    ${joined}
+
+Open Setup Quick Find
+    [Documentation]    Navigates to Setup and searches/clicks via the Quick Find box. Covers admin-only targets (custom metadata types, permission sets, named credentials, flows, etc.) that never appear as a standalone nav-bar tab or App Launcher item. Returns ``${TRUE}``/``${FALSE}`` via its own internal status checks so callers (e.g. ``Select App Tab``) can chain it into a fallback ladder with ``Run Keyword And Return Status``.
+    [Tags]    navigation
+    [Arguments]    ${itemName}
+    ${gearVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${setupGearButton}    timeout=5s
+    IF    not ${gearVisible}    RETURN    ${FALSE}
+    Click Element    ${setupGearButton}
+    ${quickFindVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${setupQuickFindInput}    timeout=10s
+    IF    not ${quickFindVisible}    RETURN    ${FALSE}
+    Clear Element Text    ${setupQuickFindInput}
+    Input Text    ${setupQuickFindInput}    ${itemName}
+    ${resultLocator}=    Replace String    ${setupQuickFindResultLink}    <item-name>    ${itemName}
+    ${resultVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${resultLocator}    timeout=8s
+    IF    not ${resultVisible}    RETURN    ${FALSE}
+    Click Element    ${resultLocator}
+    RETURN    ${TRUE}
+
+Search Global Nav
+    [Documentation]    Uses Salesforce's top-nav global search box (distinct from ``Enter Into Search Field``, which targets in-modal lookup fields only) to find and open a record or other searchable content by name. Useful when the requested target is a record or related content rather than a standalone tab/app item. Returns ``${TRUE}``/``${FALSE}`` via its own internal status checks so callers can chain it into a fallback ladder with ``Run Keyword And Return Status``.
+    [Tags]    navigation
+    [Arguments]    ${itemName}
+    ${searchBoxVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${globalNavSearchBox}    timeout=5s
+    IF    not ${searchBoxVisible}    RETURN    ${FALSE}
+    Click Element    ${globalNavSearchBox}
+    Clear Element Text    ${globalNavSearchBox}
+    Input Text    ${globalNavSearchBox}    ${itemName}
+    ${resultLocator}=    Replace String    ${globalNavSearchResult}    <item-name>    ${itemName}
+    ${resultVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${resultLocator}    timeout=8s
+    IF    not ${resultVisible}    RETURN    ${FALSE}
+    Click Element    ${resultLocator}
+    RETURN    ${TRUE}
 
 Open New Dialog
     [Documentation]    Clicks **New** then the dialog title row. Resolves the New button via **tiered locators** (CSS ``title+role`` → LWC ``lightning-button`` → XPath fallback) per §1.1 of the locator ruleset. Dismisses overlays, scrolls New into view, then uses a normal click with **JavaScript click** fallback when another layer intercepts the pointer.
@@ -217,15 +341,26 @@ Open New Dialog
     END
 
 Open Item
-    [Documentation]    Opens a specific item within the app by searching for it in the app launcher. It then clicks the app launcher, enters the item name into the search field, and waits for the item to appear. It then clicks on the item to open it and waits for the item's logo to become visible, indicating the item has been successfully launched. A short pause is added at the end to ensure the item has fully loaded.
+    [Documentation]    Opens a specific item within the app by searching for it in the app launcher. Waits for the search box to be ready and clears any stale text before typing (the App Launcher panel can still be animating in when a fast test types too early). Uses exact title match when possible; if the item name doesn't match exactly (typos, abbreviated story wording), falls back to clicking the **first** visible result the same way ``Launch App`` does -- Salesforce's App Launcher search is fuzzy, so this tolerates approximate names from prompts. Returns a boolean-friendly status via ``Run Keyword And Return Status`` at the call site (see ``Select App Tab``) rather than failing outright, so callers can continue down their own fallback ladder.
     [Tags]    navigation
     [Arguments]    ${itemName}
     Click Element    ${appLauncher}
+    Wait Until Element Is Visible    ${searchAppLauncher}    timeout=5s
+    Clear Element Text    ${searchAppLauncher}
     Input Text    ${searchAppLauncher}    ${itemName}
     ${itemInLauncher}=    Replace String    ${itemInLauncherLocator}    <item-name>    ${itemName}
-    Wait Until Element Is Visible    ${itemInLauncher}    timeout=10s
-    Click Element    ${itemInLauncher}
+    ${exactHit}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${itemInLauncher}    5s
+    IF    ${exactHit}
+        Click Element    ${itemInLauncher}
+    ELSE
+        ${firstHit}=    Set Variable    xpath:(//one-app-launcher-menu-item)[1]
+        ${firstHitVisible}=    Run Keyword And Return Status    Wait Until Element Is Visible    ${firstHit}    5s
+        IF    not ${firstHitVisible}    RETURN    ${FALSE}
+        Click Element    ${firstHit}
+        Log    Opened first App Launcher search result for "${itemName}"; it may not match the requested name exactly (typos / alternate label).    WARN
+    END
     Wait Until Element Is Visible    ${sandboxlaunch360logo}    timeout=15s
+    RETURN    ${TRUE}
 
 Set Address Via Lookup
     [Documentation]    Set an address on a Lead/Account/Contact form, with a

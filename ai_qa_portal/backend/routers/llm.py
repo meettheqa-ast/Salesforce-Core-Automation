@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ai_qa_portal.backend.models.schemas import (
     FailureAnalysis,
@@ -43,11 +43,23 @@ def list_llm_providers():
 def llm_chat(body: LLMChatRequest):
     from ai_bridge import LLM_PROVIDERS, call_llm
 
-    content = call_llm(
-        body.system_prompt or "",
-        body.user_message,
-        provider=body.provider,
-    )
+    try:
+        content = call_llm(
+            body.system_prompt or "",
+            body.user_message,
+            provider=body.provider,
+        )
+    except Exception as exc:  # noqa: BLE001 -- surface as a readable HTTP error
+        # An exception escaping unhandled here turns into FastAPI's
+        # generic 500, which (via this app's BaseHTTPMiddleware-based
+        # ApiPrefixAliasMiddleware) can reach the browser without CORS
+        # headers attached -- the frontend then sees a bare network
+        # failure ("Failed to fetch") instead of the actual provider
+        # error, even though the backend is up and responded. Raising
+        # HTTPException instead routes through Starlette's normal
+        # exception handling, which produces a real JSON response that
+        # the CORS middleware decorates as usual.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     provider = (body.provider or "").strip().lower()
     if not provider:
         from ai_bridge import _default_primary_provider  # type: ignore[attr-defined]

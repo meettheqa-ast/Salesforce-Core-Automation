@@ -771,28 +771,53 @@ def _call_openai_compatible(
         client_kwargs["base_url"] = base_url
     client = OpenAI(**client_kwargs)
 
-    if image_bytes:
-        import base64
+    def _message(with_image: bool) -> dict:
+        if with_image and image_bytes:
+            import base64
 
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        user_message: dict = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_content},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            b64 = base64.b64encode(image_bytes).decode("ascii")
+            return {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_content},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                ],
+            }
+        return {"role": "user", "content": user_content}
+
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                _message(with_image=bool(image_bytes)),
             ],
-        }
-    else:
-        user_message = {"role": "user", "content": user_content}
-
-    completion = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            user_message,
-        ],
-        temperature=0.2,
-    )
+            temperature=0.2,
+        )
+    except Exception as exc:  # noqa: BLE001 -- narrow retry, re-raise anything else
+        # Not every OpenAI-compatible model accepts multimodal `content`
+        # arrays (most Groq/Together/OpenRouter text models are
+        # text-only) -- they reject it with a 400 "content must be a
+        # string" instead of silently ignoring the image part, and that
+        # error isn't a quota/rate-limit/auth/5xx signal so call_llm's
+        # failover chain treats it as a real bug and aborts instead of
+        # trying the next provider. Degrade to a text-only call instead
+        # of crashing the whole request over an optional screenshot.
+        if image_bytes and "content must be a string" in str(exc).lower():
+            logging.getLogger("ai_bridge.llm").warning(
+                "Model %s rejected multimodal content (no vision support?); "
+                "retrying without the screenshot.", model,
+            )
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    _message(with_image=False),
+                ],
+                temperature=0.2,
+            )
+        else:
+            raise
     return completion.choices[0].message.content or ""
 
 

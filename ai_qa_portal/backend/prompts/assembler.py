@@ -554,6 +554,7 @@ def build_user_prompt_with_catalog(
     catalog_section_title: str = "Keyword Catalog",
     default_app: str | None = None,
     rag_context: str = "",
+    resolved_targets_block: str = "",
 ) -> str:
     """Wrap a caller-provided user prompt with the keyword catalog.
 
@@ -568,6 +569,12 @@ def build_user_prompt_with_catalog(
     produced by ``services.rag_retrieval.format_passages_block`` -- so
     the LLM sees the most relevant Jira issues, comments, uploaded docs,
     and test-data rows for this generation.
+
+    `resolved_targets_block`, when non-empty, prepends a "Resolved
+    Navigation Targets" block -- produced by
+    ``services.nav_resolver.format_resolved_targets_block`` -- grounding
+    story-named tabs/objects/quick actions/flows/reports in what the
+    target org actually contains, instead of letting the LLM guess.
     """
     if include_full_catalog:
         catalog_text = keyword_catalog.compact_json()
@@ -578,9 +585,12 @@ def build_user_prompt_with_catalog(
     persona_block = render_persona_context(default_app)
     context_block = rag_context.strip()
     context_section = f"{context_block}\n\n" if context_block else ""
+    targets_block = resolved_targets_block.strip()
+    targets_section = f"{targets_block}\n\n" if targets_block else ""
 
     return (
         f"{context_section}"
+        f"{targets_section}"
         f"{persona_block}"
         f"## {catalog_section_title}\n\n"
         f"{catalog_text}\n\n"
